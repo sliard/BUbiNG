@@ -39,6 +39,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.BufferOverflowException;
 import java.util.ArrayList;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
@@ -223,6 +224,8 @@ public class ParsingThread extends Thread {
 	private final Store store;
 	/** The parsers used by this thread. */
 	public final ArrayList<Parser<?>> parsers;
+	/** A random number generator for the thread */
+	private final Random rng;
 
 	/** Creates a thread.
 	 *
@@ -234,9 +237,31 @@ public class ParsingThread extends Thread {
 		setName(this.getClass().getSimpleName() + '-' + index);
 		this.frontier = frontier;
 		this.store = store;
+		this.rng = new Random(index);
 		this.parsers = new ArrayList<>(frontier.rc.parsers.size());
 		for(Parser<?> parser : frontier.rc.parsers) this.parsers.add(parser.copy());
 		setPriority((Thread.NORM_PRIORITY + Thread.MIN_PRIORITY) / 2); // Below main threads
+	}
+
+	private void incrementCountAndPurge(boolean success, VisitState visitState, RuntimeConfiguration rc) {
+		int count = 0;
+		if (success) {
+			count = frontier.schemeAuthority2Count.addTo(visitState.schemeAuthority, 1);
+		} else {
+			double w = (double)rc.maxUrlsPerSchemeAuthority / (double)rc.maxRequestsPerSchemeAuthority;
+			int toAdd = 0;
+			int floorW = (int)w;
+			if (floorW > 0)
+				toAdd = floorW;
+			double p = w - floorW;
+			if (rng.nextDouble() < p)
+				toAdd ++;
+			count = frontier.schemeAuthority2Count.addTo(visitState.schemeAuthority, toAdd);
+		}
+		if (count >= rc.maxUrlsPerSchemeAuthority - 1) {
+			LOGGER.info("Reached maximum number of URLs for scheme+authority " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
+			visitState.schedulePurge();
+		}
 	}
 
 	@SuppressWarnings("unchecked")
@@ -396,10 +421,7 @@ public class ParsingThread extends Thread {
 					if (mustBeStored) {
 						if (isNotDuplicate) {
 							// Soft, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
-							if (frontier.schemeAuthority2Count.addTo(visitState.schemeAuthority, 1) >= rc.maxUrlsPerSchemeAuthority - 1) {
-								LOGGER.info("Reached maximum number of URLs for scheme+authority " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
-								visitState.schedulePurge();
-							}
+							incrementCountAndPurge(true, visitState, rc);
 							final int code = fetchData.response().getStatusLine().getStatusCode() / 100;
 							if (code > 0 && code < 6) frontier.archetypesStatus[code].incrementAndGet();
 							else frontier.archetypesStatus[0].incrementAndGet();
@@ -419,11 +441,15 @@ public class ParsingThread extends Thread {
 						}
 						else {
 							frontier.duplicates.incrementAndGet();
+							incrementCountAndPurge(false, visitState, rc);
 							result = "duplicate";
 						}
 						store.store(fetchData.uri(), fetchData.response(), ! isNotDuplicate, digest, guessedCharset);
 					}
-					else result = "not stored";
+					else {
+						result = "not stored";
+						incrementCountAndPurge(false, visitState, rc);
+					}
 
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Fetched " + url + " (" + Util.formatSize((long)(1000.0 * fetchData.length() / (fetchData.endTime - fetchData.startTime + 1)), formatDouble) + "B/s; " + frontierLinkReceiver.scheduledLinks + "/" + frontierLinkReceiver.outlinks + "; " + result + ")");
 				}

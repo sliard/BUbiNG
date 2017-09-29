@@ -98,6 +98,9 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#maxUrlsPerSchemeAuthority */
 	public final int maxUrlsPerSchemeAuthority;
 
+	/** @see StartupConfiguration#maxRequestsPerSchemeAuthority */
+	public final int maxRequestsPerSchemeAuthority;
+
 	/** @see StartupConfiguration#fetchingThreads */
 	public volatile int fetchingThreads;
 
@@ -355,6 +358,8 @@ public class RuntimeConfiguration {
 			group = startupConfiguration.group;
 			weight = startupConfiguration.weight;
 			maxUrlsPerSchemeAuthority = startupConfiguration.maxUrlsPerSchemeAuthority;
+			maxRequestsPerSchemeAuthority = startupConfiguration.maxRequestsPerSchemeAuthority;
+
 			fetchingThreads = startupConfiguration.fetchingThreads;
 			parsingThreads = startupConfiguration.parsingThreads;
 			dnsThreads = startupConfiguration.dnsThreads;
