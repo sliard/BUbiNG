@@ -165,6 +165,10 @@ public class StartupConfiguration {
 	/** The maximum number of URLs we shall download from each scheme+authority. */
 	public int maxUrlsPerSchemeAuthority;
 
+	/** The maximum number of request we shall allow from each scheme+authority. */
+	@OptionalSpecification(value="2000000000")
+	public int maxRequestsPerSchemeAuthority;
+
 	/** The number of {@linkplain FetchingThread fetching threads} (hundreds or even thousands). */
 	public int fetchingThreads;
 
