@@ -12,6 +12,7 @@ import java.util.concurrent.locks.Lock;
 import javax.net.ssl.SSLContext;
 import java.security.cert.X509Certificate;
 
+import org.apache.http.HttpConnection;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.config.ConnectionConfig;
@@ -145,11 +146,10 @@ public final class FetchingThread extends Thread implements Closeable {
 					.register("https",
 							new SSLConnectionSocketFactory(sslContext,
 									new String[] {
-											"TLSv1.2",
-											"TLSv1.1",
 											"TLSv1",
 											"SSLv3",
-											"SSLv2Hello",
+											"TLSv1.1",
+											"TLSv1.2",
 									}, null, new NoopHostnameVerifier()))
 					.build();
 		}
@@ -203,6 +203,7 @@ public final class FetchingThread extends Thread implements Closeable {
 		this.frontier = frontier;
 
 		final BasicHttpClientConnectionManager connManager = new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver);
+
 		connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
 		connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
 
@@ -214,6 +215,7 @@ public final class FetchingThread extends Thread implements Closeable {
 		cookieStore = new BasicCookieStore();
 		httpClient = HttpClients.custom()
 				.setSSLContext(TRUST_ALL_CERTIFICATES_SSL_CONTEXT)
+				.setSSLHostnameVerifier(new NoopHostnameVerifier()) // why would we need to do it twice ?
 				.setConnectionManager(connManager)
 				.setConnectionReuseStrategy(frontier.rc.keepAliveTime == 0 ? NoConnectionReuseStrategy.INSTANCE : DefaultConnectionReuseStrategy.INSTANCE)
 				.setUserAgent(frontier.rc.userAgent)
