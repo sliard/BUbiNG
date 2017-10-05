@@ -275,6 +275,9 @@ public class RuntimeConfiguration {
 	 * variable will never become false again. */
 	public volatile boolean stopping;
 
+	/** Whether the crawler is currently creating a seed snapshot. */
+	public volatile boolean snappingSeed;
+
 	/** The DNS resolver used throughout the crawler.
 	 * @see StartupConfiguration#dnsResolverClass */
 	public final DnsResolver dnsResolver;

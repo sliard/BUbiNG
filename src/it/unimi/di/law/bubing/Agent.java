@@ -125,6 +125,19 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		}
 		LOGGER.info("Finished reading seeds");
 
+		//Schedule
+		final Agent agent = this;
+		new java.util.Timer().schedule(
+				new java.util.TimerTask() {
+					@Override
+					public void run() {
+						agent.snapSeed();
+					}
+				},
+				30*60*1000,
+				30*60*1000
+		);
+
 		// We wait for the notification of a stop event, usually caused by a call to stop().
 		synchronized(this) {
 			if (! rc.stopping) wait();
@@ -199,6 +212,30 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		}
 		else LOGGER.warn("Agent not paused: not resuming");
 	}
+
+	@ManagedOperation @Description("Dump current queue to reseed")
+	public void snapSeed() {
+		LOGGER.info( "Going to pause the agent for dumping the URL queue..." );
+		if (rc.snappingSeed) // already snapping ?
+			return;
+		rc.snappingSeed = true;
+		rc.paused = true;
+		try {
+			frontier.snapToSeed();
+		} catch (ConfigurationException e) {
+			LOGGER.error("Wrong configuration", e);
+		} catch (IOException e) {
+			LOGGER.error("Error while writing", e);
+		}
+
+		synchronized( rc ) {
+			rc.snappingSeed = false;
+			rc.paused = false;
+			rc.notifyAll();
+		}
+
+	}
+
 
 	@ManagedOperation @Description("Flush the sieve")
 	public void flush() throws IOException, InterruptedException {
