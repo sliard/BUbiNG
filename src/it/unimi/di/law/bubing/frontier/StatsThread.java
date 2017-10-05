@@ -128,6 +128,8 @@ public final class StatsThread implements Runnable {
 
 	/** Emits the statistics. */
 	public void emit() {
+		LOGGER.info("=----------- START OF LOW COST STATS ------------=");
+
 		requestLogger.setAndDisplay(frontier.fetchedResources.get() + frontier.fetchedRobots.get());
 		final long duplicates = frontier.duplicates.get();
 		final long archetypes = frontier.archetypes();
@@ -185,6 +187,7 @@ public final class StatsThread implements Runnable {
 	public void run() {
 		frontier.workbenchSizeInPathQueries = frontier.rc.workbenchMaxByteSize / Math.max(1, frontier.weightOfpathQueriesInQueues.get() / (1 + frontier.pathQueriesInQueues.get()));
 
+		LOGGER.info("=========== START OF HIGH COST STATS ============");
 		LOGGER.info("There are now " + frontier.pathQueriesInQueues.get() + " URLs in queues (" + Util.formatSize(frontier.weightOfpathQueriesInQueues.get()) + "B, " + Util.format(100.0 * frontier.weightOfpathQueriesInQueues.get() / frontier.rc.workbenchMaxByteSize) + "%)");
 
 		double totalSpeed = 0;

@@ -97,10 +97,10 @@ public class MultiWarcStore implements Closeable, Store {
 			
 			if (currentNumberOfRecordsInFile > 0 && ((currentNumberOfRecordsInFile > maxRecordsPerFile) || 
 				(currentTime-lastDumpTime > maxSecondsBetweenDumps))) {
-				LOGGER.info("Current time = " + currentTime + ", lastDumpTime = " + lastDumpTime );
+				LOGGER.debug("Current time = " + currentTime + ", lastDumpTime = " + lastDumpTime );
 				currentNumberOfRecordsInFile = 0;
 				lastDumpTime = currentTime;
-				LOGGER.warn( "Target number of records reached, creating new output file" );
+				LOGGER.info( "Target number of records reached, creating new output file" );
 				try {
 					warcWriter.close();
 				} catch ( IOException e ) {

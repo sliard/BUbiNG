@@ -289,7 +289,7 @@ public class ParsingThread extends Thread {
 					visitState.workbenchEntry.nextFetch = fetchData.endTime + rc.ipDelay;
 
 					if (fetchData.exception != null) {
-						LOGGER.warn("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
+						LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
 						LOGGER.debug("Exception content : ", fetchData.exception);
 						final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
 
