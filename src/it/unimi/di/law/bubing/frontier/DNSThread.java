@@ -23,6 +23,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
@@ -80,7 +81,12 @@ public final class DNSThread extends Thread {
 					// This is the first point in which DNS resolution happens for new hosts.
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Resolving host {} with DNS because of URL {}", host, BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, visitState.firstPath()));
 					InetAddress[] addresses = frontier.rc.dnsResolver.resolve(host);
-					final byte[] address = addresses[rng.nextInt(addresses.length)].getAddress(); // Pick one of the addresses
+					ArrayList<InetAddress> ipv4Addresses = new ArrayList<InetAddress>();
+					for (InetAddress a:addresses) {
+						if (a.getAddress().length == 4)
+							ipv4Addresses.add(a);
+					}
+					final byte[] address = ipv4Addresses.get(rng.nextInt(ipv4Addresses.size())).getAddress(); // Pick one of the addresses
 
 					if (address.length == 4) {
 						Lock lock = frontier.rc.blackListedIPv4Lock.readLock();
