@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.bits.Fast;
 import it.unimi.dsi.logging.ProgressLogger;
@@ -232,12 +233,21 @@ public final class StatsThread implements Runnable {
 		assert checkState();
 
 		final SummaryStats entrySummaryStats = new SummaryStats();
-
+		int maxVisitStates = 0;
+		WorkbenchEntry entryWithMaxStates = null;
 		for(Iterator<WorkbenchEntry> iterator = frontier.workbench.iterator(); iterator.hasNext();) { // Concurrency-safe iterator by documentation.
-			final int numVisitStates = iterator.next().size(); // Synchronized method.
+			final WorkbenchEntry wbe = iterator.next();
+			final int numVisitStates = wbe.size(); // Synchronized method.
+			if (numVisitStates > maxVisitStates) {
+				maxVisitStates = numVisitStates;
+				entryWithMaxStates = wbe;
+			}
 			if (numVisitStates != 0) entrySummaryStats.add(numVisitStates); // Might be zero by asynchronous modifications.
 		}
 
+		LOGGER.info("Entry with " + maxVisitStates + " visitStates first hosts : ");
+		for (int i =0; i < Math.min(maxVisitStates,10); i++)
+			LOGGER.info(BURL.hostFromSchemeAndAuthority(entryWithMaxStates.visitStates()[i].schemeAuthority));
 		this.entrySummaryStats = entrySummaryStats;
 		this.resolvedVisitStates = resolvedVisitStates;
 		this.brokenVisitStatesOnWorkbench = brokenVisitStatesOnWorkbench;
