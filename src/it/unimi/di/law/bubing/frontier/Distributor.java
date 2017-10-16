@@ -62,7 +62,7 @@ public final class Distributor extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Distributor.class);
 	/** We purge {@linkplain VisitState visit states} from {@link #schemeAuthority2VisitState} when
 	 * this amount of time has passed (approximately) since the last fetch. */
-	private static final long PURGE_DELAY = TimeUnit.MINUTES.toMillis(25);
+	private static final long PURGE_DELAY = TimeUnit.HOURS.toMillis(6);
 	/** We prints low-cost stats at this interval. */
 	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.SECONDS.toMillis(10);
 	/** We prints high-cost stats at this interval. */
