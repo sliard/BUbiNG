@@ -121,13 +121,13 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		ByteArrayList list = new ByteArrayList();
 		while(rc.seed.hasNext()) {
 			final URI nextSeed = rc.seed.next();
-			if (nextSeed != null) frontier.enqueueIfLocal(BURL.toByteArrayList(nextSeed, list));
+			if (nextSeed != null) frontier.enqueue(BURL.toByteArrayList(nextSeed, list));
 		}
 		LOGGER.info("Finished reading seeds");
 
 		//Schedule
 		final Agent agent = this;
-		new java.util.Timer().schedule(
+		/*new java.util.Timer().schedule(
 				new java.util.TimerTask() {
 					@Override
 					public void run() {
@@ -136,7 +136,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 				},
 				30*60*1000,
 				30*60*1000
-		);
+		);*/
 
 		// We wait for the notification of a stop event, usually caused by a call to stop().
 		synchronized(this) {
