@@ -19,8 +19,11 @@ package it.unimi.di.law.bubing.frontier;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.util.BURL;
 
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.Random;
+import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
@@ -60,6 +63,7 @@ public final class DNSThread extends Thread {
 
 	@Override
 	public void run() {
+		Random rng = new Random();
 		while(! stop) {
 			try {
 				frontier.rc.ensureNotPaused();
@@ -76,7 +80,13 @@ public final class DNSThread extends Thread {
 				try {
 					// This is the first point in which DNS resolution happens for new hosts.
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Resolving host {} with DNS because of URL {}", host, BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, visitState.firstPath()));
-					final byte[] address = frontier.rc.dnsResolver.resolve(host)[0].getAddress();
+					InetAddress[] addresses = frontier.rc.dnsResolver.resolve(host);
+					ArrayList<InetAddress> ipv4Addresses = new ArrayList<InetAddress>();
+					for (InetAddress a:addresses) {
+						if (a.getAddress().length == 4)
+							ipv4Addresses.add(a);
+					}
+					final byte[] address = ipv4Addresses.get(rng.nextInt(ipv4Addresses.size())).getAddress(); // Pick one of the addresses
 
 					if (address.length == 4) {
 						Lock lock = frontier.rc.blackListedIPv4Lock.readLock();
@@ -97,7 +107,7 @@ public final class DNSThread extends Thread {
 					visitState.setWorkbenchEntry(frontier.workbench.getWorkbenchEntry(address));
 				}
 				catch(UnknownHostException e) {
-					LOGGER.warn("Unknown host " + host + " for visit state " + visitState);
+					LOGGER.info("Unknown host " + host + " for visit state " + visitState);
 
 					if (visitState.lastExceptionClass != UnknownHostException.class) visitState.retries = 0;
 					else visitState.retries++;
@@ -113,7 +123,7 @@ public final class DNSThread extends Thread {
 					}
 					else {
 						visitState.schedulePurge();
-						LOGGER.warn("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
+						LOGGER.info("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
 					}
 				}
 			}

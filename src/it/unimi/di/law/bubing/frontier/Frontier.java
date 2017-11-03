@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.google.common.io.Files;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.sieve.AbstractSieve;
@@ -48,14 +49,9 @@ import it.unimi.dsi.sux4j.mph.AbstractHashFunction;
 import it.unimi.dsi.util.BloomFilter;
 import it.unimi.dsi.util.Properties;
 
-import java.io.EOFException;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.InetAddress;
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Date;
@@ -64,6 +60,7 @@ import java.util.concurrent.DelayQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.zip.GZIPOutputStream;
 
 import net.htmlparser.jericho.Config;
 import net.htmlparser.jericho.LoggerProvider;
@@ -641,6 +638,42 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		return;
 	}
 
+	/** Enqueues a URL to the the BUbiNG crawl if it is local
+	 *
+	 * <p>Before {@linkplain AbstractSieve#enqueue(Object, Object) enqueueing the URL to the sieve}
+	 * we perform a number of checks:
+	 *
+	 * <ul>
+	 *
+	 * <li>if there are too many URLs for the URL scheme+authority, we discard the URL;
+	 *
+	 * <li>if the URL appears in the URL cache, we discard it; otherwise, we add it to the cache;
+	 *
+	 * <li>if another agent is responsible for the URL, we disregard it
+	 *
+	 * </ul>
+	 *
+	 * <p>The difference between this method and {@link #enqueueLocal(ByteArrayList)} is that the
+	 * latter does not check whether the argument is
+	 * {@linkplain JobManager#local(it.unimi.dsi.jai4j.Job) local}.
+	 *
+	 * @param url a {@linkplain BURL BUbiNG URL} to be enqueued to the BUbiNG crawl.
+	 * @throws InterruptedException from {@link AbstractSieve#enqueue(Object, Object)}. */
+	public void enqueueIfLocal(final ByteArrayList url) throws IOException, InterruptedException {
+		final byte[] urlBuffer = url.elements();
+		final int inStore = schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer));
+		if (inStore >= rc.maxUrlsPerSchemeAuthority) return;
+
+		if (!urlCache.add(url)) return;
+
+		final BubingJob job = new BubingJob(url);
+
+		if (agent.local(job)) {
+			if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
+		}
+		return;
+	}
+
 	/** Returns whether the workbench is full.
 	 *
 	 * @return whether the workbench is full. */
@@ -945,11 +978,89 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		workbenchStream.close();
 	}
 
+	/** Snaps the current URL queues to a TXT file to be used for seed in a next launch */
+	public void snapToSeed() throws ConfigurationException, IllegalArgumentException, IOException {
 
-	/** Restores data from the given directory.
-	 *
-	 * @throws InterruptedException
-	 * @see #snap() */
+		LOGGER.info( "Storing URLS to visit" );
+		File tempSnapSeed = new File( rc.storeDir, ".seed.txt.gz" );
+		final OutputStreamWriter stringWriter = new OutputStreamWriter(new FastBufferedOutputStream( new GZIPOutputStream( new FileOutputStream( tempSnapSeed ) ) ) );
+
+		readyURLs.freeze();
+		// copy queue file
+		File readyURLsFile = new File( rc.frontierDir, "ready" );
+		File copyReadyURLsFile = new File( rc.frontierDir, "ready.copy" );
+		Files.copy(readyURLsFile, copyReadyURLsFile);
+		// create new queue from copy
+		final long readyURLsSize = readyURLs.size64();
+
+		ByteArrayDiskQueue newReadyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize,copyReadyURLsFile,READY_URLS_BUFFER_SIZE,true);
+		while(!newReadyURLs.isEmpty()) {
+			newReadyURLs.dequeue();
+			final ByteArrayList url = newReadyURLs.buffer();
+			final byte[] urlBuffer = url.elements();
+			final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray( urlBuffer );
+			URI uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, BURL.pathAndQueryAsByteArray( url ) );
+			stringWriter.write(uri.toASCIIString());
+			stringWriter.write("\n");
+		}
+		newReadyURLs.close(); // deletes the file
+		// recreate ReadyURLs from initial state (freeze() put it in wrong state)
+		readyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize,readyURLsFile,READY_URLS_BUFFER_SIZE,true);
+
+
+		receivedURLs.freeze();
+		final long receivedURLsSize = receivedURLs.size64();
+		File receivedURLsFile = new File( rc.frontierDir, "received" );
+		File copyReceivedURLsFile = new File( rc.frontierDir, "received.copy" );
+		Files.copy(receivedURLsFile, copyReceivedURLsFile);
+		ByteArrayDiskQueue newReceivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize,copyReceivedURLsFile,16*1024,true);
+		while(!newReceivedURLs.isEmpty()) {
+			newReceivedURLs.dequeue();
+			final ByteArrayList url = newReceivedURLs.buffer();
+			final byte[] urlBuffer = url.elements();
+			final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray( urlBuffer );
+			URI uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, BURL.pathAndQueryAsByteArray( url ) );
+			stringWriter.write(uri.toASCIIString());
+			stringWriter.write("\n");
+		}
+		newReceivedURLs.close(); // deletes the file
+		// recreate ReadyURLs from initial state (freeze() put it in wrong state)
+		receivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize,receivedURLsFile,16 * 1024,true);
+
+
+		for ( VisitState visitState : distributor.schemeAuthority2VisitState.visitStates() ) {
+			// Create copy buffer
+			if (visitState != null) {
+				VisitState copyVisitState = new VisitState(this, visitState.schemeAuthority);
+				byte[] schemeAuthority = visitState.schemeAuthority;
+				while (!visitState.isEmpty()) {
+					byte[] url = visitState.dequeue();
+					if (url != VisitState.ROBOTS_PATH) {
+						URI uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, url);
+						stringWriter.write(uri.toASCIIString());
+						stringWriter.write("\n");
+					}
+					copyVisitState.enqueuePathQuery(url);
+				}
+				//Copy back to original
+				while (!copyVisitState.isEmpty()) {
+					byte[] url = copyVisitState.dequeue();
+					visitState.enqueuePathQuery(url);
+				}
+			}
+		}
+
+		stringWriter.close();
+		// move to file to its final name
+		File finalSnapSeed = new File( rc.storeDir, "seed.txt.gz" );
+		finalSnapSeed.delete();
+		Files.move(new File( rc.storeDir, ".seed.txt.gz" ),finalSnapSeed);
+	}
+
+		/** Restores data from the given directory.
+         *
+         * @throws InterruptedException
+         * @see #snap() */
 	@SuppressWarnings("unchecked")
 	public void restore() throws ConfigurationException, IllegalArgumentException, IOException, ClassNotFoundException, InterruptedException {
 		File snapDir = new File(rc.frontierDir, "snap");

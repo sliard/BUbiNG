@@ -165,6 +165,10 @@ public class StartupConfiguration {
 	/** The maximum number of URLs we shall download from each scheme+authority. */
 	public int maxUrlsPerSchemeAuthority;
 
+	/** The maximum number of request we shall allow from each scheme+authority. */
+	@OptionalSpecification(value="2000000000")
+	public int maxRequestsPerSchemeAuthority;
+
 	/** The number of {@linkplain FetchingThread fetching threads} (hundreds or even thousands). */
 	public int fetchingThreads;
 
@@ -307,6 +311,14 @@ public class StartupConfiguration {
 	@StoreSpecification
 	@OptionalSpecification(value="it.unimi.di.law.bubing.store.WarcStore")
 	public Class<? extends Store> storeClass;
+	
+	/** The number of URL records to store per file with MultiWarcStore class (for instance 256000 produces 100-300MB files approx.). */
+	@OptionalSpecification(value="256000")
+        public int maxRecordsPerFile;
+
+        /** The maximum number of seconds between two dumps for MultiWarcStore class. */
+        @OptionalSpecification(value="600")
+        public int maxSecondsBetweenDumps;
 
 	/** The maximum size of the workbench in bytes. */
 	public long workbenchMaxByteSize;

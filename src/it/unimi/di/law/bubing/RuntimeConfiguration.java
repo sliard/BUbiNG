@@ -98,6 +98,9 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#maxUrlsPerSchemeAuthority */
 	public final int maxUrlsPerSchemeAuthority;
 
+	/** @see StartupConfiguration#maxRequestsPerSchemeAuthority */
+	public final int maxRequestsPerSchemeAuthority;
+
 	/** @see StartupConfiguration#fetchingThreads */
 	public volatile int fetchingThreads;
 
@@ -212,6 +215,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#storeClass */
 	public final Class<? extends Store> storeClass;
 
+        /** @see StartupConfiguration#maxRecordsPerFile */
+        public volatile int maxRecordsPerFile;
+
+	/** @see StartupConfiguration#maxSecondsBetweenDumps */
+        public volatile int maxSecondsBetweenDumps;
+
 	/** @see StartupConfiguration#workbenchMaxByteSize */
 	public volatile long workbenchMaxByteSize;
 
@@ -265,6 +274,9 @@ public class RuntimeConfiguration {
 	/** Whether the crawler is currently being stopping. The change of state to true is stable&mdash;this
 	 * variable will never become false again. */
 	public volatile boolean stopping;
+
+	/** Whether the crawler is currently creating a seed snapshot. */
+	public volatile boolean snappingSeed;
 
 	/** The DNS resolver used throughout the crawler.
 	 * @see StartupConfiguration#dnsResolverClass */
@@ -349,6 +361,8 @@ public class RuntimeConfiguration {
 			group = startupConfiguration.group;
 			weight = startupConfiguration.weight;
 			maxUrlsPerSchemeAuthority = startupConfiguration.maxUrlsPerSchemeAuthority;
+			maxRequestsPerSchemeAuthority = startupConfiguration.maxRequestsPerSchemeAuthority;
+
 			fetchingThreads = startupConfiguration.fetchingThreads;
 			parsingThreads = startupConfiguration.parsingThreads;
 			dnsThreads = startupConfiguration.dnsThreads;
@@ -364,6 +378,8 @@ public class RuntimeConfiguration {
 			bloomFilterPrecision = startupConfiguration.bloomFilterPrecision;
 			startPaused = startupConfiguration.startPaused;
 			storeClass = startupConfiguration.storeClass;
+			maxRecordsPerFile = startupConfiguration.maxRecordsPerFile;
+			maxSecondsBetweenDumps = startupConfiguration.maxSecondsBetweenDumps;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;
 			virtualizerMaxByteSize = startupConfiguration.virtualizerMaxByteSize;
 			urlCacheMaxByteSize = startupConfiguration.urlCacheMaxByteSize;
