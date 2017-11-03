@@ -17,3 +17,7 @@ src/it/unimi/di/law/warc/filters/parser/SimpleCharStream.java
 src/it/unimi/di/law/warc/filters/parser/Token.java
 src/it/unimi/di/law/warc/filters/parser/TokenMgrError.java
 .settings/
+
+\.idea/
+BUbiNG\.iml
+deps/
