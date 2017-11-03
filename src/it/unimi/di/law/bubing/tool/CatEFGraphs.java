@@ -111,7 +111,7 @@ public class CatEFGraphs {
 				outputGraphStream.append(ByteBufferLongBigList.map(inputStream.getChannel(), byteOrder), length);
 				inputStream.close();
 			}
-			else outputGraphStream.append(EFGraph.loadLongBigList(input + EFGraph.GRAPH_EXTENSION, byteOrder), length);
+			else outputGraphStream.append(it.unimi.dsi.webgraph.EFGraph.loadLongBigList(input + EFGraph.GRAPH_EXTENSION,byteOrder), length);
 
 			first = false;
 		}
