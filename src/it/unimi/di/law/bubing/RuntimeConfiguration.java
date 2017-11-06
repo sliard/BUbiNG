@@ -215,11 +215,14 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#storeClass */
 	public final Class<? extends Store> storeClass;
 
-        /** @see StartupConfiguration#maxRecordsPerFile */
-        public volatile int maxRecordsPerFile;
+	/** @see StartupConfiguration#storeURLs */
+	public final File storeURLs;
+
+	/** @see StartupConfiguration#maxRecordsPerFile */
+	public volatile int maxRecordsPerFile;
 
 	/** @see StartupConfiguration#maxSecondsBetweenDumps */
-        public volatile int maxSecondsBetweenDumps;
+	public volatile int maxSecondsBetweenDumps;
 
 	/** @see StartupConfiguration#workbenchMaxByteSize */
 	public volatile long workbenchMaxByteSize;
@@ -437,6 +440,7 @@ public class RuntimeConfiguration {
 			connectionTimeout = startupConfiguration.connectionTimeout;
 			rootDir = new File(startupConfiguration.rootDir);
 			storeDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.storeDir);
+			storeURLs = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.storeURLs);
 			responseCacheDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.responseCacheDir);
 			sieveDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.sieveDir);
 			frontierDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.frontierDir);

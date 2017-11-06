@@ -21,6 +21,8 @@ import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.records.WarcHeader;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
+
+import static it.unimi.di.law.bubing.store.ParallelBufferedURLWriter.SetURLFileName;
 import static it.unimi.di.law.bubing.store.ParallelBufferedURLWriter.writeToFileBufferedWriter;
 
 import java.io.Closeable;
@@ -53,7 +55,7 @@ public class WarcStore implements Closeable, Store {
 
 	public WarcStore(final RuntimeConfiguration rc) throws IOException {
 		final File file = new File(rc.storeDir, STORE_NAME);
-
+		SetURLFileName(rc.storeURLs.getAbsolutePath());
 		if (rc.crawlIsNew) {
 			if (file.exists() && file.length() != 0) throw new IOException("Store exists and it is not empty, but the crawl is new; it will not be overwritten: " + file);
 			outputStream = new FastBufferedOutputStream(new FileOutputStream(file), OUTPUT_STREAM_BUFFER_SIZE);

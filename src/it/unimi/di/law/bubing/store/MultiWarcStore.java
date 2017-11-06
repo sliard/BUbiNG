@@ -23,6 +23,8 @@ import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.records.WarcHeader;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
+
+import static it.unimi.di.law.bubing.store.ParallelBufferedURLWriter.SetURLFileName;
 import static it.unimi.di.law.bubing.store.ParallelBufferedURLWriter.writeToFileBufferedWriter;
 
 import java.io.Closeable;
@@ -65,6 +67,7 @@ public class MultiWarcStore implements Closeable, Store {
 
 	public MultiWarcStore( final RuntimeConfiguration rc ) throws IOException {
 		storeDir = rc.storeDir;
+		SetURLFileName(rc.storeURLs.getAbsolutePath());
 		maxRecordsPerFile = rc.maxRecordsPerFile;
 		maxSecondsBetweenDumps = rc.maxSecondsBetweenDumps;
 		LOGGER.info("Max record per file = " + maxRecordsPerFile);

@@ -7,7 +7,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 public class ParallelBufferedURLWriter {
-        private static File file = new File("logsURLs.log");
+        private static File file;
+
+        public static void SetURLFileName(String test) { file = new File(test); }
 
         public static void writeToFileBufferedWriter(String msg) {
             FileWriter fileWriter;
