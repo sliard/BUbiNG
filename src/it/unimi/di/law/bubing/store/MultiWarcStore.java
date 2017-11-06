@@ -23,6 +23,7 @@ import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.records.WarcHeader;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
+import static it.unimi.di.law.bubing.store.ParallelBufferedURLWriter.writeToFileBufferedWriter;
 
 import java.io.Closeable;
 import java.io.File;
@@ -39,6 +40,7 @@ import org.apache.http.HttpResponse;
 import org.apache.http.message.HeaderGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 //RELEASE-STATUS: DIST
 
@@ -87,6 +89,8 @@ public class MultiWarcStore implements Closeable, Store {
 	public void store( final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset ) throws IOException, InterruptedException {
 		
 		if ( contentDigest == null ) throw new NullPointerException( "Content digest is null" );
+		System.out.println("MultiWarcStore:Store Uri = " + uri.toString());
+		writeToFileBufferedWriter(uri.toString() + '\n');
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord( uri, response );
 		HeaderGroup warcHeaders = record.getWarcHeaders();
 		warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString( contentDigest ) ) );
@@ -114,7 +118,7 @@ public class MultiWarcStore implements Closeable, Store {
 
 		currentNumberOfRecordsInFile += 1;
 	}
-	
+
 	@Override
 	public synchronized void close() throws IOException {
 		try {

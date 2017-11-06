@@ -21,6 +21,7 @@ import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.records.WarcHeader;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
+import static it.unimi.di.law.bubing.store.ParallelBufferedURLWriter.writeToFileBufferedWriter;
 
 import java.io.Closeable;
 import java.io.File;
@@ -66,6 +67,8 @@ public class WarcStore implements Closeable, Store {
 	@Override
 	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException {
 		if (contentDigest == null) throw new NullPointerException("Content digest is null");
+		System.out.println("WarcStore:Store Uri = " + uri);
+		writeToFileBufferedWriter(uri.toString() + '\n');
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, response);
 		HeaderGroup warcHeaders = record.getWarcHeaders();
 		warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString(contentDigest)));
