@@ -303,6 +303,9 @@ public class HTMLParser<T> implements Parser<T> {
 	protected final char[] buffer;
 	/** The charset we guessed for the last response. */
 	protected String guessedCharset;
+	/** The charset ICU4J guessed for the last response. */
+	protected StringBuilder pageContent;
+
 	/** An object emboding the digest logic, or {@code null} for no digest computation. */
 	protected final DigestAppendable digestAppendable;
 	/** A text processor, or {@code null}. */
@@ -421,6 +424,7 @@ public class HTMLParser<T> implements Parser<T> {
 	@Override
 	public byte[] parse(final URI uri, final HttpResponse httpResponse, final LinkReceiver linkReceiver) throws IOException {
 		guessedCharset = "ISO-8859-1";
+		pageContent = new StringBuilder();
 
 		final HttpEntity entity = httpResponse.getEntity();
 
@@ -575,6 +579,8 @@ public class HTMLParser<T> implements Parser<T> {
 							if (segment instanceof CharacterReference) ((CharacterReference)segment).appendCharTo(digestAppendable);
 							else digestAppendable.append(segment);
 						}
+						if (!(segment instanceof CharacterReference))
+							pageContent.append(segment);
 					}
 			}
 		}
@@ -600,6 +606,11 @@ public class HTMLParser<T> implements Parser<T> {
 	@Override
 	public String guessedCharset() {
 		return guessedCharset;
+	}
+
+	@Override
+	public String getPageContent() {
+		return (pageContent.toString());
 	}
 
 	/** Returns the BURL location header, if present; if it is not present, but the page contains a valid metalocation, the latter

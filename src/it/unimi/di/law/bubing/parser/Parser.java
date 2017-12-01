@@ -153,6 +153,8 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 */
 	public String guessedCharset();
 
+	public String getPageContent();
+
 	/**
 	 * Returns the result of the processing.
 	 *

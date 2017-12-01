@@ -389,7 +389,8 @@ public class ParsingThread extends Thread {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
 										guessedCharset = parser.guessedCharset();
-										icuGuessedCharset = icuGuessedCharset(digest);
+										icuGuessedCharset = icuGuessedCharset(parser.getPageContent().getBytes());
+//										System.out.println("Bubing Guessed Charset : " + guessedCharset + "\nIcu4j Guessed Charset : " + icuGuessedCharset + "\n-------------");
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
