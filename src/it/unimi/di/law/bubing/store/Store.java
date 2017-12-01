@@ -28,7 +28,7 @@ import org.apache.http.HttpResponse;
 
 public interface Store extends Closeable {
 
-	void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException;
+	void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, final String icuGuessedCharset) throws IOException, InterruptedException;
 
 	@Override
 	void close() throws IOException;

@@ -71,6 +71,7 @@ public class WarcHeader extends BasicHeader {
 		/* BUbiNG headers */
 
 		BUBING_GUESSED_CHARSET("BUbiNG-Guessed-Charset"),
+		ICU_GUESSED_CHARSET("BUbiNG-Guessed-ICU-Charset"),
 		BUBING_IS_DUPLICATE("BUbiNG-Is-Duplicate");
 
 		protected final String value;

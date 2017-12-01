@@ -64,12 +64,14 @@ public class WarcStore implements Closeable, Store {
 	}
 
 	@Override
-	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException {
+	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, final String icuGuessedCharset) throws IOException, InterruptedException {
 		if (contentDigest == null) throw new NullPointerException("Content digest is null");
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, response);
+
 		HeaderGroup warcHeaders = record.getWarcHeaders();
 		warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString(contentDigest)));
 		if (guessedCharset != null) warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.BUBING_GUESSED_CHARSET, guessedCharset));
+		if (icuGuessedCharset != null) warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.ICU_GUESSED_CHARSET, icuGuessedCharset));
 		if (isDuplicate) warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.BUBING_IS_DUPLICATE, "true"));
 		writer.write(record);
 	}
