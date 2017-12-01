@@ -451,7 +451,8 @@ public class ParsingThread extends Thread {
 							incrementCountAndPurge(false, visitState, rc);
 							result = "duplicate";
 						}
-						store.store(fetchData.uri(), fetchData.response(), ! isNotDuplicate, digest, guessedCharset, icuGuessedCharset);
+						if (!(guessedCharset.equalsIgnoreCase(icuGuessedCharset)))
+							store.store(fetchData.uri(), fetchData.response(), ! isNotDuplicate, digest, guessedCharset, icuGuessedCharset);
 					}
 					else {
 						result = "not stored";
