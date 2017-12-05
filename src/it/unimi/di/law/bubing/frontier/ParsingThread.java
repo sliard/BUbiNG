@@ -389,7 +389,9 @@ public class ParsingThread extends Thread {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
 										guessedCharset = parser.guessedCharset();
-										icuGuessedCharset = icuGuessedCharset(parser.getPageContent().getBytes());
+										LOGGER.debug("Trying to guess charset for " + url.toString());
+										icuGuessedCharset = icuGuessedCharset(parser.getPageContent().getBytes(guessedCharset));
+										LOGGER.debug("Guessed charset for " + url.toString() + " is " + icuGuessedCharset);
 //										System.out.println("Bubing Guessed Charset : " + guessedCharset + "\nIcu4j Guessed Charset : " + icuGuessedCharset + "\n-------------");
 										break;
 									}
@@ -451,8 +453,8 @@ public class ParsingThread extends Thread {
 							incrementCountAndPurge(false, visitState, rc);
 							result = "duplicate";
 						}
-						if (!(guessedCharset.equalsIgnoreCase(icuGuessedCharset)))
-							store.store(fetchData.uri(), fetchData.response(), ! isNotDuplicate, digest, guessedCharset, icuGuessedCharset);
+						if ((guessedCharset != null) && (icuGuessedCharset != null) && !(guessedCharset.equalsIgnoreCase(icuGuessedCharset)))
+							store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset, icuGuessedCharset);
 					}
 					else {
 						result = "not stored";
@@ -481,6 +483,6 @@ public class ParsingThread extends Thread {
 		CharsetDetector detector = new CharsetDetector();
 		detector.setText(input);
 		CharsetMatch match = detector.detect();
-		return Charset.forName(match.getName().toUpperCase()).toString();
+		return (match.getName().toUpperCase());
 	}
 }
