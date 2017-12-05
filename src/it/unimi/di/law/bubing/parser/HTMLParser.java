@@ -423,7 +423,7 @@ public class HTMLParser<T> implements Parser<T> {
 
 	@Override
 	public byte[] parse(final URI uri, final HttpResponse httpResponse, final LinkReceiver linkReceiver) throws IOException {
-		guessedCharset = "ISO-8859-1";
+		guessedCharset = null;
 		pageContent = new StringBuilder();
 
 		final HttpEntity entity = httpResponse.getEntity();
@@ -455,17 +455,20 @@ public class HTMLParser<T> implements Parser<T> {
 		}
 
 
-		if (LOGGER.isDebugEnabled()) LOGGER.debug("Guessing charset \"{}\" for URL {}", guessedCharset, uri);
-
-		Charset charset = Charsets.ISO_8859_1; // Fallback
-		try {
-			charset = Charset.forName(guessedCharset);
-		}
-		catch(IllegalCharsetNameException e) {
-			if (LOGGER.isDebugEnabled()) LOGGER.debug("Response for {} contained an illegal charset name: \"{}\"", uri, guessedCharset);
-		}
-		catch(UnsupportedCharsetException e) {
-			if (LOGGER.isDebugEnabled()) LOGGER.debug("Response for {} contained an unsupported charset: \"{}\"", uri, guessedCharset);
+		if (LOGGER.isDebugEnabled())
+			LOGGER.debug("Guessing charset \"{}\" for URL {}", guessedCharset, uri);
+		Charset charset = Charsets.UTF_8; // Fallback
+		if (guessedCharset != null)
+		{
+			try {
+				charset = Charset.forName(guessedCharset);
+			} catch (IllegalCharsetNameException e) {
+				if (LOGGER.isDebugEnabled())
+					LOGGER.debug("Response for {} contained an illegal charset name: \"{}\"", uri, guessedCharset);
+			} catch (UnsupportedCharsetException e) {
+				if (LOGGER.isDebugEnabled())
+					LOGGER.debug("Response for {} contained an unsupported charset: \"{}\"", uri, guessedCharset);
+			}
 		}
 
 		linkReceiver.init(uri);
