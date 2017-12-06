@@ -480,6 +480,6 @@ public class ParsingThread extends Thread {
 		CharsetDetector detector = new CharsetDetector();
 		detector.setText(input);
 		CharsetMatch match = detector.detect();
-		return (match.getName().toUpperCase());
+		return (match.getName());
 	}
 }

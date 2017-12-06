@@ -90,7 +90,7 @@ public class MultiWarcStore implements Closeable, Store {
 		HeaderGroup warcHeaders = record.getWarcHeaders();
 		warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString( contentDigest ) ) );
 		if ( guessedCharset != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_CHARSET, guessedCharset ) );
-		if ( icuGuessedCharset != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.ICU_GUESSED_CHARSET, icuGuessedCharset.toUpperCase() ) );
+		if ( icuGuessedCharset != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.ICU_GUESSED_CHARSET, icuGuessedCharset ) );
 		if ( isDuplicate ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_IS_DUPLICATE, "true" ) );
 		synchronized(counterLock) {
 			long currentTime = new Date().getTime()/1000;
