@@ -305,7 +305,7 @@ public class HTMLParser<T> implements Parser<T> {
 	protected String guessedCharset;
 	/** The charset ICU4J guessed for the last response. */
 	protected StringBuilder pageContent;
-
+	protected Charset charset;
 	/** An object emboding the digest logic, or {@code null} for no digest computation. */
 	protected final DigestAppendable digestAppendable;
 	/** A text processor, or {@code null}. */
@@ -457,7 +457,7 @@ public class HTMLParser<T> implements Parser<T> {
 
 		if (LOGGER.isDebugEnabled())
 			LOGGER.debug("Guessing charset \"{}\" for URL {}", guessedCharset, uri);
-		Charset charset = Charsets.UTF_8; // Fallback
+		charset = Charsets.UTF_8; // Fallback
 		if (guessedCharset != null)
 		{
 			try {
@@ -609,6 +609,11 @@ public class HTMLParser<T> implements Parser<T> {
 	@Override
 	public String guessedCharset() {
 		return guessedCharset;
+	}
+
+	@Override
+	public Charset getCharset() {
+		return charset;
 	}
 
 	@Override
