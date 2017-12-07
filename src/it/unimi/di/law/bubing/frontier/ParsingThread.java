@@ -16,6 +16,8 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.ibm.icu.text.CharsetDetector;
+import com.ibm.icu.text.CharsetMatch;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.parser.HTMLParser;
 import it.unimi.di.law.bubing.parser.Parser;
@@ -38,6 +40,7 @@ import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.BufferOverflowException;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -355,7 +358,9 @@ public class ParsingThread extends Thread {
 					frontier.fetchedResources.incrementAndGet();
 
 					byte[] digest = null;
-					String guessedCharset = null;
+					String guessedMetaCharset = null;
+					String guessedHeaderCharset = null;
+					String icuGuessedCharset = null;
 					final LinkReceiver linkReceiver = rc.followFilter.apply(fetchData) ? new HTMLParser.SetLinkReceiver() : Parser.NULL_LINK_RECEIVER;
 
 					frontierLinkReceiver.init(visitState.schemeAuthority, visitState.robotsFilter);
@@ -384,7 +389,10 @@ public class ParsingThread extends Thread {
 										} catch(IOException e) {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
-										guessedCharset = parser.guessedCharset();
+										guessedMetaCharset = parser.getMetaCharset();
+										guessedHeaderCharset = parser.getHeaderCharset();
+										icuGuessedCharset = icuGuessedCharset(parser.getPageContent().getBytes(parser.getCharset()));
+//										System.out.println("Bubing Guessed Charset : " + guessedCharset + "\nIcu4j Guessed Charset : " + icuGuessedCharset + "\n-------------");
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
@@ -445,7 +453,7 @@ public class ParsingThread extends Thread {
 							incrementCountAndPurge(false, visitState, rc);
 							result = "duplicate";
 						}
-						store.store(fetchData.uri(), fetchData.response(), ! isNotDuplicate, digest, guessedCharset);
+						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedMetaCharset, guessedHeaderCharset, icuGuessedCharset);
 					}
 					else {
 						result = "not stored";
@@ -468,5 +476,12 @@ public class ParsingThread extends Thread {
 		catch (Throwable t) {
 			LOGGER.error("Unexpected exception", t);
 		}
+	}
+
+	private String icuGuessedCharset(byte[] input) {
+		CharsetDetector detector = new CharsetDetector();
+		detector.setText(input);
+		CharsetMatch match = detector.detect();
+		return (match.getName());
 	}
 }

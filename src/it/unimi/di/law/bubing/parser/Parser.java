@@ -23,6 +23,7 @@ import it.unimi.dsi.lang.FlyweightPrototype;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.util.Iterator;
 
 import org.apache.http.HttpResponse;
@@ -151,7 +152,13 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 *
 	 * @return a charset or {@code null}.
 	 */
-	public String guessedCharset();
+	public String getMetaCharset();
+
+	public String getPageContent();
+
+	public Charset getCharset();
+
+	public String getHeaderCharset();
 
 	/**
 	 * Returns the result of the processing.
