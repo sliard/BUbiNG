@@ -426,6 +426,8 @@ public class HTMLParser<T> implements Parser<T> {
 	@Override
 	public byte[] parse(final URI uri, final HttpResponse httpResponse, final LinkReceiver linkReceiver) throws IOException {
 		guessedCharset = null;
+		metaCharset = null;
+		headerCharset = null;
 		pageContent = new StringBuilder();
 
 		final HttpEntity entity = httpResponse.getEntity();
