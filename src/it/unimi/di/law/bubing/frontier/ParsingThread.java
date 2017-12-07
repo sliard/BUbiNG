@@ -358,7 +358,8 @@ public class ParsingThread extends Thread {
 					frontier.fetchedResources.incrementAndGet();
 
 					byte[] digest = null;
-					String guessedCharset = null;
+					String guessedMetaCharset = null;
+					String guessedHeaderCharset = null;
 					String icuGuessedCharset = null;
 					final LinkReceiver linkReceiver = rc.followFilter.apply(fetchData) ? new HTMLParser.SetLinkReceiver() : Parser.NULL_LINK_RECEIVER;
 
@@ -388,7 +389,8 @@ public class ParsingThread extends Thread {
 										} catch(IOException e) {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
-										guessedCharset = parser.guessedCharset();
+										guessedMetaCharset = parser.getMetaCharset();
+										guessedHeaderCharset = parser.getHeaderCharset();
 										icuGuessedCharset = icuGuessedCharset(parser.getPageContent().getBytes(parser.getCharset()));
 //										System.out.println("Bubing Guessed Charset : " + guessedCharset + "\nIcu4j Guessed Charset : " + icuGuessedCharset + "\n-------------");
 										break;
@@ -451,7 +453,7 @@ public class ParsingThread extends Thread {
 							incrementCountAndPurge(false, visitState, rc);
 							result = "duplicate";
 						}
-						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset, icuGuessedCharset);
+						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedMetaCharset, guessedHeaderCharset, icuGuessedCharset);
 					}
 					else {
 						result = "not stored";

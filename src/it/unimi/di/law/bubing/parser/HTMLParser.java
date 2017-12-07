@@ -316,6 +316,8 @@ public class HTMLParser<T> implements Parser<T> {
 	protected URI metaLocation;
 	/** If <code>true</code>, pages with the same content but with different authorities are considered duplicates. */
 	protected boolean crossAuthorityDuplicates;
+	protected String headerCharset = null;
+	protected String metaCharset = null;
 
 	/**
 	 * Builds a parser with a fixed buffer of {@link #CHAR_BUFFER_SIZE} characters for link extraction and, possibly, digesting a page. By default, only pages from within the same
@@ -432,7 +434,7 @@ public class HTMLParser<T> implements Parser<T> {
 		// Try to guess using headers
 		final Header contentTypeHeader = entity.getContentType();
 		if (contentTypeHeader != null) {
-			final String headerCharset = getCharsetNameFromHeader(contentTypeHeader.getValue());
+			headerCharset = getCharsetNameFromHeader(contentTypeHeader.getValue());
 			if (headerCharset != null) guessedCharset = headerCharset;
 		}
 
@@ -443,13 +445,14 @@ public class HTMLParser<T> implements Parser<T> {
 			a store, the second while crawling. They should be aligned. This is a bit tricky,
 			but we want to avoid the dependency on "rewindable" streams while parsing. */
 
-		final Header bubingGuessedCharsetHeader = httpResponse instanceof WarcRecord ? ((WarcRecord)httpResponse).getWarcHeader(WarcHeader.Name.BUBING_GUESSED_CHARSET) : null;
+		final Header bubingGuessedCharsetHeader = httpResponse instanceof WarcRecord ? ((WarcRecord)httpResponse).getWarcHeader(WarcHeader.Name.HTTP_GUESSED_CHARSET) : null;
 
 		if (bubingGuessedCharsetHeader != null) guessedCharset = bubingGuessedCharsetHeader.getValue();
 		else {
 			if (contentStream instanceof InspectableFileCachedInputStream) {
 				final InspectableFileCachedInputStream inspectableStream = (InspectableFileCachedInputStream)contentStream;
-				final String metaCharset = getCharsetName(inspectableStream.buffer, inspectableStream.inspectable);
+				final String tmpMetaCharset = getCharsetName(inspectableStream.buffer, inspectableStream.inspectable);
+				if (tmpMetaCharset != null) metaCharset = tmpMetaCharset;
 				if (metaCharset != null) guessedCharset = metaCharset;
 			}
 		}
@@ -607,8 +610,13 @@ public class HTMLParser<T> implements Parser<T> {
 	}
 
 	@Override
-	public String guessedCharset() {
-		return guessedCharset;
+	public String getMetaCharset() {
+		return metaCharset;
+	}
+
+	@Override
+	public String getHeaderCharset () {
+		return headerCharset;
 	}
 
 	@Override
@@ -640,7 +648,7 @@ public class HTMLParser<T> implements Parser<T> {
 	/** Used by {@link #getCharsetName(byte[], int)}. */
 	protected static final Pattern CONTENT_PATTERN = Pattern.compile(".*content\\s*=\\s*('|\")([^'\"]*)('|\").*", Pattern.CASE_INSENSITIVE);
 	/** Used by {@link #getCharsetName(byte[], int)}. */
-	protected static final Pattern CHARSET_PATTERN = Pattern.compile (".*charset\\s*=\\s*(([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=]])+|\"[^\"]*\").*", Pattern.CASE_INSENSITIVE);
+	protected static final Pattern CHARSET_PATTERN = Pattern.compile (".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE);
 
 	/** Returns the charset name as indicated by a <code>META</code>
 	 * <code>HTTP-EQUIV</code> element, if
@@ -674,9 +682,13 @@ public class HTMLParser<T> implements Parser<T> {
 			final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(buffer, start + META_PATTERN.length(), end - start - META_PATTERN.length());
 			if (HTTP_EQUIV_PATTERN.matcher(tagContent).matches()) {
 				final Matcher m = CONTENT_PATTERN.matcher(tagContent);
-				if (m.matches()) return getCharsetNameFromHeader(m.group(2)); // got it!
+				if (m.matches())
+					return getCharsetNameFromHeader(m.group(2)); // got it!
 			}
 
+			final Matcher mCharset = CHARSET_PATTERN.matcher(tagContent);
+			if (mCharset.matches())
+				return getCharsetNameFromHeader(mCharset.group(0)); // got it!
 			start = end + 1;
 		}
 
