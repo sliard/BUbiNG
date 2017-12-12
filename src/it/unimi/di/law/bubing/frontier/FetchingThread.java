@@ -209,7 +209,9 @@ public final class FetchingThread extends Thread implements Closeable {
 
 		List<BasicHeader> headers = new ArrayList<BasicHeader>();
 		headers.add(new BasicHeader("Accept","text/html,application/xhtml+xml,application/xml;q=0.95,text/*;q=0.9,*/*;q=0.8"));
-		headers.add(new BasicHeader("Accept-Language","fr-FR,fr;q=0.8,en-US;q=0.6,en;q=0.4"));
+//		headers.add(new BasicHeader("Accept-Language","fr-FR,fr;q=0.8,en-US;q=0.6,en;q=0.4"));
+		headers.add(new BasicHeader("Accept-Language","*"));
+		headers.add(new BasicHeader("Accept-Charset","*"));
 		headers.add(new BasicHeader("From", frontier.rc.userAgentFrom));
 
 		cookieStore = new BasicCookieStore();
