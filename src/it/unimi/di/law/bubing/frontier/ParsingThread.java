@@ -184,11 +184,18 @@ public class ParsingThread extends Thread {
 
 			Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
 			lock.lock();
+			String host = url.getHost();
+			int firstPoint = 0;
 			try {
-				if (frontier.rc.blackListedHostHashes.contains(url.getHost().hashCode())) {
-					if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not scheduling URL " + url + ": host " + url.getHost() + " is blacklisted");
-					return;
-				}
+				do {
+					if (frontier.rc.blackListedHostHashes.contains(host.hashCode())) {
+						if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not scheduling URL " + url + ": host " + host + " is blacklisted");
+						return;
+					}
+					firstPoint = host.indexOf('.')+1; // firstPoint == 0 if not point found
+					if (firstPoint > 0)
+						host = host.substring(firstPoint);
+				} while (firstPoint > 0);
 			} finally {
 				lock.unlock();
 			}
