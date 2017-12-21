@@ -325,22 +325,22 @@ public final class FetchingThread extends Thread implements Closeable {
 						boolean dequeued = false;
 						lock.lock();
 						String host = url.getHost();
-                        			int firstPoint = 0;
-                        			try {
-                                			do {
-                                        			if (frontier.rc.blackListedHostHashes.contains(host.hashCode())) {
+						int firstPoint = 0;
+						try {
+							do {
+								if (frontier.rc.blackListedHostHashes.contains(host.hashCode())) {
 									if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by last-minute check for host blacklisting", url);
-                                        				visitState.dequeue();
-                                                                	dequeued = true;
-                                                                	continue;
-                                                        	} else
-                                                                	dequeued = true;
+									visitState.dequeue();
+									dequeued = true;
+									continue;
+								} else
+									dequeued = true;
 
-                                        			firstPoint = host.indexOf('.')+1; // firstPoint == 0 if not point found
-                                        			if (firstPoint > 0)
-                                                			host = host.substring(firstPoint);
-                                			} while (firstPoint > 0);
-                       				} finally {
+								firstPoint = host.indexOf('.')+1; // firstPoint == 0 if not point found
+								if (firstPoint > 0)
+									host = host.substring(firstPoint);
+							} while (firstPoint > 0);
+						} finally {
 							if (!dequeued) visitState.dequeue();
 							lock.unlock();
 						}

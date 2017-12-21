@@ -399,7 +399,6 @@ public class ParsingThread extends Thread {
 										guessedMetaCharset = parser.getMetaCharset();
 										guessedHeaderCharset = parser.getHeaderCharset();
 										icuGuessedCharset = icuGuessedCharset(parser.getPageContent().getBytes(parser.getCharset()));
-//										System.out.println("Bubing Guessed Charset : " + guessedCharset + "\nIcu4j Guessed Charset : " + icuGuessedCharset + "\n-------------");
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
