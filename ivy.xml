@@ -33,7 +33,7 @@
 		<dependency org="org.slf4j" name="jcl-over-slf4j" rev="latest.release"/>
 		<dependency org="ch.qos.logback" name="logback-classic" rev="latest.release"/>
 
-		<dependency org="it.unimi.dsi" name="fastutil" rev="latest.release"/>
+		<dependency org="it.unimi.dsi" name="fastutil" rev="8.1.1"/>
 		<dependency org="it.unimi.dsi" name="webgraph" rev="latest.release"/>
 		<dependency org="it.unimi.dsi" name="webgraph-big" rev="latest.release"/>
 		<dependency org="it.unimi.dsi" name="sux4j" rev="latest.release" />

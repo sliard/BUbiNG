@@ -27,6 +27,7 @@ import it.unimi.di.law.warc.filters.Filters;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.io.BinIO;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.io.FastBufferedReader;
 import it.unimi.dsi.io.LineIterator;
 import it.unimi.dsi.lang.FlyweightPrototype;
@@ -63,6 +64,7 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Iterators;
 import com.google.common.primitives.Ints;
 
+import static it.unimi.di.law.bubing.tool.HostHash.hostLongHash;
 //RELEASE-STATUS: DIST
 
 /** Global data shared by all threads.
@@ -153,7 +155,7 @@ public class RuntimeConfiguration {
 
 	/** The set of hashes of hosts that should be blacklisted.
 	 * @see StartupConfiguration#blackListedHosts */
-	public final IntOpenHashSet blackListedHostHashes;
+	public final LongOpenHashSet blackListedHostHashes;
 
 	/** A lock used to access {@link #blackListedHostHashes}. */
 	public final ReadWriteLock blackListedHostHashesLock;
@@ -348,10 +350,10 @@ public class RuntimeConfiguration {
 			final LineIterator lineIterator = new LineIterator(new FastBufferedReader(new InputStreamReader(new FileInputStream(spec.substring(5)), Charsets.ISO_8859_1)));
 			while (lineIterator.hasNext()) {
 				MutableString line = lineIterator.next();
-				blackListedHostHashes.add(line.toString().trim().hashCode());
+				blackListedHostHashes.add(hostLongHash(line.toString().trim()));
 			}
 		}
-		else blackListedHostHashes.add(spec.trim().hashCode());
+		else blackListedHostHashes.add(hostLongHash(spec.trim()));
 	}
 
 	public RuntimeConfiguration(final StartupConfiguration startupConfiguration) throws ConfigurationException, IOException {
@@ -428,7 +430,7 @@ public class RuntimeConfiguration {
 			for(String spec : startupConfiguration.blackListedIPv4Addresses) addBlackListedIPv4(spec);
 			blackListedIPv4Lock = new ReentrantReadWriteLock();
 
-			blackListedHostHashes = new IntOpenHashSet();
+			blackListedHostHashes = new LongOpenHashSet();
 			for(String spec : startupConfiguration.blackListedHosts) addBlackListedHost(spec);
 			blackListedHostHashesLock = new ReentrantReadWriteLock();
 

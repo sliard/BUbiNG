@@ -12,7 +12,6 @@ import java.util.concurrent.locks.Lock;
 import javax.net.ssl.SSLContext;
 import java.security.cert.X509Certificate;
 
-import org.apache.http.HttpConnection;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.config.ConnectionConfig;
@@ -31,13 +30,10 @@ import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
 import org.apache.http.message.BasicHeader;
-import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.http.ssl.SSLContexts;
 import org.apache.http.ssl.TrustStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.primitives.Ints;
 
 /*
  * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -61,7 +57,6 @@ import it.unimi.di.law.bubing.util.FetchData;
 import it.unimi.di.law.bubing.util.LockFreeQueue;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.dsi.bits.Fast;
-import it.unimi.dsi.fastutil.objects.ObjectLists;
 
 //RELEASE-STATUS: DIST
 
@@ -320,48 +315,29 @@ public final class FetchingThread extends Thread implements Closeable {
 					else {
 						if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null) LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
 
-						// Check for blacklisting (host)
+						// Check for blacklisted Host
 						Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
-						boolean dequeued = false;
 						lock.lock();
-						String host = url.getHost();
-						int firstPoint = 0;
 						try {
-							do {
-								if (frontier.rc.blackListedHostHashes.contains(host.hashCode())) {
-									if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by last-minute check for host blacklisting", url);
-									visitState.dequeue();
-									dequeued = true;
-									continue;
-								} else
-									dequeued = true;
-
-								firstPoint = host.indexOf('.')+1; // firstPoint == 0 if not point found
-								if (firstPoint > 0)
-									host = host.substring(firstPoint);
-							} while (firstPoint > 0);
+							if (BlackListing.checkBlacklistedHost(frontier, url)) {
+								visitState.dequeue();
+								continue;
+							}
 						} finally {
-							if (!dequeued) visitState.dequeue();
 							lock.unlock();
 						}
 
-						// Check for blacklisting (IP)
+						// Check for blacklisted IP
 						byte[] address = visitState.workbenchEntry.ipAddress;
 						if (address.length == 4) {
 							lock = frontier.rc.blackListedIPv4Lock.readLock();
-							dequeued = false;
 							lock.lock();
 							try {
-								// We use Ints.fromBytes() as the array version generates an Object array just to log, possibly, a wrong argument (!)
-								if (frontier.rc.blackListedIPv4Addresses.contains(Ints.fromBytes(address[0], address[1], address[2], address[3]))) {
-									if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by last-minute check for IP blacklisting", url);
+								if (BlackListing.checkBlacklistedIP(frontier, url, address)) {
 									visitState.dequeue();
-									dequeued = true;
 									continue;
-								} else
-									dequeued = true;
+								}
 							} finally {
-								if (!dequeued) visitState.dequeue();
 								lock.unlock();
 							}
 						}

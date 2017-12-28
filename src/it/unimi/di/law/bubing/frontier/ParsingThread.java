@@ -40,7 +40,6 @@ import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.BufferOverflowException;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -184,18 +183,9 @@ public class ParsingThread extends Thread {
 
 			Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
 			lock.lock();
-			String host = url.getHost();
-			int firstPoint = 0;
 			try {
-				do {
-					if (frontier.rc.blackListedHostHashes.contains(host.hashCode())) {
-						if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not scheduling URL " + url + ": host " + host + " is blacklisted");
-						return;
-					}
-					firstPoint = host.indexOf('.')+1; // firstPoint == 0 if not point found
-					if (firstPoint > 0)
-						host = host.substring(firstPoint);
-				} while (firstPoint > 0);
+				if (BlackListing.checkBlacklistedHost(frontier, url))
+					return;
 			} finally {
 				lock.unlock();
 			}
