@@ -303,9 +303,10 @@ public class HTMLParser<T> implements Parser<T> {
 	protected final char[] buffer;
 	/** The charset we guessed for the last response. */
 	protected String guessedCharset;
-	/** The charset ICU4J guessed for the last response. */
+	/** The charset we guessed for the last response. */
+	protected Charset finalGuessedCharset;
+	/** The cleaned (without style/script) page content for the last response. */
 	protected StringBuilder pageContent;
-	protected Charset charset;
 	/** An object emboding the digest logic, or {@code null} for no digest computation. */
 	protected final DigestAppendable digestAppendable;
 	/** A text processor, or {@code null}. */
@@ -316,8 +317,6 @@ public class HTMLParser<T> implements Parser<T> {
 	protected URI metaLocation;
 	/** If <code>true</code>, pages with the same content but with different authorities are considered duplicates. */
 	protected boolean crossAuthorityDuplicates;
-	protected String headerCharset = null;
-	protected String metaCharset = null;
 
 	/**
 	 * Builds a parser with a fixed buffer of {@link #CHAR_BUFFER_SIZE} characters for link extraction and, possibly, digesting a page. By default, only pages from within the same
@@ -426,8 +425,6 @@ public class HTMLParser<T> implements Parser<T> {
 	@Override
 	public byte[] parse(final URI uri, final HttpResponse httpResponse, final LinkReceiver linkReceiver) throws IOException {
 		guessedCharset = null;
-		metaCharset = null;
-		headerCharset = null;
 		pageContent = new StringBuilder();
 
 		final HttpEntity entity = httpResponse.getEntity();
@@ -436,7 +433,7 @@ public class HTMLParser<T> implements Parser<T> {
 		// Try to guess using headers
 		final Header contentTypeHeader = entity.getContentType();
 		if (contentTypeHeader != null) {
-			headerCharset = getCharsetNameFromHeader(contentTypeHeader.getValue());
+			final String headerCharset = getCharsetNameFromHeader(contentTypeHeader.getValue());
 			if (headerCharset != null) guessedCharset = headerCharset;
 		}
 
@@ -447,14 +444,13 @@ public class HTMLParser<T> implements Parser<T> {
 			a store, the second while crawling. They should be aligned. This is a bit tricky,
 			but we want to avoid the dependency on "rewindable" streams while parsing. */
 
-		final Header bubingGuessedCharsetHeader = httpResponse instanceof WarcRecord ? ((WarcRecord)httpResponse).getWarcHeader(WarcHeader.Name.HTTP_GUESSED_CHARSET) : null;
+		final Header bubingGuessedCharsetHeader = httpResponse instanceof WarcRecord ? ((WarcRecord)httpResponse).getWarcHeader(WarcHeader.Name.BUBING_GUESSED_CHARSET) : null;
 
 		if (bubingGuessedCharsetHeader != null) guessedCharset = bubingGuessedCharsetHeader.getValue();
 		else {
 			if (contentStream instanceof InspectableFileCachedInputStream) {
 				final InspectableFileCachedInputStream inspectableStream = (InspectableFileCachedInputStream)contentStream;
-				final String tmpMetaCharset = getCharsetName(inspectableStream.buffer, inspectableStream.inspectable);
-				if (tmpMetaCharset != null) metaCharset = tmpMetaCharset;
+				final String metaCharset = getCharsetName(inspectableStream.buffer, inspectableStream.inspectable);
 				if (metaCharset != null) guessedCharset = metaCharset;
 			}
 		}
@@ -462,7 +458,7 @@ public class HTMLParser<T> implements Parser<T> {
 
 		if (LOGGER.isDebugEnabled())
 			LOGGER.debug("Guessing charset \"{}\" for URL {}", guessedCharset, uri);
-		charset = Charsets.UTF_8; // Fallback
+		Charset charset = Charsets.UTF_8; // Fallback
 		if (guessedCharset != null)
 		{
 			try {
@@ -475,6 +471,7 @@ public class HTMLParser<T> implements Parser<T> {
 					LOGGER.debug("Response for {} contained an unsupported charset: \"{}\"", uri, guessedCharset);
 			}
 		}
+		finalGuessedCharset = charset;
 
 		linkReceiver.init(uri);
 		if (textProcessor != null) textProcessor.init(uri);
@@ -612,23 +609,13 @@ public class HTMLParser<T> implements Parser<T> {
 	}
 
 	@Override
-	public String getMetaCharset() {
-		return metaCharset;
+	public String guessedCharset() {
+		return guessedCharset;
 	}
 
 	@Override
-	public String getHeaderCharset () {
-		return headerCharset;
-	}
-
-	@Override
-	public Charset getCharset() {
-		return charset;
-	}
-
-	@Override
-	public String getPageContent() {
-		return (pageContent.toString());
+	public byte[] getPageContent() {
+		return pageContent.toString().getBytes(finalGuessedCharset);
 	}
 
 	/** Returns the BURL location header, if present; if it is not present, but the page contains a valid metalocation, the latter

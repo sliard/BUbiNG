@@ -152,13 +152,15 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 *
 	 * @return a charset or {@code null}.
 	 */
-	public String getMetaCharset();
+	public String guessedCharset();
 
-	public String getPageContent();
-
-	public Charset getCharset();
-
-	public String getHeaderCharset();
+	/**
+	 * Returns a cleaned (without style/script) page content, or {@code null} if the page content could not be
+	 * found.
+	 *
+	 * @return the cleaned page content or {@code null}.
+	 */
+	public byte[] getPageContent();
 
 	/**
 	 * Returns the result of the processing.

@@ -21,7 +21,6 @@ import it.unimi.di.law.warc.filters.URIResponse;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.nio.charset.Charset;
 import java.security.NoSuchAlgorithmException;
 
 import org.apache.http.HttpResponse;
@@ -103,22 +102,12 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
-	public String getHeaderCharset() {
+	public String guessedCharset() {
 		return null;
 	}
 
 	@Override
-	public Charset getCharset() {
-		return null;
-	}
-
-	@Override
-	public String getMetaCharset() {
-		return null;
-	}
-
-	@Override
-	public String getPageContent() {
+	public byte[] getPageContent() {
 		return null;
 	}
 
