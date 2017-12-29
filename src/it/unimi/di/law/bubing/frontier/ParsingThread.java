@@ -180,15 +180,8 @@ public class ParsingThread extends Thread {
 				if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not scheduling URL " + url + ": not accepted by scheduleFilter");
 				return;
 			}
-
-			Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
-			lock.lock();
-			try {
-				if (BlackListing.checkBlacklistedHost(frontier, url))
-					return;
-			} finally {
-				lock.unlock();
-			}
+			if (BlackListing.checkBlacklistedHost(frontier, url))
+				return;
 
 			final boolean sameSchemeAuthority = sameSchemeAuthority(schemeAuthority, url);
 			assert it.unimi.di.law.bubing.util.Util.toString(schemeAuthority).equals(BURL.schemeAndAuthority(url)) == sameSchemeAuthority : "(" + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority) + ").equals(" + BURL.schemeAndAuthority(url) + ") != " + sameSchemeAuthority;
