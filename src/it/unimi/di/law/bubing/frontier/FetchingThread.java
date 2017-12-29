@@ -264,7 +264,12 @@ public final class FetchingThread extends Thread implements Closeable {
 
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Next URL: {}", url);
 
-					if (path == VisitState.ROBOTS_PATH) {
+
+                    if (BlackListing.checkBlacklistedHost(frontier, url)) { // Check for blacklisted Host
+                        visitState.dequeue();
+                    } else if (BlackListing.checkBlacklistedIP(frontier, url, visitState.workbenchEntry.ipAddress)) { // Check for blacklisted IP
+                        visitState.dequeue();
+                    } else if (path == VisitState.ROBOTS_PATH) {
 						fetchData.inUse = true;
 						cookieStore.clear();
 						try {
@@ -314,34 +319,6 @@ public final class FetchingThread extends Thread implements Closeable {
 					}
 					else {
 						if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null) LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
-
-						// Check for blacklisted Host
-						Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
-						lock.lock();
-						try {
-							if (BlackListing.checkBlacklistedHost(frontier, url)) {
-								visitState.dequeue();
-								continue;
-							}
-						} finally {
-							lock.unlock();
-						}
-
-						// Check for blacklisted IP
-						byte[] address = visitState.workbenchEntry.ipAddress;
-						if (address.length == 4) {
-							lock = frontier.rc.blackListedIPv4Lock.readLock();
-							lock.lock();
-							try {
-								if (BlackListing.checkBlacklistedIP(frontier, url, address)) {
-									visitState.dequeue();
-									continue;
-								}
-							} finally {
-								lock.unlock();
-							}
-						}
-
 
 						fetchData.inUse = true;
 						cookieStore.clear();
