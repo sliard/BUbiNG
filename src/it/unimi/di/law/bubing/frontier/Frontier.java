@@ -39,6 +39,7 @@ import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.io.BinIO;
 import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
+import it.unimi.dsi.fastutil.objects.Object2ObjectRBTreeMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.jai4j.Job;
 import it.unimi.dsi.jai4j.JobListener;
@@ -244,6 +245,9 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 	/** A queue to quickly buffer URLs communicated by {@link #receive(BubingJob)}. */
 	public ArrayBlockingQueue<ByteArrayList> quickReceivedURLs;
+
+	/** A queue to quickly buffer discovered URLs that will be submitted. */
+	public ArrayBlockingQueue<ByteArrayList> quickToSendURLs;
 
 	/** A queue to buffer in the long run URLs communicated by {@link #receive(BubingJob)}. */
 	public ByteArrayDiskQueue receivedURLs;
@@ -482,6 +486,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
 		quickReceivedURLs = new ArrayBlockingQueue<>(1024);
+		quickToSendURLs = new ArrayBlockingQueue<>(1024);
 
 		if (rc.crawlIsNew) {
 			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
@@ -624,13 +629,9 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		}
 		else try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
-			agent.submit(job);
+			quickToSendURLs.add(url); // agent.submit(job);
 		}
 		catch (IllegalStateException e) {
-			// This just shouldn't happen.
-			LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
-		}
-		catch (NoSuchJobManagerException e) {
 			// This just shouldn't happen.
 			LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
 		}

@@ -20,6 +20,7 @@ package it.unimi.di.law.bubing;
 import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.frontier.MessageThread;
 import it.unimi.di.law.bubing.frontier.QuickMessageThread;
+import it.unimi.di.law.bubing.frontier.QuickToSendThread;
 import it.unimi.di.law.bubing.store.Store;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.BubingJob;
@@ -86,6 +87,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	protected final MessageThread messageThread;
 	/** @see QuickMessageThread */
 	protected final QuickMessageThread quickMessageThread;
+	/** @see QuickToSendThread */
+	protected final QuickToSendThread quickToSendThread;
 
 	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
 		// TODO: configure strategies
@@ -109,6 +112,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 		(messageThread = new MessageThread(frontier)).start();
 		(quickMessageThread = new QuickMessageThread(frontier)).start();
+		(quickToSendThread = new QuickToSendThread(frontier)).start();
 
 		connect();
 
@@ -159,6 +163,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
 		quickMessageThread.stop = true;
 		quickMessageThread.join();
+		quickToSendThread.stop = true;
+		quickToSendThread.join();
 		LOGGER.info("Joined quick message thread");
 
 		frontier.snap();
