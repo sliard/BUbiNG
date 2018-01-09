@@ -1,7 +1,18 @@
 package it.unimi.di.law.bubing.frontier;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.BufferOverflowException;
+import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.http.Header;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /*
- * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +38,7 @@ import it.unimi.di.law.bubing.spam.SpamDetector;
 import it.unimi.di.law.bubing.store.Store;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.Link;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.warc.filters.Filter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
@@ -37,19 +49,7 @@ import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 
-import java.io.IOException;
-import java.net.URI;
-import java.nio.BufferOverflowException;
-import java.util.ArrayList;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-
-import org.apache.commons.lang.StringUtils;
-import org.apache.http.Header;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 //RELEASE-STATUS: DIST
 
 /** A thread parsing pages retrieved by a {@link FetchingThread}.
@@ -116,16 +116,17 @@ public class ParsingThread extends Thread {
 		EXCEPTION_HOST_KILLER.add(org.apache.http.conn.ConnectTimeoutException.class);
 	}
 
-	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init(byte[], char[][]) initialized}
-	 *  specifying the scheme and authority of the page being visited and the robot filter to be
+	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init(URI, byte[], char[][]) initialized}
+	 *  specifying URI and scheme/authority of the page being visited and the robot filter to be
 	 *  applied. Then, one or more URLs can be {@linkplain #enqueue(URI) enqueued}: the actual
 	 *  enqueuing takes place only if the URL passes both the schedule and the robots filter.
 	 */
 	protected static final class FrontierEnqueuer {
 		private static final boolean ASSERTS = false;
 		private final Frontier frontier;
-		private final Filter<URI> scheduleFilter;
+		private final Filter<Link> scheduleFilter;
 		private byte[] schemeAuthority;
+		private URI uri;
 		private char[][] robotsFilter;
 		private final ByteArrayList byteList;
 		public int outlinks;
@@ -147,8 +148,9 @@ public class ParsingThread extends Thread {
 		 * @param schemeAuthority the scheme+authority of the page to be parsed.
 		 * @param robotsFilter the robots filter of the (authority of the) page to be parsed.
 		 */
-		public void init(byte[] schemeAuthority, char[][] robotsFilter) {
+		public void init(URI uri, byte[] schemeAuthority, char[][] robotsFilter) {
 			scheduledLinks = outlinks = 0;
+			this.uri = uri;
 			this.schemeAuthority = schemeAuthority;
 			this.robotsFilter = robotsFilter;
 		}
@@ -176,7 +178,7 @@ public class ParsingThread extends Thread {
 		public void enqueue(final URI url) {
 			if (ASSERTS) assert url != null;
 			outlinks++;
-			if (! scheduleFilter.apply(url)) {
+			if (! scheduleFilter.apply(new Link(uri, url))) {
 				if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not scheduling URL " + url + ": not accepted by scheduleFilter");
 				return;
 			}
@@ -199,7 +201,7 @@ public class ParsingThread extends Thread {
 				frontier.enqueue(byteList);
 				scheduledLinks++;
 			}
-			catch (Exception e) {
+			catch (final Exception e) {
 				LOGGER.error("Exception while enqueuing URL " + url, e);
 				throw new RuntimeException(e);
 			}
@@ -220,6 +222,8 @@ public class ParsingThread extends Thread {
 	/** A random number generator for the thread */
 	private final Random rng;
 
+	private final CharsetDetector charsetDetector;
+
 	/** Creates a thread.
 	 *
 	 * @param frontier the frontier instantiating the thread.
@@ -232,14 +236,16 @@ public class ParsingThread extends Thread {
 		this.store = store;
 		this.rng = new Random(index);
 		this.parsers = new ArrayList<>(frontier.rc.parsers.size());
-		for(Parser<?> parser : frontier.rc.parsers) this.parsers.add(parser.copy());
+		this.charsetDetector = new CharsetDetector();
+
+		for(final Parser<?> parser : frontier.rc.parsers) this.parsers.add(parser.copy());
 		setPriority((Thread.NORM_PRIORITY + Thread.MIN_PRIORITY) / 2); // Below main threads
 	}
 
 	private void incrementCountAndPurge(boolean success, VisitState visitState, RuntimeConfiguration rc) {
 		int count = 0;
 		if (success) {
-			count = frontier.schemeAuthority2Count.addTo(visitState.schemeAuthority, 1);
+			count = frontier.schemeAuthority2Count.increment(visitState.schemeAuthority);
 		} else {
 			double w = (double)rc.maxUrlsPerSchemeAuthority / (double)rc.maxRequestsPerSchemeAuthority;
 			int toAdd = 0;
@@ -249,7 +255,8 @@ public class ParsingThread extends Thread {
 			double p = w - floorW;
 			if (rng.nextDouble() < p)
 				toAdd ++;
-			count = frontier.schemeAuthority2Count.addTo(visitState.schemeAuthority, toAdd);
+			if (toAdd > 0)
+			count = frontier.schemeAuthority2Count.increment(visitState.schemeAuthority);
 		}
 		if (count >= rc.maxUrlsPerSchemeAuthority - 1) {
 			LOGGER.info("Reached maximum number of URLs for scheme+authority " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
@@ -279,7 +286,11 @@ public class ParsingThread extends Thread {
 					if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
 
 					// This is always the same, independently of what will happen.
-					visitState.workbenchEntry.nextFetch = fetchData.endTime + rc.ipDelay;
+					final int entrySize = visitState.workbenchEntry.size();
+					long ipDelay = rc.ipDelay;
+					final int knownCount = frontier.agent.getKnownCount();
+					if (knownCount > 1 && rc.ipDelayFactor != 0) ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * frontier.agent.getKnownCount() * entrySize / (entrySize + 1.)));
+							visitState.workbenchEntry.nextFetch = fetchData.endTime + ipDelay;
 
 					if (fetchData.exception != null) {
 						LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
@@ -343,7 +354,7 @@ public class ParsingThread extends Thread {
 						continue;
 					}
 
-					URI url = fetchData.uri();
+					final URI url = fetchData.uri();
 
 					frontier.fetchedResources.incrementAndGet();
 
@@ -351,14 +362,14 @@ public class ParsingThread extends Thread {
 					String guessedCharset = null;
 					final LinkReceiver linkReceiver = rc.followFilter.apply(fetchData) ? new HTMLParser.SetLinkReceiver() : Parser.NULL_LINK_RECEIVER;
 
-					frontierLinkReceiver.init(visitState.schemeAuthority, visitState.robotsFilter);
+					frontierLinkReceiver.init(fetchData.uri(), visitState.schemeAuthority, visitState.robotsFilter);
 					final long streamLength = fetchData.response().getEntity().getContentLength();
 
 					if (streamLength != 0) { // We don't parse zero-length streams
 						try {
 							if (rc.parseFilter.apply(fetchData)) {
 								boolean parserFound = false;
-								for (Parser<?> parser: parsers)
+								for (final Parser<?> parser: parsers)
 									if (parser.apply(fetchData)) {
 										parserFound = true;
 										try {
@@ -372,9 +383,9 @@ public class ParsingThread extends Thread {
 													LOGGER.info("Spammicity for " + visitState + ": " + visitState.spammicity + " (" + visitState.termCountUpdates + " updates)");
 												}
 											}
-										} catch(BufferOverflowException e) {
+										} catch(final BufferOverflowException e) {
 											LOGGER.warn("Buffer overflow during parsing of " + url + " with " + parser);
-										} catch(IOException e) {
+										} catch(final IOException e) {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
 										if (guessedCharset == null)
@@ -384,14 +395,14 @@ public class ParsingThread extends Thread {
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
 
 								frontier.outdegree.add(linkReceiver.size());
-								String currentHost = url.getHost();
+								final String currentHost = url.getHost();
 								int currentOutHostDegree = 0;
-								for(URI u: linkReceiver) if(! currentHost.equals(u.getHost())) currentOutHostDegree++;
+								for(final URI u: linkReceiver) if(! currentHost.equals(u.getHost())) currentOutHostDegree++;
 								frontier.externalOutdegree.add(currentOutHostDegree);
 							}
 							else if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not parsing page " + url);
 						}
-						catch(Exception e) {
+						catch(final Exception e) {
 							// This mainly catches Jericho and network problems
 							LOGGER.warn("Exception during parsing of " + url, e);
 						}
@@ -408,7 +419,7 @@ public class ParsingThread extends Thread {
 
 					final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
 					if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, Boolean.valueOf(isNotDuplicate));
-					if (isNotDuplicate) for(URI u: linkReceiver) frontierLinkReceiver.enqueue(u);
+					if (isNotDuplicate) for(final URI u: linkReceiver) frontierLinkReceiver.enqueue(u);
 					else fetchData.isDuplicate(true);
 
 					// ALERT: store exceptions should cause shutdown.
@@ -456,18 +467,17 @@ public class ParsingThread extends Thread {
 				}
 			}
 		}
-		catch (InterruptedException e) {
+		catch (final InterruptedException e) {
 			if (LOGGER.isDebugEnabled()) LOGGER.debug(this + " was interrupted");
 		}
-		catch (Throwable t) {
+		catch (final Throwable t) {
 			LOGGER.error("Unexpected exception", t);
 		}
 	}
 
 	private String icuGuessedCharset(byte[] input) {
-		CharsetDetector detector = new CharsetDetector();
-		detector.setText(input);
-		CharsetMatch match = detector.detect();
+		charsetDetector.setText(input);
+		CharsetMatch match = charsetDetector.detect();
 		return (match.getName());
 	}
 }

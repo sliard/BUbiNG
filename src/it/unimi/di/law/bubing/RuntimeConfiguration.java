@@ -1,39 +1,5 @@
 package it.unimi.di.law.bubing;
 
-/*
- * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-
-import it.unimi.di.law.bubing.frontier.ParsingThread;
-import it.unimi.di.law.bubing.parser.Parser;
-import it.unimi.di.law.bubing.spam.SpamDetector;
-import it.unimi.di.law.bubing.store.Store;
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.warc.filters.Filter;
-import it.unimi.di.law.warc.filters.Filters;
-import it.unimi.di.law.warc.filters.URIResponse;
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import it.unimi.dsi.fastutil.io.BinIO;
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import it.unimi.dsi.io.FastBufferedReader;
-import it.unimi.dsi.io.LineIterator;
-import it.unimi.dsi.lang.FlyweightPrototype;
-import it.unimi.dsi.lang.MutableString;
-import it.unimi.dsi.lang.ObjectParser;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -64,7 +30,43 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Iterators;
 import com.google.common.primitives.Ints;
 
+/*
+ * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
+import it.unimi.di.law.bubing.frontier.ParsingThread;
+import it.unimi.di.law.bubing.parser.Parser;
+import it.unimi.di.law.bubing.spam.SpamDetector;
+import it.unimi.di.law.bubing.store.Store;
+import it.unimi.di.law.bubing.util.BURL;
+import it.unimi.di.law.bubing.util.Link;
+import it.unimi.di.law.warc.filters.Filter;
+import it.unimi.di.law.warc.filters.Filters;
+import it.unimi.di.law.warc.filters.URIResponse;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.io.BinIO;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.io.FastBufferedReader;
+import it.unimi.dsi.io.LineIterator;
+import it.unimi.dsi.lang.FlyweightPrototype;
+import it.unimi.dsi.lang.MutableString;
+import it.unimi.dsi.lang.ObjectParser;
+
 import static it.unimi.di.law.bubing.tool.HostHash.hostLongHash;
+
 //RELEASE-STATUS: DIST
 
 /** Global data shared by all threads.
@@ -116,7 +118,7 @@ public class RuntimeConfiguration {
 	public volatile Filter<URI> fetchFilter;
 
 	/** @see StartupConfiguration#scheduleFilter */
-	public volatile Filter<URI> scheduleFilter;
+	public volatile Filter<Link> scheduleFilter;
 
 	/** @see StartupConfiguration#parseFilter */
 	public volatile Filter<URIResponse> parseFilter;
@@ -135,6 +137,9 @@ public class RuntimeConfiguration {
 
 	/** @see StartupConfiguration#ipDelay */
 	public volatile long ipDelay;
+
+	/** @see StartupConfiguration#ipDelayFactor */
+	public volatile double ipDelayFactor;
 
 	/** @see StartupConfiguration#maxUrls */
 	public volatile long maxUrls;
@@ -189,6 +194,9 @@ public class RuntimeConfiguration {
 
 	/** @see StartupConfiguration#robotsExpiration */
 	public volatile long robotsExpiration;
+
+	/** @see StartupConfiguration#acceptAllCertificates */
+	public volatile boolean acceptAllCertificates;
 
 	/** @see StartupConfiguration#rootDir */
 	public final File rootDir;
@@ -310,10 +318,10 @@ public class RuntimeConfiguration {
 		try {
 			if (!RuntimeConfiguration.DOTTED_ADDRESS.matcher(s).matches()) throw new ConfigurationException("Malformed IPv4 " + s + " for blacklisting");
 			// Note that since we're sure this is a dotted-notation address, we pass directly through InetAddress.
-			byte[] address = InetAddress.getByName(s).getAddress();
+			final byte[] address = InetAddress.getByName(s).getAddress();
 			if (address.length > 4) throw new UnknownHostException("Not IPv4");
 			return Ints.fromByteArray(address);
-		} catch (UnknownHostException e) {
+		} catch (final UnknownHostException e) {
 			throw new ConfigurationException("Malformed IPv4 " + s + " for blacklisting", e);
 		}
 	}
@@ -330,7 +338,7 @@ public class RuntimeConfiguration {
 			if (spec.startsWith("file:")) {
 				final LineIterator lineIterator = new LineIterator(new FastBufferedReader(new InputStreamReader(new FileInputStream(spec.substring(5)), Charsets.ISO_8859_1)));
 				while (lineIterator.hasNext()) {
-					MutableString line = lineIterator.next();
+					final MutableString line = lineIterator.next();
 					if (line.length() > 0) blackListedIPv4Addresses.add(handleIPv4(line.toString()));
 				}
 			}
@@ -376,6 +384,7 @@ public class RuntimeConfiguration {
 			keepAliveTime = startupConfiguration.keepAliveTime;
 			schemeAuthorityDelay = startupConfiguration.schemeAuthorityDelay;
 			ipDelay = startupConfiguration.ipDelay;
+			ipDelayFactor = startupConfiguration.ipDelayFactor;
 			maxUrls = startupConfiguration.maxUrls;
 			bloomFilterPrecision = startupConfiguration.bloomFilterPrecision;
 			startPaused = startupConfiguration.startPaused;
@@ -395,7 +404,7 @@ public class RuntimeConfiguration {
 			try {
 				dnsResolver = startupConfiguration.dnsResolverClass.getConstructor().newInstance();
 			}
-			catch (Exception e) {
+			catch (final Exception e) {
 				throw new ConfigurationException(e.getMessage(), e);
 			}
 
@@ -410,7 +419,7 @@ public class RuntimeConfiguration {
 			spamDetectionPeriodicity = startupConfiguration.spamDetectionPeriodicity;
 
 			final List<Iterator<URI>> seedSequence = new ArrayList<>();
-			for(String spec : startupConfiguration.seed) {
+			for(final String spec : startupConfiguration.seed) {
 				if (spec.length() == 0) continue; // Skip empty lines
 				if (spec.startsWith("file:")) {
 					final LineIterator lineIterator = new LineIterator(new FastBufferedReader(new InputStreamReader(new FileInputStream(spec.substring(5)), Charsets.ISO_8859_1)));
@@ -427,7 +436,7 @@ public class RuntimeConfiguration {
 			}
 
 			blackListedIPv4Addresses = new IntOpenHashSet();
-			for(String spec : startupConfiguration.blackListedIPv4Addresses) addBlackListedIPv4(spec);
+			for(final String spec : startupConfiguration.blackListedIPv4Addresses) addBlackListedIPv4(spec);
 			blackListedIPv4Lock = new ReentrantReadWriteLock();
 
 			blackListedHostHashes = new LongOpenHashSet();
@@ -450,6 +459,7 @@ public class RuntimeConfiguration {
 			userAgent = startupConfiguration.userAgent;
 			userAgentFrom = startupConfiguration.userAgentFrom;
 			robotsExpiration = startupConfiguration.robotsExpiration;
+			acceptAllCertificates = startupConfiguration.acceptAllCertificates;
 			responseBodyMaxByteSize = startupConfiguration.responseBodyMaxByteSize;
 			digestAlgorithm = startupConfiguration.digestAlgorithm;
 			parsers = parsersFromSpecs(startupConfiguration.parserSpec); // Try to build parsers just to see if the specs are correct
@@ -458,12 +468,12 @@ public class RuntimeConfiguration {
 
 			paused = startPaused;
 		}
-		catch (IllegalArgumentException e) { throw new ConfigurationException(e); }
-		catch (ClassNotFoundException e) { throw new ConfigurationException(e); }
-		catch (IllegalAccessException e) { throw new ConfigurationException(e); }
-		catch (InvocationTargetException e) { throw new ConfigurationException(e); }
-		catch (InstantiationException e) { throw new ConfigurationException(e); }
-		catch (NoSuchMethodException e) { throw new ConfigurationException(e); }
+		catch (final IllegalArgumentException e) { throw new ConfigurationException(e); }
+		catch (final ClassNotFoundException e) { throw new ConfigurationException(e); }
+		catch (final IllegalAccessException e) { throw new ConfigurationException(e); }
+		catch (final InvocationTargetException e) { throw new ConfigurationException(e); }
+		catch (final InstantiationException e) { throw new ConfigurationException(e); }
+		catch (final NoSuchMethodException e) { throw new ConfigurationException(e); }
 
 		if (sieveSize == 0 && followFilter != Filters.FALSE) throw new ConfigurationException("Without a sieve you must specify a FALSE follow filter");
 	}
@@ -485,12 +495,14 @@ public class RuntimeConfiguration {
 	public String toString() {
 		final Class<?> thisClass = getClass();
 		final TreeMap<String,Object> values = new TreeMap<>();
-		for (Field f : thisClass.getDeclaredFields()) {
+		for (final Field f : thisClass.getDeclaredFields()) {
 			if (ReadWriteLock.class.isAssignableFrom(f.getClass())) continue;
 			if ((f.getModifiers() & Modifier.STATIC) != 0) continue;
 			try {
-				values.put(f.getName(), f.get(this));
-			} catch (IllegalAccessException e) {
+				Object o = f.get(this);
+				String v = (o != null) ? o.toString() : "null";
+				values.put(f.getName(), v.substring(0,Math.min(200,v.length()))); // cut for blacklists
+			} catch (final IllegalAccessException e) {
 				values.put(f.getName(), "<THIS SHOULD NOT HAPPEN>");
 			}
 		}
@@ -505,7 +517,7 @@ public class RuntimeConfiguration {
 	 */
 	public static ArrayList<Parser<?>> parsersFromSpecs(String[] specs) throws IllegalArgumentException, ClassNotFoundException, IllegalAccessException, InvocationTargetException, InstantiationException, NoSuchMethodException, IOException {
 		final ArrayList<Parser<?>> parsers = new ArrayList<>();
-		for(String spec : specs) parsers.add(ObjectParser.fromSpec(spec, Parser.class, new String[] { "it.unimi.di.law.bubing.parser" }));
+		for(final String spec : specs) parsers.add(ObjectParser.fromSpec(spec, Parser.class, new String[] { "it.unimi.di.law.bubing.parser" }));
 		return parsers;
 	}
 }

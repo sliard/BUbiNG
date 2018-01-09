@@ -1,7 +1,7 @@
 package it.unimi.di.law.bubing.frontier;
 
 /*
- * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,26 +25,16 @@ import it.unimi.di.law.bubing.sieve.ByteSerializerDeserializer;
 import it.unimi.di.law.bubing.sieve.IdentitySieve;
 import it.unimi.di.law.bubing.sieve.MercatorSieve;
 import it.unimi.di.law.bubing.store.Store;
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.BubingJob;
-import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
-import it.unimi.di.law.bubing.util.ConcurrentCountingMap;
-import it.unimi.di.law.bubing.util.FastApproximateByteArrayCache;
-import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.bubing.util.LockFreeQueue;
-import it.unimi.di.law.bubing.util.MurmurHash3;
-import it.unimi.di.law.bubing.util.Util;
+import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.io.BinIO;
 import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
-import it.unimi.dsi.fastutil.objects.Object2ObjectRBTreeMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.jai4j.Job;
 import it.unimi.dsi.jai4j.JobListener;
 import it.unimi.dsi.jai4j.JobManager;
-import it.unimi.dsi.jai4j.NoSuchJobManagerException;
 import it.unimi.dsi.stat.SummaryStats;
 import it.unimi.dsi.sux4j.mph.AbstractHashFunction;
 import it.unimi.dsi.util.BloomFilter;
@@ -384,7 +374,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	public final AtomicLong transferredBytes;
 
 	/** A synchronized, highly concurrent map from scheme+authorities to number of stored URLs. */
-	public ConcurrentCountingMap schemeAuthority2Count;
+	public IntCountMinSketchUnsafe schemeAuthority2Count;
 
 	/** The logarithmically binned statistics of download speed in bits/s. */
 	public final AtomicLongArray speedDist;
@@ -407,7 +397,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 			InterruptedException {
 		this.rc = rc;
 
-		schemeAuthority2Count = new ConcurrentCountingMap();
+		schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.sqrt((double)rc.maxUrlsPerSchemeAuthority)),3);
 		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
 
@@ -629,7 +619,8 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		}
 		else try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
-			quickToSendURLs.add(url); // agent.submit(job);
+			quickToSendURLs.put(url.clone());
+			// was agent.submit(job);
 		}
 		catch (IllegalStateException e) {
 			// This just shouldn't happen.
@@ -834,23 +825,20 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	// NewFlowReceiver implementation.
 
 	/** A locked copy of the counting map used for quick analysis of candidate ready URLS. */
-	private ConcurrentCountingMap.LockedMap lockedMap;
 
 	@Override
 	public void prepareToAppend() throws IOException {
-		lockedMap = schemeAuthority2Count.lock();
 	}
 
 	@Override
 	public void append(final long hash, final ByteArrayList list) throws IOException {
 		final byte[] urlBuffer = list.elements();
 		final int length = list.size();
-		if (lockedMap.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer)) < rc.maxUrlsPerSchemeAuthority) readyURLs.enqueue(urlBuffer, 0, length);
+		if (schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer)) < rc.maxUrlsPerSchemeAuthority) readyURLs.enqueue(urlBuffer, 0, length);
 	}
 
 	@Override
 	public synchronized void finishedAppending() throws IOException {
-		lockedMap.unlock();
 	}
 
 	@Override
@@ -1117,7 +1105,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		 * numVirtualQueues, false, virtualQueueSize); } */
 
 		LOGGER.info("Restoring counts");
-		schemeAuthority2Count = (ConcurrentCountingMap)BinIO.loadObject(new File(snapDir, "schemeAuthority2Count"));
+		schemeAuthority2Count = (IntCountMinSketchUnsafe) BinIO.loadObject(new File(snapDir, "schemeAuthority2Count"));
 
 		LOGGER.info("Restoring workbench");
 		final ObjectInputStream workbenchStream = new ObjectInputStream(new FastBufferedInputStream(new FileInputStream(new File(snapDir, "workbench"))));

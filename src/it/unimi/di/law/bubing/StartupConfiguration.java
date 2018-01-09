@@ -1,40 +1,5 @@
 package it.unimi.di.law.bubing;
 
-/*
- * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import it.unimi.di.law.bubing.frontier.DNSThread;
-import it.unimi.di.law.bubing.frontier.FetchingThread;
-import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.di.law.bubing.frontier.ParsingThread;
-import it.unimi.di.law.bubing.frontier.dns.DnsJavaResolver;
-import it.unimi.di.law.bubing.parser.Parser;
-import it.unimi.di.law.bubing.sieve.AbstractSieve;
-import it.unimi.di.law.bubing.spam.SpamDetector;
-import it.unimi.di.law.bubing.store.Store;
-import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
-import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.warc.filters.Filter;
-import it.unimi.di.law.warc.filters.URIResponse;
-import it.unimi.di.law.warc.filters.parser.FilterParser;
-import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import it.unimi.dsi.lang.ObjectParser;
-import it.unimi.dsi.util.BloomFilter;
-
 import java.io.File;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -64,6 +29,42 @@ import org.slf4j.LoggerFactory;
 import com.martiansoftware.jsap.ParseException;
 import com.martiansoftware.jsap.stringparsers.IntSizeStringParser;
 import com.martiansoftware.jsap.stringparsers.LongSizeStringParser;
+
+/*
+ * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import it.unimi.di.law.bubing.frontier.DNSThread;
+import it.unimi.di.law.bubing.frontier.FetchingThread;
+import it.unimi.di.law.bubing.frontier.Frontier;
+import it.unimi.di.law.bubing.frontier.ParsingThread;
+import it.unimi.di.law.bubing.frontier.dns.DnsJavaResolver;
+import it.unimi.di.law.bubing.parser.Parser;
+import it.unimi.di.law.bubing.sieve.AbstractSieve;
+import it.unimi.di.law.bubing.spam.SpamDetector;
+import it.unimi.di.law.bubing.store.Store;
+import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
+import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.Link;
+import it.unimi.di.law.warc.filters.Filter;
+import it.unimi.di.law.warc.filters.URIResponse;
+import it.unimi.di.law.warc.filters.parser.FilterParser;
+import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import it.unimi.dsi.lang.ObjectParser;
+import it.unimi.dsi.util.BloomFilter;
 
 //RELEASE-STATUS: DIST
 
@@ -182,9 +183,9 @@ public class StartupConfiguration {
 	@FilterSpecification(type = URI.class)
 	public Filter<URI> fetchFilter;
 
-	/** A filter that will be applied to all URLs obtained by parsing a page before scheduling them. */
-	@FilterSpecification(type = URI.class)
-	public Filter<URI> scheduleFilter;
+	/** A filter that will be applied to all links obtained by parsing a page before scheduling them. */
+	@FilterSpecification(type = Link.class)
+	public Filter<Link> scheduleFilter;
 
 	/** A filter that will be applied to all fetched resources to decide whether to parse them. */
 	@FilterSpecification(type = URIResponse.class)
@@ -212,6 +213,21 @@ public class StartupConfiguration {
 	/** The minimum delay between two consecutive fetches from the same IP address. */
 	@TimeSpecification
 	public long ipDelay;
+
+	/** An attenuation factor for the multiple-agent IP delay mechanism.
+	 *
+	 * <p>BUbiNG uses a simple model to predict how many agents are accessing the same IP: if
+	 * an IP address has <i>k</i> &gt; 1 associated hosts, BUbiNG predicts that
+	 * a fraction <i>k</i>/(<i>k</i> + 1) of the known agents are accessing that IP address. When {@link #ipDelayFactor} = 0, the
+	 * {@link #ipDelay} is used as such. When {@link #ipDelayFactor} = 1, the IP delay is multiplied
+	 * by <i>k</i>/(<i>k</i> + 1) (i.e., if there are two hosts with the same IP we predict that
+	 * half of the agents are crawling the same IP). In general, the IP delay is multiplied
+	 * by {@link #ipDelayFactor} &middot; <i>k</i>/(<i>k</i> + 1) &middot; {@link Agent#getKnownCount()},
+	 * so this parameter can be used to tune this behaviour. Note that in any case BUbiNG will wait at least
+	 * {@link #ipDelay}.
+	 */
+	@OptionalSpecification(value="0")
+	public double ipDelayFactor;
 
 	/** The maximum number of URLs to crawl. */
 	public long maxUrls;
@@ -271,6 +287,10 @@ public class StartupConfiguration {
 	/** The delay after which the <code>robots.txt</code> file is no longer considered valid. */
 	@TimeSpecification
 	public long robotsExpiration;
+
+	/** Whether to accept all SSL certificates, or self-signed only. */
+	@OptionalSpecification(value="true")
+	public boolean acceptAllCertificates;
 
 	/** A root directory from which the remainig one will be stemmed, if
 	 * they are relative. Note that this directory can be preexisting, and can be
@@ -488,7 +508,7 @@ public class StartupConfiguration {
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public StartupConfiguration(final Configuration configuration) throws ConfigurationException, ClassNotFoundException {
 		if (LOGGER.isDebugEnabled()) LOGGER.debug("Required configuration: " + ConfigurationUtils.toString(configuration));
-		for (Field f : getClass().getDeclaredFields()) {
+		for (final Field f : getClass().getDeclaredFields()) {
 			if ((f.getModifiers() & Modifier.PUBLIC) == 0 || (f.getModifiers() & Modifier.STATIC) != 0) continue;
 			final String name = f.getName();
 			final Class<?> type = f.getType();
@@ -538,40 +558,40 @@ public class StartupConfiguration {
 					else if (f.getAnnotation(DnsResolverSpecification.class) != null)
 						f.set(this, Class.forName(value));
 					else {
-						Class filterType = (f.getAnnotation(FilterSpecification.class)).type();
+						final Class filterType = (f.getAnnotation(FilterSpecification.class)).type();
 						f.set(this, new FilterParser(filterType).parse(value));
 					}
 				}
-			} catch (IllegalAccessException impossible) { // due to setAccessible
+			} catch (final IllegalAccessException impossible) { // due to setAccessible
 				throw new RuntimeException(impossible);
-			} catch (ParseException jsap) { // due to a JSAP parser
+			} catch (final ParseException jsap) { // due to a JSAP parser
 				throw new ConfigurationException(jsap);
-			} catch (it.unimi.di.law.warc.filters.parser.ParseException filterException) {
+			} catch (final it.unimi.di.law.warc.filters.parser.ParseException filterException) {
 				throw new ConfigurationException(filterException);
 			}
 			f.setAccessible(false);
 		}
-		for (Method m : getClass().getDeclaredMethods()) {
+		for (final Method m : getClass().getDeclaredMethods()) {
 			final String name = m.getName();
 			if (name.startsWith("check"))
 				try {
 					m.invoke(this);
-				} catch (IllegalAccessException impossible) {
+				} catch (final IllegalAccessException impossible) {
 					throw new RuntimeException(impossible);
-				} catch (InvocationTargetException e) {
+				} catch (final InvocationTargetException e) {
 					if (e.getCause() instanceof ConfigurationException) throw (ConfigurationException)e.getCause();
 					throw new ConfigurationException(e.getCause());
 				}
 
 		}
 
-		for(Iterator<String> keys = configuration.getKeys(); keys.hasNext();) {
+		for(final Iterator<String> keys = configuration.getKeys(); keys.hasNext();) {
 			final String key = keys.next();
 			try {
 				final Field field = getClass().getField(key);
 				if ((field.getModifiers() & Modifier.PUBLIC) == 0 || (field.getModifiers() & Modifier.STATIC) != 0) throw new NoSuchFieldException();
 			}
-			catch (NoSuchFieldException e) {
+			catch (final NoSuchFieldException e) {
 				throw new RuntimeException("There is no configuration parameter named \"" + key +"\"");
 			}
 		}
@@ -628,7 +648,7 @@ public class StartupConfiguration {
 	 * @return the union of the two configurations, as specified above.
 	 */
 	private static Configuration append(Configuration base, Configuration additional) {
-		CompositeConfiguration result = new CompositeConfiguration();
+		final CompositeConfiguration result = new CompositeConfiguration();
 		result.addConfiguration(additional);
 		result.addConfiguration(base);
 		return result;
@@ -636,13 +656,13 @@ public class StartupConfiguration {
 
 	@Override
 	public String toString() {
-		Class<?> thisClass = getClass();
-		Map<String,Object> values = new Object2ObjectOpenHashMap<>();
-		for (Field f : thisClass.getDeclaredFields()) {
+		final Class<?> thisClass = getClass();
+		final Map<String,Object> values = new Object2ObjectOpenHashMap<>();
+		for (final Field f : thisClass.getDeclaredFields()) {
 			if ((f.getModifiers() & Modifier.PUBLIC) == 0 || (f.getModifiers() & Modifier.STATIC) != 0) continue;
 			try {
 				values.put(f.getName(), f.get(this));
-			} catch (IllegalAccessException e) {
+			} catch (final IllegalAccessException e) {
 				values.put(f.getName(), "<THIS SHOULD NOT HAPPEN>");
 			}
 		}
@@ -650,7 +670,7 @@ public class StartupConfiguration {
 	}
 
 	public static long parseTime(final String timeSpec) {
-		StringTokenizer tokenizer = new StringTokenizer(timeSpec, " dhsm", true);
+		final StringTokenizer tokenizer = new StringTokenizer(timeSpec, " dhsm", true);
 		double result = 0;
 		long previousMultiplierValue = Long.MAX_VALUE;
 		char previousMultiplier = '?';
@@ -660,7 +680,7 @@ public class StartupConfiguration {
 			double element = 0;
 			try {
 				element = Double.parseDouble(token);
-			} catch (NumberFormatException e) {
+			} catch (final NumberFormatException e) {
 				throw new IllegalArgumentException("Number expected, " + token + " found");
 			}
 			if (tokenizer.hasMoreElements()) {
@@ -670,7 +690,7 @@ public class StartupConfiguration {
 				if (! Character.isWhitespace(token.charAt(0))) {
 					long multiplierValue;
 					String mergedToken = token;
-					String nextToken = tokenizer.hasMoreElements()? tokenizer.nextToken() : "";
+					final String nextToken = tokenizer.hasMoreElements()? tokenizer.nextToken() : "";
 					if (nextToken.length() > 0 && ! Character.isWhitespace(nextToken.charAt(0))) mergedToken += nextToken;
 					if ("d".equals(mergedToken)) multiplierValue = TimeUnit.DAYS.toMillis(1);
 					else if ("h".equals(mergedToken)) multiplierValue = TimeUnit.HOURS.toMillis(1);

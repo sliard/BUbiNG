@@ -15,10 +15,10 @@ package it.unimi.di.law.bubing.frontier;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+//RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.BubingJob;
-import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
 import java.util.concurrent.ArrayBlockingQueue;
@@ -58,6 +58,7 @@ public final class QuickToSendThread extends Thread {
 
                 if (url != null) {
                     final BubingJob job = new BubingJob(url);
+                    LOGGER.debug("Passing job " + job.toString());
                     try {
                         frontier.agent.submit(job);
                     } catch (NoSuchJobManagerException e) {

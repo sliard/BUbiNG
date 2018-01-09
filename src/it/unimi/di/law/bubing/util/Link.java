@@ -1,7 +1,7 @@
 package it.unimi.di.law.bubing.util;
 
 /*
- * Copyright (C) 2004-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ * Copyright (C) 2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,24 @@ package it.unimi.di.law.bubing.util;
  * limitations under the License.
  */
 
-//RELEASE-STATUS: DIST
+import java.net.URI;
 
-import static org.junit.Assert.assertEquals;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
+import it.unimi.di.law.bubing.StartupConfiguration;
 
-import org.junit.Test;
+// RELEASE-STATUS: DIST
 
-/** A class to test {@link BURL}. */
+/** A class representing a link, to be used by {@linkplain StartupConfiguration#scheduleFilter schedule filters}. */
+public final class Link {
+	public final URI source;
+	public final URI target;
 
-public class BubingJobTest {
-
-	private long string2Hash64(String url) {
-		return new BubingJob(Util.toByteArrayList(BURL.parse(url).toASCIIString(), new ByteArrayList())).hash64();
+	/** Creates a new link with given source and target.
+	 *
+	 * @param source the source {@link URI}.
+	 * @param target the target {@link URI}.
+	 */
+	public Link(final URI source, final URI target) {
+		this.source = source;
+		this.target = target;
 	}
-
-	@Test
-	public void testHash() {
-		assertEquals(string2Hash64("http://example.com/foo.html"), string2Hash64("http://example.com/foo.html:"));
-	}
-
 }

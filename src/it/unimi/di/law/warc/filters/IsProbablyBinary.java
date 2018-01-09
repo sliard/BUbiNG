@@ -1,7 +1,7 @@
 package it.unimi.di.law.warc.filters;
 
 /*
- * Copyright (C) 2004-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ * Copyright (C) 2004-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ public class IsProbablyBinary extends AbstractFilter<HttpResponse> {
 				if (b == 0 && ++count == THRESHOLD) return true;
 			}
 		}
-		catch(IOException shouldntReallyHappen) {
+		catch(final IOException shouldntReallyHappen) {
 			throw new RuntimeException(shouldntReallyHappen);
 		}
 		return false;
@@ -67,9 +67,20 @@ public class IsProbablyBinary extends AbstractFilter<HttpResponse> {
 	 *
 	 * @param emptySpec an empty string.
 	 * @return a new <code>IsProbablyBinary</code> that will accept only http responses whose content stream appears to be binary.
+	 * @deprecated Please use {@link #valueOf()} instead.
 	 */
+	@Deprecated
 	public static IsProbablyBinary valueOf(final String emptySpec) {
 		if (emptySpec.length() > 0) throw new IllegalArgumentException();
+		return INSTANCE;
+	}
+
+	/**
+	 * Get a new <code>IsProbablyBinary</code> that will accept only http responses whose content stream appears to be binary.
+	 *
+	 * @return a new <code>IsProbablyBinary</code> that will accept only http responses whose content stream appears to be binary.
+	 */
+	public static IsProbablyBinary valueOf() {
 		return INSTANCE;
 	}
 

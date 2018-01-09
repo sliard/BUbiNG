@@ -5,12 +5,10 @@ import java.io.IOException;
 import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-
-import javax.net.ssl.SSLContext;
 import java.security.cert.X509Certificate;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
 
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
@@ -36,7 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /*
- * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
+ * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,6 +55,7 @@ import it.unimi.di.law.bubing.util.FetchData;
 import it.unimi.di.law.bubing.util.LockFreeQueue;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.dsi.bits.Fast;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 //RELEASE-STATUS: DIST
 
@@ -101,7 +100,7 @@ public final class FetchingThread extends Thread implements Closeable {
 	/** The fetched HTTP response used by this thread. */
 	private final FetchData fetchData;
 	/** The cookie store used by {@link #httpClient}. */
-	private BasicCookieStore cookieStore;
+	private final BasicCookieStore cookieStore;
 
 	/** An SSL context that accepts all self-signed certificates. */
 	private static final SSLContext TRUST_SELF_SIGNED_SSL_CONTEXT;
@@ -115,7 +114,7 @@ public final class FetchingThread extends Thread implements Closeable {
 	}
 	/** An SSL context that accepts all certificates */
         private static final SSLContext TRUST_ALL_CERTIFICATES_SSL_CONTEXT;
-	static {
+		static {
 		try {
 			TRUST_ALL_CERTIFICATES_SSL_CONTEXT = SSLContexts.custom().loadTrustMaterial(null, new TrustStrategy() {
                                         public boolean isTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
@@ -126,7 +125,6 @@ public final class FetchingThread extends Thread implements Closeable {
 			throw new RuntimeException(cantHappen.getMessage(), cantHappen);
                 }
         }
-
 
 	/** A support class that makes it possible to plug in a custom DNS resolver. */
 	protected static final class BasicHttpClientConnectionManagerWithAlternateDNS
@@ -202,22 +200,23 @@ public final class FetchingThread extends Thread implements Closeable {
 		connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
 		connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
 
-		List<BasicHeader> headers = new ArrayList<BasicHeader>();
-		headers.add(new BasicHeader("Accept","text/html,application/xhtml+xml,application/xml;q=0.95,text/*;q=0.9,*/*;q=0.8"));
-//		headers.add(new BasicHeader("Accept-Language","fr-FR,fr;q=0.8,en-US;q=0.6,en;q=0.4"));
-		headers.add(new BasicHeader("Accept-Language","*"));
-		headers.add(new BasicHeader("Accept-Charset","*"));
-		headers.add(new BasicHeader("From", frontier.rc.userAgentFrom));
-
 		cookieStore = new BasicCookieStore();
+
+		BasicHeader[] headers = {
+			new BasicHeader("From", frontier.rc.userAgentFrom),
+			new BasicHeader("Accept","text/html,application/xhtml+xml,application/xml;q=0.95,text/*;q=0.9,*/*;q=0.8"),
+			new BasicHeader("Accept-Language","*"),
+			new BasicHeader("Accept-Charset","*")
+		};
+
 		httpClient = HttpClients.custom()
-				.setSSLContext(TRUST_ALL_CERTIFICATES_SSL_CONTEXT)
 				.setSSLHostnameVerifier(new NoopHostnameVerifier()) // why would we need to do it twice ?
+				.setSSLContext(frontier.rc.acceptAllCertificates ? TRUST_ALL_CERTIFICATES_SSL_CONTEXT : TRUST_SELF_SIGNED_SSL_CONTEXT)
 				.setConnectionManager(connManager)
 				.setConnectionReuseStrategy(frontier.rc.keepAliveTime == 0 ? NoConnectionReuseStrategy.INSTANCE : DefaultConnectionReuseStrategy.INSTANCE)
 				.setUserAgent(frontier.rc.userAgent)
 				.setDefaultCookieStore(cookieStore)
-				.setDefaultHeaders(headers)
+				.setDefaultHeaders(ObjectArrayList.wrap(headers))
 				.build();
    		fetchData = new FetchData(frontier.rc);
 	}

@@ -1,5 +1,7 @@
 package it.unimi.di.law.bubing.frontier;
 
+//RELEASE-STATUS: DIST
+
 import com.google.common.primitives.Ints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
