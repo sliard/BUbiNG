@@ -19,6 +19,7 @@ package it.unimi.di.law.bubing.frontier;
 
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.BubingJob;
+import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
 import java.util.concurrent.ArrayBlockingQueue;
@@ -52,20 +53,24 @@ public final class QuickToSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendURLs;
+            final ByteArrayDiskQueue quickToSendURLs = frontier.quickToSendURLs;
             while(! stop) {
-                final ByteArrayList url = quickToSendURLs.poll(1, TimeUnit.SECONDS);
+                if (!quickToSendURLs.isEmpty()) {
+                    quickToSendURLs.dequeue();
 
-                if (url != null) {
-                    final BubingJob job = new BubingJob(url);
-                    LOGGER.debug("Passing job " + job.toString());
-                    try {
-                        frontier.agent.submit(job);
-                    } catch (NoSuchJobManagerException e) {
-                        // This just shouldn't happen.
-                        LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
+                    final ByteArrayList url = quickToSendURLs.buffer();
+
+                    if (url != null) {
+                        final BubingJob job = new BubingJob(url);
+                        LOGGER.debug("Passing job " + job.toString());
+                        try {
+                            frontier.agent.submit(job);
+                        } catch (NoSuchJobManagerException e) {
+                            // This just shouldn't happen.
+                            LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
+                        }
                     }
-                }
+                } else  Thread.sleep(1000);
             }
         }
         catch (Throwable t) {

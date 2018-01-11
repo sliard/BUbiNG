@@ -237,7 +237,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	public ArrayBlockingQueue<ByteArrayList> quickReceivedURLs;
 
 	/** A queue to quickly buffer discovered URLs that will be submitted. */
-	public ArrayBlockingQueue<ByteArrayList> quickToSendURLs;
+	public ByteArrayDiskQueue quickToSendURLs;
 
 	/** A queue to buffer in the long run URLs communicated by {@link #receive(BubingJob)}. */
 	public ByteArrayDiskQueue receivedURLs;
@@ -476,7 +476,8 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
 		quickReceivedURLs = new ArrayBlockingQueue<>(1024);
-		quickToSendURLs = new ArrayBlockingQueue<>(1024);
+		quickToSendURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "toSend"), 16*1024, true);
+
 
 		if (rc.crawlIsNew) {
 			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
@@ -619,7 +620,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		}
 		else try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
-			quickToSendURLs.put(url.clone());
+			quickToSendURLs.enqueue(url.elements().clone(),0,url.size());
 			// was agent.submit(job);
 		}
 		catch (IllegalStateException e) {
