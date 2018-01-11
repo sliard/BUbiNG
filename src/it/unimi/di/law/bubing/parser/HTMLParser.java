@@ -19,6 +19,9 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.google.common.hash.HashCode;
+import com.google.common.hash.Hashing;
+import it.unimi.di.law.bubing.util.*;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
@@ -28,6 +31,8 @@ import org.apache.http.HttpResponse;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.ByteArrayBuffer;
+import org.apache.http.util.CharArrayBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,9 +65,6 @@ import com.martiansoftware.jsap.UnflaggedOption;
  */
 
 import it.unimi.di.law.bubing.Agent;
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.ByteArrayCharSequence;
-import it.unimi.di.law.bubing.util.Util;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.di.law.warc.records.WarcHeader;
 import it.unimi.di.law.warc.records.WarcRecord;
@@ -293,12 +295,155 @@ public class HTMLParser<T> implements Parser<T> {
 		}
 	}
 
+	public final static class DirectDigestAppendable implements Appendable {
+
+		/** Cached byte representations of all opening tags. The map must be queried using {@linkplain HTMLElementName Jericho names}. */
+		protected static final Reference2ObjectOpenHashMap<String, byte[]> startTags;
+
+		/** Cached byte representations of all closing tags. The map must be queried using {@linkplain HTMLElementName Jericho names}. */
+		protected static final Reference2ObjectOpenHashMap<String, byte[]> endTags;
+
+		static {
+			final List<String> elementNames = HTMLElements.getElementNames();
+			startTags = new Reference2ObjectOpenHashMap<>(elementNames.size());
+			endTags = new Reference2ObjectOpenHashMap<>(elementNames.size());
+
+			// Set up defaults for bizarre element types
+			startTags.defaultReturnValue(Util.toByteArray("<unknown>"));
+			endTags.defaultReturnValue(Util.toByteArray("</unknown>"));
+
+			// Scan all known element types and fill startTag/endTag
+			for (final String name : elementNames) {
+				startTags.put(name, Util.toByteArray("<" + name + ">"));
+				endTags.put(name, Util.toByteArray("</" + name + ">"));
+			}
+		}
+
+		protected final HashFunction hashFunction;
+
+		/** True iff the last character appended was a space. */
+		protected boolean lastAppendedWasSpace;
+		/** The last returne digest, or {@code null} if {@link #init(URI)} has been called but {@link #digest()} hasn't. */
+		protected byte[] digest;
+		protected MurmurHash3_128.LongPair tempDigest = null;
+		protected static final int DIGEST_BUFFER_SIZE = 64*1024;
+		protected char[] buffer = null;
+		protected int bufferLen = 0;
+		protected int totalLen = 0;
+		/** Create a digest appendable using a given hash function.
+		 *
+		 * @param hashFunction the hash function used to digest. */
+		public DirectDigestAppendable(final HashFunction hashFunction) {
+			this.hashFunction = hashFunction;
+			buffer = new char[DIGEST_BUFFER_SIZE];
+			tempDigest = new MurmurHash3_128.LongPair();
+		}
+
+		/** Initializes the digest computation.
+		 *
+		 * @param url a URL, or {@code null} for no URL. In the former case, the host name will be used to initialize the digest.
+		 */
+		public void init(final URI url) {
+			bufferLen = 0;
+			totalLen = 0;
+			tempDigest = new MurmurHash3_128.LongPair();
+			MurmurHash3_128.murmurhash3_x64_128_init(128945, tempDigest);
+			digest = null;
+
+			if (url != null) {
+				// Note that we need to go directly to the hasher to encode explicit IP addresses
+				String host = url.getHost();
+				for (int i = 0; i< host.length(); i++)
+					appendChar(host.charAt(i));
+				appendChar(' ');
+			}
+			lastAppendedWasSpace = false;
+		}
+
+		private void appendChar(char c) {
+			buffer[bufferLen] = c;
+			bufferLen++;
+			totalLen++;
+			if (bufferLen == DIGEST_BUFFER_SIZE) {
+				MurmurHash3_128.murmurhash3_x64_128_update(buffer, 0, DIGEST_BUFFER_SIZE, tempDigest);
+				bufferLen = 0;
+			}
+		}
+
+		@Override
+		public Appendable append(CharSequence csq, int start, int end) {
+			// Hopefully this will soon be inlined by the jvm: no need to duplicate the code! :-)
+			for (int i = start; i < end; i++) append(csq.charAt(i));
+			return this;
+		}
+
+		@Override
+		public Appendable append(char c) {
+			if (Character.isWhitespace(c) || Character.isDigit(c)) {
+				if (!lastAppendedWasSpace) {
+					appendChar(' ');
+					lastAppendedWasSpace = true;
+				}
+			} else {
+				appendChar(c);
+				lastAppendedWasSpace = false;
+			}
+			return this;
+		}
+
+		@Override
+		public Appendable append(CharSequence csq) {
+			char [] chars = csq.toString().toCharArray();
+			for (char c : chars)
+				append(c);
+			return this;
+		}
+
+		private void append(byte[] a) {
+			for (byte b:a) appendChar((char)b);
+		}
+
+		public byte[] digest() {
+			if (digest == null) {
+				if (bufferLen > 0) {
+					MurmurHash3_128.murmurhash3_x64_128_update(buffer, 0, bufferLen, tempDigest);
+					bufferLen = 0;
+				}
+				MurmurHash3_128.murmurhash3_x64_128_finalize(totalLen, tempDigest);
+				digest = tempDigest.asBytes();
+
+			}
+			return digest;
+		}
+
+		public void startTag(final StartTag startTag) {
+			final String name = startTag.getName();
+			append(startTags.get(name));
+
+			// IFRAME or FRAME + SRC
+			if (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME) {
+				final String s = startTag.getAttributeValue("src");
+				if (s != null) {
+					appendChar('\"');
+					append(s);
+					appendChar('\"');
+				}
+			}
+			lastAppendedWasSpace = false;
+		}
+
+		public void endTag(final EndTag endTag) {
+			append(endTags.get(endTag.getName()));
+			lastAppendedWasSpace = false;
+		}
+	}
+
 	/** The pattern prefixing the URL in a <code>META </code> <code>HTTP-EQUIV </code> element of refresh type. */
 	protected static final TextPattern URLEQUAL_PATTERN = new TextPattern("URL=", TextPattern.CASE_INSENSITIVE);
 	/** The size of the internal Jericho buffer. */
 	public static final int CHAR_BUFFER_SIZE = 128 * 1024;
 	/** The max required amount of page content (without HTML entities) for charset detection */
-	protected static final int MAX_PAGE_CONTENT = 2048;
+	protected static final int MAX_CHARSET_PAGE_CONTENT = 1000;
 	/** The character buffer. It is set up at construction time, but it can be changed later. */
 	protected final char[] buffer;
 	/** The charset we guessed for the last response. */
@@ -308,7 +453,7 @@ public class HTMLParser<T> implements Parser<T> {
 	/** The cleaned (without style/script) page content for the last response. */
 	protected StringBuilder pageContent;
 	/** An object emboding the digest logic, or {@code null} for no digest computation. */
-	protected final DigestAppendable digestAppendable;
+	protected final DirectDigestAppendable digestAppendable;
 	/** A text processor, or {@code null}. */
 	protected final TextProcessor<T> textProcessor;
 	/** The location URL from headers of the last response, if any, or {@code null}. */
@@ -339,7 +484,7 @@ public class HTMLParser<T> implements Parser<T> {
 	 */
 	public HTMLParser(final HashFunction hashFunction, final TextProcessor<T> textProcessor, final boolean crossAuthorityDuplicates, final int bufferSize) {
 		buffer = bufferSize != 0 ? new char[bufferSize] : null;
-		digestAppendable = hashFunction == null ? null : new DigestAppendable(hashFunction);
+		digestAppendable = hashFunction == null ? null : new DirectDigestAppendable(hashFunction);
 		this.textProcessor = textProcessor;
 		this.crossAuthorityDuplicates = crossAuthorityDuplicates;
 	}
@@ -575,25 +720,20 @@ public class HTMLParser<T> implements Parser<T> {
 				}
 				else
 					if (inSpecialText == 0) {
+						String segmentString = segment.toString();
 						if (textProcessor != null) {
 							if (segment instanceof CharacterReference) ((CharacterReference)segment).appendCharTo(textProcessor);
-							else textProcessor.append(segment);
+							else textProcessor.append(segmentString);
 						}
 						if (digestAppendable != null) {
 							if (segment instanceof CharacterReference) ((CharacterReference)segment).appendCharTo(digestAppendable);
-							else digestAppendable.append(segment);
+							else digestAppendable.append(segmentString);
 						}
-						if (!(segment instanceof CharacterReference) && (pageContent.length() < MAX_PAGE_CONTENT))
-							pageContent.append(segment);
+						if (!(segment instanceof CharacterReference) && (pageContent.length() < MAX_CHARSET_PAGE_CONTENT))
+							pageContent.append(segmentString);
 					}
 			}
 		}
-
-		if (DigestAppendable.DEBUG)
-			if (digestAppendable != null) {
-				System.err.println("Closing " + digestAppendable.debugFile + " for " + uri);
-				digestAppendable.debugStream.close();
-			}
 
 		// This is to avoid collapsing 3xx pages with boilerplate content (as opposed to 0-length content).
 		if (digestAppendable != null && httpResponse.getStatusLine().getStatusCode() / 100 == 3) {
@@ -603,7 +743,7 @@ public class HTMLParser<T> implements Parser<T> {
 			if (metaLocation != null) digestAppendable.append(BURL.toByteArray(metaLocation));
 			digestAppendable.append((char)0);
 		}
-
+		//LOGGER.info("Finished parsing {} , digest : {}", base, digestAppendable != null ? digestAppendable.digest() : "null");
 		return digestAppendable != null ? digestAppendable.digest() : null;
 	}
 
