@@ -33,7 +33,7 @@ import java.util.zip.DeflaterOutputStream;
 public class GZIPArchiveWriter implements Closeable {
 
 	private final CRC32 crc = new CRC32();
-	private final Deflater deflater = new Deflater(GZIPArchive.XFL, true);
+	private final Deflater deflater = new Deflater(Deflater.BEST_SPEED, true);
 	private final FastByteArrayOutputStream deflaterStream = new FastByteArrayOutputStream();
 	private final OutputStream output;
 
