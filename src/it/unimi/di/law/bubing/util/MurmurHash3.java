@@ -20,8 +20,6 @@ import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
 //RELEASE-STATUS: DIST
 
-/** A 64-bit implementation of MurmurHash3 for byte-array fragments. */
-
 public class MurmurHash3 {
 
 	private static final long getblock(final byte[] key, final int i) {
