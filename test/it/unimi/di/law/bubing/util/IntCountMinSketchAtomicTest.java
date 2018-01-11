@@ -1,24 +1,32 @@
 package it.unimi.di.law.bubing.util;
 
 import com.google.common.primitives.Longs;
-import it.unimi.dsi.fastutil.longs.LongArrays;
+import it.unimi.dsi.fastutil.io.BinIO;
 import jdk.nashorn.internal.ir.debug.ObjectSizeCalculator;
 import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
-import static org.junit.Assert.*;
-
-public class IntCountMinSketchTest {
+public class IntCountMinSketchAtomicTest {
 
     @Test
-    public void testSketch() {
-        int s = (int) (2 * 1024 * 1024);
-        IntCountMinSketch cms = new IntCountMinSketch((int)s, 3);
+    public void testSketch() throws IOException, ClassNotFoundException {
+        int s = (int) (1 * 1024 * 1024);
+        IntCountMinSketchAtomic cms = new IntCountMinSketchAtomic((int)s, 3);
         ConcurrentCountingMap ccm = new ConcurrentCountingMap(1);
 
         Random rng = new Random();
 
+        ArrayList<Integer> indexes = new ArrayList<Integer>();
         long[] data = new long[s];
         double[] values = new double[s];
         long[] negdata = new long[s];
@@ -26,6 +34,7 @@ public class IntCountMinSketchTest {
         for (int i = 0; i < s; i++) {
             long v = rng.nextLong();
             data[i] = v;
+            indexes.add(i);
             values[i] = Math.abs(rng.nextDouble()); // Generate uniform distribution from 0 to 99
         }
         for (int i = 0; i < s; i++) {
@@ -33,84 +42,49 @@ public class IntCountMinSketchTest {
             negdata[i] = v;
         }
 
-        System.out.println("Incrementing " + s + " items in counting maps with values 0 - " + maxVal);
-        System.gc();
-        double error = 0.0;
-        long count = 0;
-        long startCCMTime = System.nanoTime();
-        for (int p = 0; p < maxVal; p++)
-            for (int i = 0; i < s; i++)
-                if (rng.nextDouble() < values[i]) {
-                    ccm.addTo(Longs.toByteArray(data[i]), 1);
-                    count++;
-                }
-        long endCCMTime = System.nanoTime();
-        System.out.println("CCM add total : " + (double)(endCCMTime-startCCMTime)/1000000000.0 + "s ; per item " + (double)(endCCMTime-startCCMTime)/count);
-        System.out.println("Estimated CCM object size : " + ObjectSizeCalculator.getObjectSize(ccm));
-        long startGetCCMTime = System.nanoTime();
-        for (int i = 0; i < s; i++) {
-            double e = maxVal * values[i] - ccm.get(Longs.toByteArray(data[i]));
-            error += e * e;
-        }
-        System.gc();
-        long endGetCCMTime = System.nanoTime();
-        System.out.println("CCM Error get " + Math.sqrt(error)/s);
-        System.out.println("CCM get per item " + (double)(endGetCCMTime-startGetCCMTime)/s);
-
-        long startNegGetCCMTime = System.nanoTime();
-        error = 0;
-        for (int i = 0; i < s; i++) {
-            double e = ccm.get(Longs.toByteArray(negdata[i]));
-            error += e * e;
-        }
-        System.out.println("CCM Error get NEG " + Math.sqrt(error)/s);
-
-        System.gc();
-        long endNegGetCCMTime = System.nanoTime();
-        System.gc();
-        System.out.println("CCM neg get per item " + (double)(endNegGetCCMTime-startNegGetCCMTime)/s);
-
-
-        System.out.println("Incrementing " + s + " items in count min sketch with values 0 - " + maxVal);
+        // CMS
+        System.out.println("Incrementing " + s + " items in count min sketch Atomic with values 0 - " + maxVal);
 
         long startRHHSTime = System.nanoTime();
-        count = 0;
+        long count = 0;
         for (int p = 0; p < maxVal; p++)
-            for (int i =0; i < s; i++)
-                if (rng.nextDouble() < values[i]) {
+            count += indexes.parallelStream().mapToInt(i ->
+            {
+                ThreadLocalRandom trng = ThreadLocalRandom.current();
+                if (trng.nextDouble() < values[i]) {
                     cms.increment(Longs.toByteArray(data[i]));
-                    count ++;
-                }
+                    return 1;
+                } else return 0;
+            }).sum();
         long endRHHSTime = System.nanoTime();
-        System.out.println("CMS add total : " + (double)(endRHHSTime-startRHHSTime)/1000000000.0 + "s ; per item " + (double)(endRHHSTime-startRHHSTime)/count);
+        System.out.println("CMS add total : " + (double)(endRHHSTime-startRHHSTime)/1000000000.0 + "s ; per increment " + (double)(endRHHSTime-startRHHSTime)/count);
         System.out.println("Estimated CMS object size : " + ObjectSizeCalculator.getObjectSize(cms));
+
+        final File temp = File.createTempFile(ConcurrentCountingMap.class.getSimpleName() + "-", "-temp");
+        temp.deleteOnExit();
+        BinIO.storeObject(cms, temp);
+        final IntCountMinSketchAtomic ncms = (IntCountMinSketchAtomic) BinIO.loadObject(temp);
+
         long startGetRHHSTime = System.nanoTime();
-        error = 0.0;
-        for (int i =0; i < s; i++) {
-            double e = maxVal * values[i] - cms.get(Longs.toByteArray(data[i]));
-            error += e * e;
-        }
+        double error = indexes.parallelStream().mapToDouble(i -> {
+            double e = maxVal * values[i] - ncms.get(Longs.toByteArray(data[i]));
+            return e * e;
+        }).sum();
+        assertTrue(Math.sqrt(error)/s < 0.1);
         System.gc();
         long endGetRHHSTime = System.nanoTime();
         System.out.println("CMS Error get " + Math.sqrt(error)/s);
         System.out.println("CMS get per item " + (double)(endGetRHHSTime-startGetRHHSTime)/s);
 
         long startNegGetRHHSTime = System.nanoTime();
-        error = 0;
-        for (int i =0; i < s; i++) {
-            double e = cms.get(Longs.toByteArray(negdata[i]));
-            error += e * e;
-        }
+        error = indexes.parallelStream().mapToDouble(i -> {
+            double e = ncms.get(Longs.toByteArray(negdata[i]));
+            return e* e;
+        }).sum();
+        assertTrue(Math.sqrt(error)/s < 0.1);
         System.gc();
         long endNegGetRHHSTime = System.nanoTime();
         System.out.println("CMS Error get NEG " + Math.sqrt(error)/s);
         System.out.println("CMS neg get per item " + (double)(endNegGetRHHSTime-startNegGetRHHSTime)/s);
-
-
-
-
-
-
     }
-
 }
