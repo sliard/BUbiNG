@@ -1,7 +1,14 @@
-package it.unimi.di.law.bubing.util;
+package it.unimi.di.law.bubing.util.detection;
 
 public class CharsetDetectionInfo {
-    String httpHeaderCharset;
-    String htmlMetaCharset;
-    String icuCharset;
+    public String httpHeaderCharset="-";
+    public String htmlMetaCharset="-";
+    public String icuCharset="-";
+
+    @Override
+    public String toString() {
+        return (httpHeaderCharset == null ? "-":httpHeaderCharset) + "," +
+                (htmlMetaCharset  == null ? "-":htmlMetaCharset) + ","+
+                (icuCharset == null ? "-":icuCharset);
+    }
 }
