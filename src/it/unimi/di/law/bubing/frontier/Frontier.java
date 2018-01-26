@@ -24,9 +24,9 @@ import it.unimi.di.law.bubing.sieve.ByteArrayListByteSerializerDeserializer;
 import it.unimi.di.law.bubing.sieve.ByteSerializerDeserializer;
 import it.unimi.di.law.bubing.sieve.IdentitySieve;
 import it.unimi.di.law.bubing.sieve.MercatorSieve;
-import it.unimi.di.law.bubing.store.Store;
 import it.unimi.di.law.bubing.util.*;
-import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
+import it.unimi.di.law.warc.io.UncompressedWarcWriter;
+import it.unimi.di.law.warc.io.WarcWriter;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.io.BinIO;
 import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
@@ -41,14 +41,17 @@ import it.unimi.dsi.util.BloomFilter;
 import it.unimi.dsi.util.Properties;
 
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Date;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.zip.GZIPOutputStream;
@@ -57,6 +60,11 @@ import net.htmlparser.jericho.Config;
 import net.htmlparser.jericho.LoggerProvider;
 
 import org.apache.commons.configuration.ConfigurationException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.compress.CompressionCodec;
+import org.apache.hadoop.io.compress.CompressionCodecFactory;
+import org.apache.hadoop.io.compress.Lz4Codec;
+import org.apache.hadoop.io.compress.lz4.Lz4Compressor;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.slf4j.Logger;
@@ -136,6 +144,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 	/** The size of the buffer used for {@link Frontier#readyURLs}. */
 	public static final int READY_URLS_BUFFER_SIZE = 64 * 1024 * 1024;
+	public static final int NUM_TO_QUEUE_URL_LISTS = 16;
 
 	/** Names of the scalar fields saved by {@link #snap()}. */
 	public static enum PropertyKeys {
@@ -217,10 +226,6 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		}
 	};
 
-
-	/** The store. */
-	protected final Store store;
-
 	/** The agent that created this frontier. */
 	protected final Agent agent;
 
@@ -236,17 +241,26 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	/** A queue to quickly buffer URLs communicated by {@link #receive(BubingJob)}. */
 	public ArrayBlockingQueue<ByteArrayList> quickReceivedURLs;
 
-	/** A queue to quickly buffer discovered URLs that will be submitted. */
-	public ByteArrayDiskQueue quickToSendURLs;
+	/** A queue to quickly buffer discovered URLs that will be submitted as remote jobs. */
+	public ArrayBlockingQueue<ByteArrayList> quickToSendURLs;
 
 	/** A queue to buffer in the long run URLs communicated by {@link #receive(BubingJob)}. */
 	public ByteArrayDiskQueue receivedURLs;
 
+	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
+	public ArrayBlockingQueue<ObjectArrayList<ByteArrayList>> quickToQueueURLLists[];
+	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
+	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
+		@Override
+		protected Integer initialValue() {
+			return new Integer(initialThreadIndexInToQueueList.getAndIncrement() % NUM_TO_QUEUE_URL_LISTS);
+		}
+	};
 	/** The parsing threads. */
 	public final ObjectArrayList<ParsingThread> parsingThreads;
 
 	/** The Warc file where to write (if so requested) the downloaded <code>robots.txt</code> files. */
-	public final ParallelBufferedWarcWriter robotsWarcParallelOutputStream;
+	public final ThreadLocal<WarcWriter> robotsWarcParallelOutputStream;
 
 	/** The overall number of path+queries stored in {@link VisitState} queues. */
 	public final AtomicLong pathQueriesInQueues;
@@ -323,6 +337,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	 * {@linkplain FetchingThread fetching threads} and emptied by the {@linkplain ParsingThread
 	 * parsing threads}. */
 	public final LockFreeQueue<FetchData> results;
+	public final LockFreeQueue<FetchData> availableFetchData;
 
 	/** The thread moving {@linkplain VisitState visit states} ready to be visited from the
 	 * {@linkplain #workbench} to the {@link #todo} queue. */
@@ -391,9 +406,8 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	/** Creates the frontier.
 	 *
 	 * @param rc the configuration to be used to set all parameters.
-	 * @param store the place where fetched pages will be stored.
 	 * @param agent the BUbiNG agent possessing this frontier. */
-	public Frontier(final RuntimeConfiguration rc, final Store store, final Agent agent) throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException,
+	public Frontier(final RuntimeConfiguration rc, final Agent agent) throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException,
 			InterruptedException {
 		this.rc = rc;
 
@@ -401,15 +415,30 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
 
-		final File robotsFile = new File(rc.storeDir, ROBOTS_STORE);
-		LOGGER.info("Opening file " + robotsFile + " to write robots.txt");
-		robotsWarcParallelOutputStream = new ParallelBufferedWarcWriter(new FastBufferedOutputStream(new FileOutputStream(robotsFile, !rc.crawlIsNew)), true);
+		robotsWarcParallelOutputStream =  new ThreadLocal<WarcWriter>(){
+			@Override
+			protected WarcWriter initialValue()
+			{
+				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID()+".lz4");
+				LOGGER.info("Opening file " + robotsFile + " to write robots.txt");
+				Configuration conf = new Configuration(true);
+				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
+				CompressionCodec codec = ccf.getCodecByClassName(Lz4Codec.class.getName());
+				OutputStream warcOutputStream = null;
+				try {
+					warcOutputStream = new FastBufferedOutputStream( codec.createOutputStream(new FileOutputStream( robotsFile )), 1024 * 1024 );
+				} catch (IOException e) {
+					LOGGER.error("Unable to create file" , e);
+					System.exit(1);
+				}
+				WarcWriter warcWriter = new UncompressedWarcWriter(warcOutputStream);
+
+				return warcWriter;
+			}
+		};
 
 		urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize);
-
-		this.store = store;
-
-		if (rc.sieveSize == 0) sieve = new IdentitySieve<>(this, new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID,
+				if (rc.sieveSize == 0) sieve = new IdentitySieve<>(this, new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID,
 				BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
 		else sieve = new MercatorSieve<>(rc.crawlIsNew, rc.sieveDir, rc.sieveSize, rc.sieveStoreIOBufferByteSize, rc.sieveAuxFileIOBufferByteSize, this,
 				new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID, BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
@@ -470,14 +499,18 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		done = new LockFreeQueue<>();
 		refill = new LockFreeQueue<>();
 		results = new LockFreeQueue<>();
+		availableFetchData = new LockFreeQueue<>();
+
 		distributor = new Distributor(this);
 
 		// Configures Jericho to use SLF4J
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
-		quickReceivedURLs = new ArrayBlockingQueue<>(1024);
-		quickToSendURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "toSend"), 16*1024, true);
-
+		quickReceivedURLs = new ArrayBlockingQueue<>(64*1024);
+		quickToSendURLs = new ArrayBlockingQueue<>(64*1024);;
+		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
+		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
+			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
 
 		if (rc.crawlIsNew) {
 			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
@@ -557,6 +590,23 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		LOGGER.info("Number of Fetching Threads set to " + numFetchingThreads);
 	}
 
+	public void decreaseFetchingThreads() {
+		synchronized (fetchingThreads) {
+			if (fetchingThreads.size() > 0) {
+				fetchingThreads.get(fetchingThreads.size() - 1).stop = true;
+				fetchingThreads.size(fetchingThreads.size() - 1);
+			}
+			LOGGER.info("Number of fetching threads : {}", fetchingThreads.size());
+		}
+	}
+	public void increaseFetchingThreads() throws NoSuchAlgorithmException, IOException {
+		synchronized (fetchingThreads) {
+			final FetchingThread thread = new FetchingThread(this, fetchingThreads.size());
+			thread.start();
+			fetchingThreads.add(thread);
+			LOGGER.info("Number of fetching threads : {}", fetchingThreads.size());
+		}
+	}
 
 	/** Changes the number of parsing threads.
 	 *
@@ -564,7 +614,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	 * their execution as soon as they check the {@link ParsingThread#stop} field.
 	 *
 	 * @param newParsingThreads the new number of threads. */
-	public void parsingThreads(final int newParsingThreads) throws IllegalArgumentException {
+	public void parsingThreads(final int newParsingThreads) throws IllegalArgumentException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, IOException, NoSuchAlgorithmException {
 		if (newParsingThreads <= 0) throw new IllegalArgumentException();
 
 		synchronized (parsingThreads) {
@@ -576,12 +626,18 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 			}
 
 			for (int i = newParsingThreads - parsingThreads.size(); i-- != 0;) {
-				final ParsingThread thread = new ParsingThread(this, store, parsingThreads.size());
+				final ParsingThread thread = new ParsingThread(this, parsingThreads.size());
 				thread.start();
 				parsingThreads.add(thread);
 			}
 		}
 		LOGGER.info("Number of Parsing Threads set to " + newParsingThreads);
+	}
+
+	public void enqueueUrlList(final ObjectArrayList<ByteArrayList> urls) {
+		int currentIndex = localThreadIndexInToQueueList.get();
+		quickToQueueURLLists[currentIndex].offer(urls);
+		localThreadIndexInToQueueList.set((currentIndex + 1) % NUM_TO_QUEUE_URL_LISTS);
 	}
 
 	/** Enqueues a URL to the the BUbiNG crawl.
@@ -620,7 +676,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		}
 		else try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
-			quickToSendURLs.enqueue(url.elements().clone(),0,url.size());
+			quickToSendURLs.offer(url);
 			// was agent.submit(job);
 		}
 		catch (IllegalStateException e) {
@@ -707,8 +763,10 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	public void receive(final BubingJob job) {
 		if (LOGGER.isDebugEnabled()) LOGGER.debug("Receiving job {}", job.url);
 		try {
-			// Note that this is blocking, but blocking should be very rare and short.
-			quickReceivedURLs.put(job.url);
+			// Note that this is blocking, but blocking should be very rare and short
+			// still, we don't want to block.
+			if (!quickReceivedURLs.offer(job.url))
+				LOGGER.warn("Dropping {} to avoid blocking ! you should increase the quickReceivedURLs queue size", job.toString());
 		}
 		catch (Exception e) {
 			LOGGER.error("Error while enqueueing " + job.url, e);
@@ -792,8 +850,6 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		for (ParsingThread t : parsingThreads) t.stop = true;
 		for (ParsingThread t : parsingThreads) t.join();
 
-		robotsWarcParallelOutputStream.close();
-		store.close();
 		LOGGER.info("Joined parsing threads and closed stores");
 
 		for (FetchingThread t : fetchingThreads) t.close();
