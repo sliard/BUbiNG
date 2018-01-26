@@ -10,6 +10,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.apache.http.Header;
 import org.apache.http.HeaderIterator;
@@ -53,7 +54,14 @@ public abstract class AbstractWarcRecord extends AbstractHttpMessage implements 
 	private static final boolean USE_BURL = Boolean.parseBoolean(System.getProperty(USE_BURL_PROPERTY, "false"));
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AbstractWarcRecord.class);
-	private static final XoRoShiRo128PlusRandomGenerator RNG = new XoRoShiRo128PlusRandomGenerator();
+	private static final ThreadLocal<XoRoShiRo128PlusRandomGenerator> RNG = new ThreadLocal<XoRoShiRo128PlusRandomGenerator>(){
+		@Override
+		protected XoRoShiRo128PlusRandomGenerator initialValue()
+		{
+			return new XoRoShiRo128PlusRandomGenerator(ThreadLocalRandom.current().nextLong());
+		}
+	};
+
 	private static final TimeZone UTC_TIMEZONE = TimeZone.getTimeZone("UTC");
 
 	protected final HeaderGroup warcHeaders;
@@ -79,9 +87,7 @@ public abstract class AbstractWarcRecord extends AbstractHttpMessage implements 
 	public AbstractWarcRecord(final URI targetURI, final HeaderGroup warcHeaders) {
 		this.warcHeaders = warcHeaders == null ? new HeaderGroup() : warcHeaders;
 		final UUID id;
-		synchronized (RNG) {
-			id = new UUID(RNG.nextLong(), RNG.nextLong());
-		}
+		id = new UUID(RNG.get().nextLong(), RNG.get().nextLong());
 		WarcHeader.addIfNotPresent(this.warcHeaders, WarcHeader.Name.WARC_RECORD_ID, WarcHeader.formatId(id));
 		WarcHeader.addIfNotPresent(this.warcHeaders, WarcHeader.Name.WARC_DATE, WarcHeader.formatDate(Calendar.getInstance(UTC_TIMEZONE)));
 		if (targetURI != null) WarcHeader.addIfNotPresent(this.warcHeaders, WarcHeader.Name.WARC_TARGET_URI, targetURI.toString()); // TODO: check with Seba that toString makes sense
