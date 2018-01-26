@@ -98,7 +98,7 @@ public final class FetchingThread extends Thread implements Closeable {
 	/** The synchronous HTTP client used by this thread. */
 	private final HttpClient httpClient;
 	/** The fetched HTTP response used by this thread. */
-	private final FetchData fetchData;
+	private FetchData fetchData;
 	/** The cookie store used by {@link #httpClient}. */
 	private final BasicCookieStore cookieStore;
 
@@ -232,6 +232,7 @@ public final class FetchingThread extends Thread implements Closeable {
 			final RuntimeConfiguration rc = frontier.rc;
 			final int cookieMaxByteSize = rc.cookieMaxByteSize;
 			final LockFreeQueue<FetchData> results = frontier.results; // Cached
+			final LockFreeQueue<FetchData> availableFetchData = frontier.availableFetchData; // Cached
 
 			while (! stop) {
 				// Read
@@ -257,19 +258,28 @@ public final class FetchingThread extends Thread implements Closeable {
 				// Try to find a fetchable URL (i.e., that does not violate the fetch filter or robots.txt).
 				final long startTime = System.currentTimeMillis();
 
-				while(! visitState.isEmpty()) {
+//				while(! visitState.isEmpty()) {
+					if (fetchData == null)
+						for(int i = 0; (fetchData = availableFetchData.poll()) == null; i++) {
+							rc.ensureNotPaused();
+							if (stop) return;
+							long newSleep = 1 << Math.min(i, 10);
+							Thread.sleep(newSleep);
+						}
+
 					final byte[] path = visitState.firstPath();
 					final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, path);
 
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Next URL: {}", url);
 
-
                     if (BlackListing.checkBlacklistedHost(frontier, url)) { // Check for blacklisted Host
                         visitState.dequeue();
-                    } else if (BlackListing.checkBlacklistedIP(frontier, url, visitState.workbenchEntry.ipAddress)) { // Check for blacklisted IP
+						visitState.schedulePurge();
+					} else if (BlackListing.checkBlacklistedIP(frontier, url, visitState.workbenchEntry.ipAddress)) { // Check for blacklisted IP
                         visitState.dequeue();
-                    } else if (path == VisitState.ROBOTS_PATH) {
-						fetchData.inUse = true;
+                        visitState.schedulePurge();
+					} else if (path == VisitState.ROBOTS_PATH) {
+                    	fetchData.inUse = true;
 						cookieStore.clear();
 						try {
 							fetchData.fetch(url, httpClient, frontier.robotsRequestConfig, visitState, true);
@@ -287,38 +297,32 @@ public final class FetchingThread extends Thread implements Closeable {
 							visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
 							visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
 							visitState.dequeue();
-							break;
+							continue;//break;
 						}
 
 						frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
 						frontier.transferredBytes.addAndGet(fetchData.length());
 
 						results.add(fetchData);
-
 						try {
-							synchronized (fetchData) {
-								while (fetchData.inUse) fetchData.wait();
-							}
+							if (fetchData.exception != null || frontier.rc.keepAliveTime == 0 || System.currentTimeMillis() - startTime >= frontier.rc.keepAliveTime)
+								continue;//break;
+						} finally {
+							fetchData = null;
 						}
-						catch (InterruptedException e) {
-							// Stopping
-							LOGGER.warn("Interrupted while waiting for ParsingThread to consume robots FetchData");
-							break;
-						}
-
-						if (fetchData.exception != null || frontier.rc.keepAliveTime == 0 || System.currentTimeMillis() - startTime >= frontier.rc.keepAliveTime) break;
 					}
 					else if (!frontier.rc.fetchFilter.apply(url)) {
 						if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not fetching URL {}", url);
 						visitState.dequeue();
+						frontier.done.add(visitState);
 					}
 					else if (visitState.robotsFilter != null && ! URLRespectsRobots.apply(visitState.robotsFilter, url)) {
 						if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
 						visitState.dequeue();
+						frontier.done.add(visitState);
 					}
 					else {
 						if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null) LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
-
 						fetchData.inUse = true;
 						cookieStore.clear();
 
@@ -337,7 +341,8 @@ public final class FetchingThread extends Thread implements Closeable {
 							visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
 							visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
 							visitState.dequeue();
-							break;
+							continue;
+							//							break;
 						}
 
 						frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
@@ -348,23 +353,17 @@ public final class FetchingThread extends Thread implements Closeable {
 						if (fetchData.exception == null) {
 							visitState.cookies = getCookies(fetchData.uri(), cookieStore, cookieMaxByteSize);
 						}
-
 						try {
-							synchronized (fetchData) {
-								while (fetchData.inUse) fetchData.wait();
-							}
+							if (fetchData.exception != null || frontier.rc.keepAliveTime == 0 || System.currentTimeMillis() - startTime >= frontier.rc.keepAliveTime)
+								continue;
+//								break;
+						} finally {
+							fetchData = null;
 						}
-						catch (InterruptedException e) {
-							// Stopping
-							LOGGER.warn("Interrupted while waiting for ParsingThread to consume FetchData");
-							break;
-						}
-						if (fetchData.exception != null || frontier.rc.keepAliveTime == 0 || System.currentTimeMillis() - startTime >= frontier.rc.keepAliveTime) break;
 					}
 				}
-				if (LOGGER.isTraceEnabled()) LOGGER.trace("Releasing visit state {}", visitState);
-				frontier.done.add(visitState);
-			}
+
+//			}
 		} catch (Throwable e) {
 			LOGGER.error("Unexpected exception", e);
 		}
