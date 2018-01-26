@@ -16,12 +16,16 @@ package it.unimi.di.law.bubing.parser;
  * limitations under the License.
  */
 
+import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
+import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import it.unimi.di.law.warc.filters.URIResponse;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 
 import org.apache.http.HttpResponse;
 
@@ -102,12 +106,27 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
-	public String guessedCharset() {
+	public Charset guessedCharset() {
 		return null;
 	}
 
 	@Override
-	public byte[] getPageContent() {
+	public Locale guessedLanguage() {
+		return null;
+	}
+
+	@Override
+	public CharsetDetectionInfo getCharsetDetectionInfo() {
+		return null;
+	}
+
+	@Override
+	public LanguageDetectionInfo getLanguageDetectionInfo() {
+		return null;
+	}
+
+	@Override
+	public StringBuilder getRewrittenContent() {
 		return null;
 	}
 

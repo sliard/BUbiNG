@@ -2,8 +2,12 @@ package it.unimi.di.law.bubing.parser;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.util.Iterator;
+import java.util.Locale;
 
+import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
+import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import org.apache.http.HttpResponse;
 
 /*
@@ -150,15 +154,20 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 *
 	 * @return a charset or {@code null}.
 	 */
-	public String guessedCharset();
+	public Charset guessedCharset();
+
+	public Locale guessedLanguage();
+
+	public CharsetDetectionInfo getCharsetDetectionInfo();
+
+	public LanguageDetectionInfo getLanguageDetectionInfo();
 
 	/**
-	 * Returns a cleaned (without style/script) page content, or {@code null} if the page content could not be
-	 * found.
+	 * Return raw content (without scripts etc. & html entities) in byte form in order to detect encoding when none is provided
 	 *
 	 * @return the cleaned page content or {@code null}.
 	 */
-	public byte[] getPageContent();
+	public StringBuilder getRewrittenContent();
 
 	/**
 	 * Returns the result of the processing.
