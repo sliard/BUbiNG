@@ -27,9 +27,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Map;
 
 import org.apache.commons.codec.binary.Hex;
+import org.apache.http.Header;
 import org.apache.http.HttpResponse;
+import org.apache.http.message.BasicHeader;
 import org.apache.http.message.HeaderGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,13 +66,17 @@ public class WarcStore implements Closeable, Store {
 	}
 
 	@Override
-	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException {
+	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, String guessedLanguage, Map<String,String> extraHeaders) throws IOException, InterruptedException {
 		if (contentDigest == null) throw new NullPointerException("Content digest is null");
 		LOGGER.debug("WarcStore:Store Uri = " + uri.toString());
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, response);
 
 		HeaderGroup warcHeaders = record.getWarcHeaders();
 		warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString(contentDigest)));
+		for(String header: extraHeaders.keySet()) {
+			warcHeaders.addHeader(new BasicHeader(header, extraHeaders.get(header)));
+		}
+
 		if (guessedCharset != null) warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.BUBING_GUESSED_CHARSET, guessedCharset));
 		if (isDuplicate) warcHeaders.updateHeader(new WarcHeader(WarcHeader.Name.BUBING_IS_DUPLICATE, "true"));
 		writer.write(record);
