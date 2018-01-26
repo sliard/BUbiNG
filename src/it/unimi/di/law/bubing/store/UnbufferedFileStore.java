@@ -28,6 +28,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Map;
 
 import org.apache.commons.codec.binary.Hex;
 import org.apache.http.HttpResponse;
@@ -59,7 +60,7 @@ public class UnbufferedFileStore implements Closeable, Store {
 	}
 
 	@Override
-	public synchronized void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException {
+	public synchronized void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, final String guessedLanguage, final Map<String,String> extraHeaders) throws IOException, InterruptedException {
 		if (contentDigest == null) throw new NullPointerException("Content digest is null");
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, response);
 		HeaderGroup warcHeaders = record.getWarcHeaders();

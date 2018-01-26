@@ -19,13 +19,17 @@ package it.unimi.di.law.bubing.store;
  */
 
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.warc.io.ParallelBufferedWarcWriter;
+import it.unimi.di.law.warc.io.UncompressedWarcWriter;
+import it.unimi.di.law.warc.io.WarcWriter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.records.WarcHeader;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
 
 import java.io.*;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Map;
 import java.util.UUID;
 import java.util.Date;
 import java.text.SimpleDateFormat;
@@ -33,7 +37,12 @@ import java.util.zip.GZIPOutputStream;
 
 
 import org.apache.commons.codec.binary.Hex;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.compress.CompressionCodec;
+import org.apache.hadoop.io.compress.CompressionCodecFactory;
+import org.apache.hadoop.io.compress.Lz4Codec;
 import org.apache.http.HttpResponse;
+import org.apache.http.message.BasicHeader;
 import org.apache.http.message.HeaderGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,22 +55,24 @@ import org.slf4j.LoggerFactory;
 public class MultiWarcStore implements Closeable, Store {
 	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );
 
-	private final int OUTPUT_STREAM_BUFFER_SIZE = 1024 * 1024;
-	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.gz";
+	private final int OUTPUT_STREAM_BUFFER_SIZE = 32*1024 * 1024;
+	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.lz4";
 	private final static String URL_NAME_FORMAT = "urls.%s.%s.gz";
 	public final static String DIGESTS_NAME = "digests.bloom";
-	public final static int NUM_GZ_WARC_RECORDS = 16;
+
 	private int maxRecordsPerFile = 25600;
 	private int maxSecondsBetweenDumps = 600;
 	private int currentNumberOfRecordsInFile = 0;
 	private long lastDumpTime = (new Date()).getTime()/1000;
 	private Object counterLock = new Object();
 	private FastBufferedOutputStream warcOutputStream;
-	private ParallelBufferedWarcWriter warcWriter;
+	private WarcWriter warcWriter;
 	private OutputStream urlOutputStream;
 	private BufferedWriter urlWriter;
-
+	private String currentStoreBaseName;
+	private String currentUrlBaseName;
 	private final File storeDir;
+	private final CompressionCodec codec;
 
 	public MultiWarcStore( final RuntimeConfiguration rc ) throws IOException {
 		storeDir = rc.storeDir;
@@ -69,39 +80,48 @@ public class MultiWarcStore implements Closeable, Store {
 		maxSecondsBetweenDumps = rc.maxSecondsBetweenDumps;
 		LOGGER.info("Max record per file = " + maxRecordsPerFile);
 		LOGGER.info("Max seconds between dumps = " + maxSecondsBetweenDumps);
+		Configuration conf = new Configuration(true);
+		CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
+		codec = ccf.getCodecByClassName(Lz4Codec.class.getName());
 		createNewWriter( );	
 	}
 	private String generateStoreName(Date d) {
 		SimpleDateFormat ft = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss.SSS");
         String datetime = ft.format(d);
-		return String.format(STORE_NAME_FORMAT, datetime, UUID.randomUUID());
+		currentStoreBaseName = String.format(STORE_NAME_FORMAT, datetime, UUID.randomUUID());
+		return currentStoreBaseName;
 	}
 
 	private String generateUrlName(Date d) {
 		SimpleDateFormat ft = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss.SSS");
 		String datetime = ft.format(d);
-		return String.format(URL_NAME_FORMAT, datetime, UUID.randomUUID());
+		currentUrlBaseName = String.format(URL_NAME_FORMAT, datetime, UUID.randomUUID());
+		return currentUrlBaseName;
 	}
 
 	private void createNewWriter() throws IOException {
 		Date now = new Date();
-		final File warcFile = new File( storeDir, generateStoreName(now) );
-		final File urlFile = new File( storeDir, generateUrlName(now) );
+		final File warcFile = new File( storeDir, "."+generateStoreName(now) );
+		final File urlFile = new File( storeDir, "."+generateUrlName(now) );
 
-		warcOutputStream = new FastBufferedOutputStream( new FileOutputStream( warcFile ), OUTPUT_STREAM_BUFFER_SIZE );
-		warcWriter = new ParallelBufferedWarcWriter(warcOutputStream, true );
+		warcOutputStream = new FastBufferedOutputStream( codec.createOutputStream(new FileOutputStream( warcFile )), OUTPUT_STREAM_BUFFER_SIZE);
+		warcWriter = new UncompressedWarcWriter(warcOutputStream);
 		urlOutputStream = new FastBufferedOutputStream( new GZIPOutputStream(new FileOutputStream( urlFile )), OUTPUT_STREAM_BUFFER_SIZE );
 		urlWriter = new BufferedWriter(new OutputStreamWriter(urlOutputStream, "UTF-8"));
 	}
 		
 	@Override
-	public void store( final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException {
+	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, final String guessedLanguage, final Map<String,String> extraHeaders) throws IOException, InterruptedException {
 		if ( contentDigest == null ) throw new NullPointerException( "Content digest is null" );
 		LOGGER.debug("MultiWarcStore:Store Uri = "+ uri.toString());
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord( uri, response );
 		HeaderGroup warcHeaders = record.getWarcHeaders();
 		warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString( contentDigest ) ) );
 		if ( guessedCharset != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_CHARSET, guessedCharset ) );
+		if ( guessedLanguage != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_LANGUAGE, guessedLanguage ) );
+		for(String header: extraHeaders.keySet()) {
+			warcHeaders.updateHeader(new BasicHeader(header, extraHeaders.get(header)));
+		}
 		if ( isDuplicate ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_IS_DUPLICATE, "true" ) );
 		synchronized(counterLock) {
 			long currentTime = new Date().getTime()/1000;
@@ -112,14 +132,7 @@ public class MultiWarcStore implements Closeable, Store {
 				currentNumberOfRecordsInFile = 0;
 				lastDumpTime = currentTime;
 				LOGGER.info( "Target number of records reached, creating new output file" );
-				try {
-					warcWriter.close();
-					urlWriter.close();
-				} catch ( IOException e ) {
-					LOGGER.error( "Closing interrupted");
-				}
-				warcOutputStream.close();
-				urlOutputStream.close();
+				realClose();
 				createNewWriter();
 			}
 			urlWriter.write(uri.toString() + '\n');
@@ -128,8 +141,7 @@ public class MultiWarcStore implements Closeable, Store {
 		currentNumberOfRecordsInFile += 1;
 	}
 
-	@Override
-	public synchronized void close() throws IOException {
+	private void realClose() throws IOException {
 		try {
 			warcWriter.close();
 			urlWriter.close();
@@ -139,5 +151,14 @@ public class MultiWarcStore implements Closeable, Store {
 		}
 		warcOutputStream.close();
 		urlOutputStream.close();
+		Files.move(Paths.get(storeDir.getAbsolutePath(), "."+currentStoreBaseName),
+				Paths.get(storeDir.getAbsolutePath(), currentStoreBaseName));
+		Files.move(Paths.get(storeDir.getAbsolutePath(), "."+currentUrlBaseName),
+				Paths.get(storeDir.getAbsolutePath(), currentUrlBaseName));
+	}
+
+	@Override
+	public synchronized void close() throws IOException {
+		realClose();
 	}
 }

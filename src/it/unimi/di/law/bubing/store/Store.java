@@ -19,6 +19,7 @@ package it.unimi.di.law.bubing.store;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Map;
 
 import org.apache.http.HttpResponse;
 
@@ -28,7 +29,7 @@ import org.apache.http.HttpResponse;
 
 public interface Store extends Closeable {
 
-	void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset) throws IOException, InterruptedException;
+	void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, final String guessedLanguage, final Map<String,String> extraHeaders) throws IOException, InterruptedException;
 
 	@Override
 	void close() throws IOException;
