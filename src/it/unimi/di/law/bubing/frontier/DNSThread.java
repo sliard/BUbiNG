@@ -86,6 +86,10 @@ public final class DNSThread extends Thread {
 						if (a.getAddress().length == 4)
 							ipv4Addresses.add(a);
 					}
+					if (ipv4Addresses.size() <= 0) {
+						LOGGER.info("Host {} has no IPv4 address", host);
+						throw new UnknownHostException();
+					}
 					final byte[] address = ipv4Addresses.get(rng.nextInt(ipv4Addresses.size())).getAddress(); // Pick one of the addresses
 
 					if (address.length == 4) {
@@ -118,12 +122,12 @@ public final class DNSThread extends Thread {
 						final long delay = ParsingThread.EXCEPTION_TO_WAIT_TIME.getLong(UnknownHostException.class) << visitState.retries;
 						// Exponentially growing delay
 						visitState.nextFetch = System.currentTimeMillis() + delay;
-						LOGGER.info("Will retry DNS resolution of state " + visitState + " with delay " + delay);
+						LOGGER.debug("Will retry DNS resolution of state " + visitState + " with delay " + delay);
 						frontier.unknownHosts.add(visitState);
 					}
 					else {
 						visitState.schedulePurge();
-						LOGGER.info("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
+						LOGGER.debug("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
 					}
 				}
 			}
