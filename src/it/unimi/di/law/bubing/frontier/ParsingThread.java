@@ -1,13 +1,25 @@
 package it.unimi.di.law.bubing.frontier;
 
-import java.io.IOException;
+import java.io.*;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.nio.BufferOverflowException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.base.Charsets;
+import com.google.common.collect.ImmutableMap;
+import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
+import org.apache.http.HttpEntity;
+import org.apache.http.entity.BasicHttpEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +61,7 @@ import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 
+import javax.annotation.concurrent.Immutable;
 import java.util.Random;
 //RELEASE-STATUS: DIST
 
@@ -129,6 +142,7 @@ public class ParsingThread extends Thread {
 		private URI uri;
 		private char[][] robotsFilter;
 		private final ByteArrayList byteList;
+		private ObjectArrayList<ByteArrayList> urls;
 		public int outlinks;
 		public int scheduledLinks;
 
@@ -153,6 +167,11 @@ public class ParsingThread extends Thread {
 			this.uri = uri;
 			this.schemeAuthority = schemeAuthority;
 			this.robotsFilter = robotsFilter;
+			urls = new ObjectArrayList<>(16);
+		}
+
+		public void close() {
+			frontier.enqueueUrlList(urls);
 		}
 
 		private static boolean sameSchemeAuthority(final byte[] schemeAuthority, final URI url) {
@@ -198,7 +217,7 @@ public class ParsingThread extends Thread {
 
 			try {
 				BURL.toByteArrayList(url, byteList);
-				frontier.enqueue(byteList);
+				urls.add(byteList.clone());
 				scheduledLinks++;
 			}
 			catch (final Exception e) {
@@ -222,21 +241,18 @@ public class ParsingThread extends Thread {
 	/** A random number generator for the thread */
 	private final Random rng;
 
-	private final CharsetDetector charsetDetector;
-
 	/** Creates a thread.
 	 *
 	 * @param frontier the frontier instantiating the thread.
-	 * @param store the place where pages must be stored, if required, after parsing.
 	 * @param index the index of this thread (used to give it a name).
 	 */
-	public ParsingThread(final Frontier frontier, final Store store, final int index) {
+	public ParsingThread(final Frontier frontier, final int index) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, IOException, NoSuchAlgorithmException {
 		setName(this.getClass().getSimpleName() + '-' + index);
 		this.frontier = frontier;
-		this.store = store;
+		this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);;
 		this.rng = new Random(index);
 		this.parsers = new ArrayList<>(frontier.rc.parsers.size());
-		this.charsetDetector = new CharsetDetector();
+		frontier.availableFetchData.add(new FetchData(frontier.rc)); // Add extra available Fetch Data
 
 		for(final Parser<?> parser : frontier.rc.parsers) this.parsers.add(parser.copy());
 		setPriority((Thread.NORM_PRIORITY + Thread.MIN_PRIORITY) / 2); // Below main threads
@@ -270,7 +286,6 @@ public class ParsingThread extends Thread {
 		try {
 			final RuntimeConfiguration rc = frontier.rc;
 			final FrontierEnqueuer frontierLinkReceiver = new FrontierEnqueuer(frontier, rc);
-
 			for(;;) {
 				rc.ensureNotPaused();
 
@@ -278,7 +293,8 @@ public class ParsingThread extends Thread {
 				for(int i = 0; (fetchData = frontier.results.poll()) == null; i++) {
 					rc.ensureNotPaused();
 					if (stop) return;
-					Thread.sleep(1 << Math.min(i, 10));
+					long newSleep = 1 << Math.min(i, 10);
+					Thread.sleep(newSleep);
 				}
 
 				try { // This try/finally guarantees that we will release the visit state and signal back.
@@ -311,21 +327,21 @@ public class ParsingThread extends Thread {
 							final long delay = EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
 							// Exponentially growing delay
 							visitState.nextFetch = fetchData.endTime + delay;
-							LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
+							if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
 						}
 						else {
 							frontier.brokenVisitStates.decrementAndGet();
-							// Note that *any* repeated error on robots.txt leads to dropping the entire site
+							// Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
 							if (EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
 								visitState.schedulePurge();
-								LOGGER.warn("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
+								if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
 							}
 							else {
 								visitState.dequeue();
 								visitState.lastExceptionClass = null;
 								// Regular delay
 								visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay;
-								LOGGER.info("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
+								if (LOGGER.isInfoEnabled()) LOGGER.info("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
 							}
 						}
 
@@ -342,7 +358,7 @@ public class ParsingThread extends Thread {
 
 					if (fetchData.robots) {
 						frontier.fetchedRobots.incrementAndGet();
-						frontier.robotsWarcParallelOutputStream.write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+						frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
 
 						if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
 							// We go on getting/creating a workbench entry only if we have robots permissions.
@@ -359,12 +375,13 @@ public class ParsingThread extends Thread {
 					frontier.fetchedResources.incrementAndGet();
 
 					byte[] digest = null;
-					String guessedCharset = null;
+					Charset guessedCharset = null;
+					String guessedLanguage = null;
 					final LinkReceiver linkReceiver = rc.followFilter.apply(fetchData) ? new HTMLParser.SetLinkReceiver() : Parser.NULL_LINK_RECEIVER;
 
 					frontierLinkReceiver.init(fetchData.uri(), visitState.schemeAuthority, visitState.robotsFilter);
 					final long streamLength = fetchData.response().getEntity().getContentLength();
-
+					Map<String, String> extraMap = ImmutableMap.of("","");
 					if (streamLength != 0) { // We don't parse zero-length streams
 						try {
 							if (rc.parseFilter.apply(fetchData)) {
@@ -384,12 +401,41 @@ public class ParsingThread extends Thread {
 												}
 											}
 										} catch(final BufferOverflowException e) {
-											LOGGER.warn("Buffer overflow during parsing of " + url + " with " + parser);
+											LOGGER.info("Buffer overflow during parsing of " + url + " with " + parser);
 										} catch(final IOException e) {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
-										if (guessedCharset == null)
-											guessedCharset = icuGuessedCharset(parser.getPageContent());
+										guessedCharset = parser.guessedCharset();
+										if (parser.guessedLanguage() != null)
+											guessedLanguage = parser.guessedLanguage().getLanguage();
+										if (parser.getRewrittenContent() != null) {
+											HttpEntity originalEntity = fetchData.response().getEntity(); // Actually a caching EntityWrapper
+											BasicHttpEntity rewrittenEntity = new BasicHttpEntity();
+											InputStream is;
+											if (guessedCharset == null) // We use the same encoding that was used for decoding.
+												is = IOUtils.toInputStream(parser.getRewrittenContent(), StandardCharsets.UTF_8);
+											else
+												is = IOUtils.toInputStream(parser.getRewrittenContent(), guessedCharset);
+											rewrittenEntity.setContent(is);
+											rewrittenEntity.setContentType(originalEntity.getContentType());
+
+											if (originalEntity instanceof InspectableCachedHttpEntity) {
+												InspectableCachedHttpEntity modifiableEntity = (InspectableCachedHttpEntity) originalEntity;
+												modifiableEntity.setEntity(rewrittenEntity);
+												modifiableEntity.copyContent(rc.responseBodyMaxByteSize, fetchData.startTime, rc.connectionTimeout, 10);
+												rewrittenEntity.setContentLength(modifiableEntity.getContentLength());
+												fetchData.response().setHeader("Content-Length", Long.toString(modifiableEntity.getContentLength()));
+												fetchData.response().setEntity(modifiableEntity);
+
+												// We are cheating with the truth, so we must change the response's header
+
+											}
+										}
+										extraMap = ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
+												"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
+												"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
+												"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
+												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset);
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
@@ -422,11 +468,13 @@ public class ParsingThread extends Thread {
 					if (isNotDuplicate) for(final URI u: linkReceiver) frontierLinkReceiver.enqueue(u);
 					else fetchData.isDuplicate(true);
 
+					frontierLinkReceiver.close();
+
 					// ALERT: store exceptions should cause shutdown.
 					final String result;
 					if (mustBeStored) {
 						if (isNotDuplicate) {
-							// Soft, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
+							// Sot, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
 							incrementCountAndPurge(true, visitState, rc);
 							final int code = fetchData.response().getStatusLine().getStatusCode() / 100;
 							if (code > 0 && code < 6) frontier.archetypesStatus[code].incrementAndGet();
@@ -450,7 +498,8 @@ public class ParsingThread extends Thread {
 							incrementCountAndPurge(false, visitState, rc);
 							result = "duplicate";
 						}
-						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset);
+						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset == null ? null : guessedCharset.name(), guessedLanguage,
+								extraMap);
 					}
 					else {
 						result = "not stored";
@@ -460,10 +509,10 @@ public class ParsingThread extends Thread {
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Fetched " + url + " (" + Util.formatSize((long)(1000.0 * fetchData.length() / (fetchData.endTime - fetchData.startTime + 1)), formatDouble) + "B/s; " + frontierLinkReceiver.scheduledLinks + "/" + frontierLinkReceiver.outlinks + "; " + result + ")");
 				}
 				finally {
-					synchronized(fetchData) {
-						fetchData.inUse = false;
-						fetchData.notify();
-					}
+					fetchData.inUse = false;
+					if (LOGGER.isTraceEnabled()) LOGGER.trace("Releasing visit state {}", fetchData.visitState);
+					frontier.done.add(fetchData.visitState);
+					frontier.availableFetchData.add(fetchData);
 				}
 			}
 		}
@@ -473,11 +522,14 @@ public class ParsingThread extends Thread {
 		catch (final Throwable t) {
 			LOGGER.error("Unexpected exception", t);
 		}
+		finally {
+			try {
+				store.close();
+				frontier.robotsWarcParallelOutputStream.get().close();
+			} catch (IOException e) {
+				LOGGER.error("Error while closing store", e);
+			}
+		}
 	}
 
-	private String icuGuessedCharset(byte[] input) {
-		charsetDetector.setText(input);
-		CharsetMatch match = charsetDetector.detect();
-		return (match.getName());
-	}
 }
