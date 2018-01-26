@@ -246,8 +246,13 @@ public final class StatsThread implements Runnable {
 		}
 
 		LOGGER.info("Entry with " + maxVisitStates + " visitStates first hosts : ");
-		for (int i =0; i < Math.min(maxVisitStates,10); i++)
-			LOGGER.info(BURL.hostFromSchemeAndAuthority(entryWithMaxStates.visitStates()[i].schemeAuthority));
+		try {
+			VisitState[] statesOfBiggestEntry = entryWithMaxStates.visitStates();
+			for (int i = 0; i < Math.min(statesOfBiggestEntry.length, 10); i++)
+				LOGGER.info(BURL.hostFromSchemeAndAuthority(statesOfBiggestEntry[i].schemeAuthority));
+		} catch (Exception e) {
+			// Silently ignore this, not important.
+		}
 		this.entrySummaryStats = entrySummaryStats;
 		this.resolvedVisitStates = resolvedVisitStates;
 		this.brokenVisitStatesOnWorkbench = brokenVisitStatesOnWorkbench;
