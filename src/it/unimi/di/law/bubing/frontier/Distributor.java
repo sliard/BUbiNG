@@ -62,11 +62,11 @@ public final class Distributor extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Distributor.class);
 	/** We purge {@linkplain VisitState visit states} from {@link #schemeAuthority2VisitState} when
 	 * this amount of time has passed (approximately) since the last fetch. */
-	private static final long PURGE_DELAY = TimeUnit.HOURS.toMillis(6);
+	private static final long PURGE_DELAY = TimeUnit.HOURS.toMillis(1);
 	/** We prints low-cost stats at this interval. */
-	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.SECONDS.toMillis(10);
+	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.SECONDS.toMillis(30);
 	/** We prints high-cost stats at this interval. */
-	private static final long HIGH_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(1);
+	private static final long HIGH_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(5);
 	/** We check for visit states to be purged at this interval. */
 	private static final long PURGE_CHECK_INTERVAL = TimeUnit.MINUTES.toMillis(15);
 
@@ -218,7 +218,11 @@ public final class Distributor extends Thread {
 							 * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
 							 * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
 							 * same visit state later, in which case we will create it again. */
-							if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0 && visitState.nextFetch < now - PURGE_DELAY && visitState.isEmpty() && ! visitState.acquired && visitState.lastExceptionClass == null) {
+							if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0
+									&& visitState.nextFetch < now - PURGE_DELAY
+									&& visitState.isEmpty()
+									&& ! visitState.acquired
+									/*&& visitState.lastExceptionClass == null*/) {
 								LOGGER.info((visitState.nextFetch == Long.MAX_VALUE ? "Purging " : "Purging by delay ") + visitState);
 								// This will modify the backing array on which we are enumerating, but it won't be a serious problem.
 								frontier.virtualizer.remove(visitState);
