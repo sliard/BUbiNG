@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.tool;
+package it.unimi.di.law.bubing.util;
 //RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.util.MurmurHash3;
