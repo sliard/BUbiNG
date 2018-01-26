@@ -53,24 +53,20 @@ public final class QuickToSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ByteArrayDiskQueue quickToSendURLs = frontier.quickToSendURLs;
+            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendURLs;
             while(! stop) {
-                if (!quickToSendURLs.isEmpty()) {
-                    quickToSendURLs.dequeue();
+                final ByteArrayList url = quickToSendURLs.poll(1, TimeUnit.SECONDS);
 
-                    final ByteArrayList url = quickToSendURLs.buffer();
-
-                    if (url != null) {
-                        final BubingJob job = new BubingJob(url);
-                        LOGGER.debug("Passing job " + job.toString());
-                        try {
-                            frontier.agent.submit(job);
-                        } catch (NoSuchJobManagerException e) {
-                            // This just shouldn't happen.
-                            LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
-                        }
+                if (url != null) {
+                    final BubingJob job = new BubingJob(url);
+                    LOGGER.debug("Passing job " + job.toString());
+                    try {
+                        frontier.agent.submit(job);
+                    } catch (NoSuchJobManagerException e) {
+                        // This just shouldn't happen.
+                        LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
                     }
-                } else  Thread.sleep(1000);
+                }
             }
         }
         catch (Throwable t) {

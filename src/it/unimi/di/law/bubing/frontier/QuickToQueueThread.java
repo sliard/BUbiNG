@@ -19,21 +19,20 @@ package it.unimi.di.law.bubing.frontier;
 
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.BubingJob;
-import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.TimeUnit;
-
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.jai4j.NoSuchJobManagerException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
+
 /** A thread that takes care of sending the content of {@link Frontier#quickToSendURLs} with submit().
  * The {@link #run()} method waits on the {@link Frontier#quickReceivedURLs} queue, checking that {@link #stop} becomes true every second. */
 
-public final class QuickToSendThread extends Thread {
-    private static final Logger LOGGER = LoggerFactory.getLogger(QuickToSendThread.class);
+public final class QuickToQueueThread extends Thread {
+    private static final Logger LOGGER = LoggerFactory.getLogger(QuickToQueueThread.class);
     /** A reference to the frontier. */
     private final Frontier frontier;
 
@@ -41,7 +40,7 @@ public final class QuickToSendThread extends Thread {
      *
      * @param frontier the frontier instantiating the thread.
      */
-    public QuickToSendThread(final Frontier frontier) {
+    public QuickToQueueThread(final Frontier frontier) {
         setName(this.getClass().getSimpleName());
         setPriority(Thread.MAX_PRIORITY); // This must be done quickly
         this.frontier = frontier;
@@ -53,18 +52,13 @@ public final class QuickToSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendURLs;
+            final ArrayBlockingQueue<ObjectArrayList<ByteArrayList>> quickToQueueURLLists[] = frontier.quickToQueueURLLists;
             while(! stop) {
-                final ByteArrayList url = quickToSendURLs.poll();
-
-                if (url != null) {
-                    final BubingJob job = new BubingJob(url);
-                    LOGGER.debug("Passing job " + job.toString());
-                    try {
-                        frontier.agent.submit(job);
-                    } catch (NoSuchJobManagerException e) {
-                        // This just shouldn't happen.
-                        LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
+                for (int i=0; i<quickToQueueURLLists.length;i++) {
+                    final ObjectArrayList<ByteArrayList> urls = quickToQueueURLLists[i].poll(1000 / quickToQueueURLLists.length, TimeUnit.MILLISECONDS);
+                    if (urls != null) {
+                        for (ByteArrayList url : urls)
+                            frontier.enqueue(url);
                     }
                 }
             }
