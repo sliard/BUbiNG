@@ -9,7 +9,7 @@ import java.net.URI;
 import java.util.concurrent.locks.Lock;
 
 import static crawlercommons.domains.PaidLevelDomain.getPLD;
-import static it.unimi.di.law.bubing.tool.HostHash.hostLongHash;
+import static it.unimi.di.law.bubing.util.HostHash.hostLongHash;
 
 public class BlackListing {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlackListing.class);
@@ -19,7 +19,7 @@ public class BlackListing {
         boolean blackListed = false;
         if (address.length != 4)
             return false; // We check only IPv4 addresses
-        Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
+        Lock lock = frontier.rc.blackListedIPv4Lock.readLock();
         lock.lock();
 
         try {
@@ -39,19 +39,22 @@ public class BlackListing {
     public static boolean checkBlacklistedHost(Frontier frontier, URI url)
     {
         String host = url.getHost();
-        String pld = getPLD(host);
+        int hostlen = host.length();
+        int hoststart = 0;
         boolean blackListed = false;
         Lock lock = frontier.rc.blackListedHostHashesLock.readLock();
         lock.lock();
         try {
-               LOGGER.debug("Testing {} for blacklisting", pld);
-               if (frontier.rc.blackListedHostHashes.contains(hostLongHash(pld)) || frontier.rc.blackListedHostHashes.contains(hostLongHash(host))) {
-                   if (LOGGER.isDebugEnabled())
-                       LOGGER.debug("URL {} disallowed by last-minute check for Host blacklisting", url);
-                   blackListed = true;
-               }
+               do {
+                   if (frontier.rc.blackListedHostHashes.contains(hostLongHash(host, hoststart, hostlen - hoststart))) {
+                       if (LOGGER.isDebugEnabled())
+                           LOGGER.debug("URL {} disallowed by last-minute check for Host blacklisting", url);
+                       return true;
+                   }
+                   hoststart = host.indexOf('.', hoststart) + 1;
+               } while ( hoststart != -1 && host.indexOf('.', hoststart) != -1);
         } catch (Exception e) {
-            LOGGER.warn("Exception in blacklist Host checking {}", pld, e);
+            LOGGER.warn("Exception in blacklist Host checking {}", host, e);
         } finally {
             lock.unlock();
         }
