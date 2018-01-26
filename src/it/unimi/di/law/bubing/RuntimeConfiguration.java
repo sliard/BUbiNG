@@ -13,13 +13,11 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.http.conn.DnsResolver;
@@ -65,7 +63,7 @@ import it.unimi.dsi.lang.FlyweightPrototype;
 import it.unimi.dsi.lang.MutableString;
 import it.unimi.dsi.lang.ObjectParser;
 
-import static it.unimi.di.law.bubing.tool.HostHash.hostLongHash;
+import static it.unimi.di.law.bubing.util.HostHash.hostLongHash;
 
 //RELEASE-STATUS: DIST
 
@@ -364,6 +362,76 @@ public class RuntimeConfiguration {
 		else blackListedHostHashes.add(hostLongHash(spec.trim()));
 	}
 
+	private List<Iterator<URI>> getSeedSequence(File seedFile) {
+		final List<Iterator<URI>> seedSequence = new ArrayList<>();
+		if (seedFile.getName().equals("..") || seedFile.getName().equals("."))
+			return seedSequence;
+		try {
+			LOGGER.info("Adding seed {}", seedFile.getPath());
+			if (seedFile.isDirectory())
+				seedSequence.addAll(getSeedSequence(seedFile.listFiles()));
+			else {
+				final LineIterator lineIterator;
+
+				if (seedFile.getPath().endsWith(".gz"))
+					lineIterator = new LineIterator(new FastBufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(seedFile)), Charsets.UTF_8)));
+				else
+					lineIterator = new LineIterator(new FastBufferedReader(new InputStreamReader(new FileInputStream(seedFile), Charsets.UTF_8)));
+				seedSequence.add(new Iterator<URI>() {
+					@Override
+					public boolean hasNext() {
+						return lineIterator.hasNext();
+					}
+
+					@Override
+					public URI next() {
+						return handleSeedURL(lineIterator.next());
+					}
+
+					@Override
+					public void remove() {
+						throw new UnsupportedOperationException();
+					}
+				});
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return seedSequence;
+	}
+
+	private List<Iterator<URI>> getSeedSequence(File[] files) {
+		final List<Iterator<URI>> seedSequence = new ArrayList<>();
+		final List<File> seedFileSequence = new ArrayList<>();
+		for (final File f : files)
+			seedFileSequence.add(f);
+
+		Collections.shuffle(seedFileSequence);
+		for (final File f : seedFileSequence) {
+			seedSequence.addAll(getSeedSequence(f));
+		}
+		return seedSequence;
+	}
+	private List<Iterator<URI>> getSeedSequence(String[] seedSpecs) {
+		final List<Iterator<URI>> seedSequence = new ArrayList<>();
+		final List<String> seedSpecSequence = new ArrayList<>();
+		for (final String spec : seedSpecs)
+			seedSpecSequence.add(spec);
+
+		Collections.shuffle(seedSpecSequence);
+		for (final String spec : seedSpecSequence) {
+			if (spec.length() == 0) continue; // Skip empty lines
+			LOGGER.info("Adding seed {}", spec);
+			if (spec.startsWith("file:")) {
+				final String fileSpec = spec.substring(5);
+				seedSequence.addAll(getSeedSequence(new File(fileSpec)));
+			} else {
+				seedSequence.add(Iterators.singletonIterator(handleSeedURL(new MutableString(spec))));
+			}
+		}
+		return seedSequence;
+	}
+
 	public RuntimeConfiguration(final StartupConfiguration startupConfiguration) throws ConfigurationException, IOException {
 		try {
 			crawlIsNew = startupConfiguration.crawlIsNew;
@@ -418,22 +486,7 @@ public class RuntimeConfiguration {
 			spamDetectionThreshold = startupConfiguration.spamDetectionThreshold;
 			spamDetectionPeriodicity = startupConfiguration.spamDetectionPeriodicity;
 
-			final List<Iterator<URI>> seedSequence = new ArrayList<>();
-			for(final String spec : startupConfiguration.seed) {
-				if (spec.length() == 0) continue; // Skip empty lines
-				if (spec.startsWith("file:")) {
-					final LineIterator lineIterator = new LineIterator(new FastBufferedReader(new InputStreamReader(new FileInputStream(spec.substring(5)), Charsets.ISO_8859_1)));
-					seedSequence.add(new Iterator<URI>() {
-						@Override
-						public boolean hasNext() { return lineIterator.hasNext();}
-						@Override
-						public URI next() { return handleSeedURL(lineIterator.next()); }
-						@Override
-						public void remove() { throw new UnsupportedOperationException(); }
-					});
-				}
-				else seedSequence.add(Iterators.singletonIterator(handleSeedURL(new MutableString(spec))));
-			}
+			final List<Iterator<URI>> seedSequence = getSeedSequence(startupConfiguration.seed);
 
 			blackListedIPv4Addresses = new IntOpenHashSet();
 			for(final String spec : startupConfiguration.blackListedIPv4Addresses) addBlackListedIPv4(spec);
