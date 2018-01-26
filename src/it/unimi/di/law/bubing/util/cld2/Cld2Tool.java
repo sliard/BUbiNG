@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.util;
+package it.unimi.di.law.bubing.util.cld2;
 
 public class Cld2Tool {
     /**
@@ -49,13 +49,13 @@ public class Cld2Tool {
             return Cld2Library.INSTANCE._ZN4CLD221DetectLanguageVersionEv();
         }
 
-        public static CldResult detect(String text) {
+        public static Cld2Result detect(String text, String tld, String hintLang) {
             boolean isPlainText = true;
-            CldHints cldHints = new CldHints(
-                    null,
-                    "",
-                    CldEncoding.UNKNOWN_ENCODING,
-                    CldLanguage.UNKNOWN_LANGUAGE);
+            Cld2Hints cld2Hints = new Cld2Hints(
+                    hintLang,
+                    tld,
+                    Cld2Encoding.UNKNOWN_ENCODING,
+                    Cld2Language.UNKNOWN_LANGUAGE);
             int flags = 0;
             int[] language3 = new int[3];
             int[] percent3 = new int[3];
@@ -66,13 +66,13 @@ public class Cld2Tool {
             try {
                 utf8EncodedText = text.getBytes("UTF-8");
             } catch (java.io.UnsupportedEncodingException exc) {
-                return new CldResult("UNKNOWN", "UNKNOWN", 0.0);
+                return new Cld2Result("UNKNOWN", "UNKNOWN", 0.0);
             }
             int language = Cld2Library.INSTANCE._ZN4CLD224ExtDetectLanguageSummaryEPKcibPKNS_8CLDHintsEiPNS_8LanguageEPiPdPSt6vectorINS_11ResultChunkESaISA_EES7_Pb(
                     utf8EncodedText,
                     utf8EncodedText.length,
                     isPlainText,
-                    cldHints,
+                    cld2Hints,
                     flags,
                     language3,
                     percent3,
@@ -81,7 +81,7 @@ public class Cld2Tool {
                     textBytes,
                     isReliable);
 
-            return new CldResult(
+            return new Cld2Result(
                     getLanguageName(language), getLanguageCode(language), percent3[0] / 100.0);
         }
 }

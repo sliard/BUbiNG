@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.util;
+package it.unimi.di.law.bubing.util.cld2;
 
 
 /*
@@ -27,7 +27,7 @@ import java.util.List;
  * a tool written by <a href="http://ochafik.com/">Olivier Chafik</a> that <a href="http://code.google.com/p/jnaerator/wiki/CreditsAndLicense">uses a few opensource projects.</a>.<br>
  * For help, please visit <a href="http://nativelibs4java.googlecode.com/">NativeLibs4Java</a> , <a href="http://rococoa.dev.java.net/">Rococoa</a>, or <a href="http://jna.dev.java.net/">JNA</a>.
  */
-public class CldHints extends Structure {
+public class Cld2Hints extends Structure {
     /** "mi,en" boosts Maori and English */
     public String content_language_hint;
     /** "id" boosts Indonesian */
@@ -35,24 +35,24 @@ public class CldHints extends Structure {
     /** SJS boosts Japanese */
     public int encoding_hint;
     /**
-     * @see CldLanguage <br>
+     * @see Cld2Language <br>
      * ITALIAN boosts it
      */
     public int language_hint;
-    public CldHints() {
+    public Cld2Hints() {
         super();
     }
     protected List<String> getFieldOrder() {
         return Arrays.asList("content_language_hint", "tld_hint", "encoding_hint", "language_hint");
     }
-    public CldHints(String content_language_hint, String tld_hint, int encoding_hint, int language_hint) {
+    public Cld2Hints(String content_language_hint, String tld_hint, int encoding_hint, int language_hint) {
         super();
         this.content_language_hint = content_language_hint;
         this.tld_hint = tld_hint;
         this.encoding_hint = encoding_hint;
         this.language_hint = language_hint;
     }
-    public CldHints(Pointer peer) {
+    public Cld2Hints(Pointer peer) {
         super(peer);
     }
 }

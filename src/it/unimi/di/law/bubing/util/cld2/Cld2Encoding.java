@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.util;
+package it.unimi.di.law.bubing.util.cld2;
 /*
  * Copyright 2014-present Deezer.com
  *
@@ -23,7 +23,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * Enum with the values of the different encodings accepted by the CLD2 library.
  */
-public interface CldEncoding {
+public interface Cld2Encoding {
     int ISO_8859_1 = 0;
     int ISO_8859_2 = 1;
     int ISO_8859_3 = 2;

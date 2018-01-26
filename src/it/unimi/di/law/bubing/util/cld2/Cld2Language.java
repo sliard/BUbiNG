@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.util;
+package it.unimi.di.law.bubing.util.cld2;
 
 /*
  * Copyright 2014-present Deezer.com
@@ -21,7 +21,7 @@ package it.unimi.di.law.bubing.util;
 /**
  * Enum with the values of the different languages accepted by the CLD2 library.
  */
-public interface CldLanguage {
+public interface Cld2Language {
     int ENGLISH = 0;
     int DANISH = 1;
     int DUTCH = 2;

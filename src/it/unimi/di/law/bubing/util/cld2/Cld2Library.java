@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.util;
+package it.unimi.di.law.bubing.util.cld2;
 
 import com.sun.jna.Library;
 
@@ -67,7 +67,7 @@ public interface Cld2Library extends Library {
 
     //int ExtDetectLanguageSummary(String buffer, int buffer_length, byte is_plain_text, CLDHints cld_hints, int flags, IntBuffer language3, IntBuffer percent3, DoubleBuffer normalized_score3, PointerByReference resultchunkvector, IntBuffer text_bytes, ByteBuffer is_reliable);
     int _ZN4CLD224ExtDetectLanguageSummaryEPKcibPKNS_8CLDHintsEiPNS_8LanguageEPiPdPSt6vectorINS_11ResultChunkESaISA_EES7_Pb(
-            byte[] buffer, int bufferLength, boolean isPlainText, CldHints cldHints, int flags,
+            byte[] buffer, int bufferLength, boolean isPlainText, Cld2Hints cld2Hints, int flags,
             int[] language3, int[] percent3, double[] normalizedScore3,
             PointerByReference resultchunkvector, int[] textBytes, boolean[] isReliable);
 
