@@ -9,6 +9,7 @@ import java.net.Socket;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.lang.StringEscapeUtils;
@@ -57,6 +58,8 @@ import it.unimi.dsi.webgraph.ImmutableGraph;
 public class NamedGraphServerHttpProxy extends Thread {
 
 	private static AtomicLong busyTime = new AtomicLong();
+	private static AtomicLong simultaneousQueries = new AtomicLong();
+	private static AtomicLong maxSimultaneousQueries = new AtomicLong();
 
 	/** Like a standard print writer, but it sleeps a random amount of time before printing each string (only the
 	 *  methods {@link #println(String)}, {@link #print(String)} and {@link #println()} are affected). 	*/
@@ -101,7 +104,29 @@ public class NamedGraphServerHttpProxy extends Thread {
 	}
 
 	public static void generate(final long hashCode, final StringBuilder content, final CharSequence[] successors, boolean notescurl) {
-		content.append("<html>\n<head></head>\n<body>\n");
+		content.append("<html>\n<head>");
+		content.append("<!-- a very important comment -->");
+		content.append("<title>My page </title>");
+
+		content.append("<script type=\"text/javascript\">\n");
+		content.append("if(self!==top)window.document.write(\"\\u003Cstyle>body * {display:none !important;}\\u003C\\/style>\\u003Ca href=\\\"#\\\" onclick=\"+\n" +
+				"\"\\\"top.location.href=window.location.href\\\" style=\\\"display:block !important;padding:10px\\\">Go to Slack.com\\u003C\\/a>\");\n");
+		content.append("</script>");
+		ThreadLocalRandom trng = ThreadLocalRandom.current();
+		if (trng.nextDouble() > 0.05) { // 95% of the time
+			if (trng.nextDouble() > 0.8) // 30% of the time
+				content.append("<meta charset=\"UTF-8\">\n");
+			else
+			if (trng.nextDouble() > 0.8) // 30% of the time
+				content.append("<meta \ncharset=\"UTF-8\">\n");
+			else
+			if (trng.nextDouble() > 0.8) // 30% of the time
+				content.append("<meta \nhttp-equiv=\"content-type\" \ncontent=\"text/html; charset=utf-8\">\n");
+			else
+				content.append("<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n");
+		}
+
+		content.append("</head>\n<body>\n");
 		// This helps in making the page text different even for the same number
 		// of URLs, but not always.
 		content.append("<h1>").append((char)((hashCode & 0xF) + 'A')).append((char)((hashCode >>> 4 & 0xF) + 'A')).append((char)((hashCode >>> 8 & 0xF) + 'A')).append((char)((hashCode >>> 12 & 0xF) + 'A')).append("</h1>\n");
@@ -137,7 +162,7 @@ public class NamedGraphServerHttpProxy extends Thread {
 
 	private static class Task implements Runnable {
 
-		private final Socket socket;
+		private Socket socket;
 		private final NamedGraphServer graphServer;
 		private final double frac404;
 		private final double frac500;
@@ -150,9 +175,8 @@ public class NamedGraphServerHttpProxy extends Thread {
 		private final boolean uniquify;
 		private final boolean notescurl;
 
-		public Task(final Socket socket, final NamedGraphServer graphServer, final Semaphore stuckInCapriciousWriting, final int generalPageSpeed, final double frac404, final double frac500, final double fracDelayed,
+		public Task(final NamedGraphServer graphServer, final Semaphore stuckInCapriciousWriting, final int generalPageSpeed, final double frac404, final double frac500, final double fracDelayed,
 				final long averageDelay, final long delayDeviation, boolean undigitize, boolean notescurl) {
-			this.socket = socket;
 			this.graphServer = graphServer;
 			this.stuckInCapriciousWriting = stuckInCapriciousWriting;
 			this.generalPageSpeed = generalPageSpeed;
@@ -166,9 +190,15 @@ public class NamedGraphServerHttpProxy extends Thread {
 			this.notescurl = notescurl;
 		}
 
+		public void setSocket(Socket socket) {
+			this.socket = socket;
+		}
+
 		@Override
 		public void run() {
 			try {
+				long currentSimultaneous = simultaneousQueries.incrementAndGet();
+				maxSimultaneousQueries.updateAndGet(value -> value < currentSimultaneous ? currentSimultaneous : value);
 				final long startTime = System.nanoTime();
 				final FastBufferedInputStream in = new FastBufferedInputStream(socket.getInputStream());
 				final byte[] array = new byte[4096];
@@ -176,25 +206,23 @@ public class NamedGraphServerHttpProxy extends Thread {
 				final int len = in.readLine(array);
 				int first = -1, second = -1;
 
-				for(int i = 0; i < len; i++) {
+				for (int i = 0; i < len; i++) {
 					if (array[i] == ' ') {
 						if (first == -1) {
 							first = i;
-						}
-						else {
+						} else {
 							second = i;
 							break;
 						}
 					}
 				}
 
-				if (frac500Random.nextDouble() > 1-frac500 || first == -1 || second == - 1) {
+				if (frac500Random.nextDouble() > 1 - frac500 || first == -1 || second == -1) {
 					final PrintWriter out = new PrintWriter(new OutputStreamWriter(new FastBufferedOutputStream(socket.getOutputStream()), Charsets.ISO_8859_1));
 					out.println("HTTP/1.1 500 Server error");
 					out.println();
 					out.close();
-				}
-				else {
+				} else {
 					final ByteArrayCharSequence name = new ByteArrayCharSequence(array, first + 1, second - first - 1);
 
 					final int hashCode = name.hashCode();
@@ -202,15 +230,16 @@ public class NamedGraphServerHttpProxy extends Thread {
 
 					// We become capricious if a toss coin suggests it *and* there are not too many threads doing it.
 					final PrintWriter out = random.nextDouble() < fracDelayed && stuckInCapriciousWriting.tryAcquire() ?
-						new CapriciousPrintWriter(new OutputStreamWriter(new FastBufferedOutputStream(socket.getOutputStream()), Charsets.ISO_8859_1), averageDelay, delayDeviation, random) :
-						new PrintWriter(new OutputStreamWriter(new FastBufferedOutputStream(socket.getOutputStream()), Charsets.ISO_8859_1));
+							new CapriciousPrintWriter(new OutputStreamWriter(new FastBufferedOutputStream(socket.getOutputStream()), Charsets.ISO_8859_1), averageDelay, delayDeviation, random) :
+							new PrintWriter(new OutputStreamWriter(new FastBufferedOutputStream(socket.getOutputStream()), Charsets.ISO_8859_1));
 
 					try {
 						//System.out.println("PROCESSING: " + name + " with String " + new MutableString(name).toString());
 						final CharSequence[] successors = graphServer.successors(name);
 						final MutableString currentName = new MutableString(name);
 
-						while (in.readLine(array) > 0); // Note that name is based on array, but we don't use it anymore.
+						while (in.readLine(array) > 0)
+							; // Note that name is based on array, but we don't use it anymore.
 
 						final StringBuilder content = new StringBuilder(estimateLength(successors));
 
@@ -232,7 +261,8 @@ public class NamedGraphServerHttpProxy extends Thread {
 							out.println(content.toString());
 							out.println();
 						} else {
-							if(uniquify) generateUnique(MurmurHash3.hash(currentName.toString().getBytes()), content, successors, notescurl);
+							if (uniquify)
+								generateUnique(MurmurHash3.hash(currentName.toString().getBytes()), content, successors, notescurl);
 							else generate(hashCode, content, successors, notescurl);
 							out.println("HTTP/1.1 200 OK");
 							out.println("Connection: close");
@@ -244,13 +274,12 @@ public class NamedGraphServerHttpProxy extends Thread {
 							out.println();
 						}
 						try {
-							Thread.sleep((long)(1000.0 * content.length() / generalPageSpeed));
+							Thread.sleep((long) (1000.0 * content.length() / generalPageSpeed));
+						} catch (final InterruptedException cantHappen) {
 						}
-						catch (final InterruptedException cantHappen) {}
 
 						out.close();
-					}
-					finally {
+					} finally {
 						if (out instanceof CapriciousPrintWriter) stuckInCapriciousWriting.release();
 					}
 				}
@@ -260,6 +289,8 @@ public class NamedGraphServerHttpProxy extends Thread {
 				busyTime.addAndGet(System.nanoTime() - startTime);
 			} catch (final IOException e) {
 				e.printStackTrace();
+			} finally {
+				simultaneousQueries.decrementAndGet();
 			}
 		}
 	}
@@ -301,15 +332,6 @@ public class NamedGraphServerHttpProxy extends Thread {
 
 		ServerSocket serverSocket = null;
 
-		try {
-			serverSocket = new ServerSocket(port);
-			System.err.println("Started on: " + port);
-		} catch (final IOException e) {
-			System.err.println("Could not listen on port: " + port);
-			System.exit(1);
-			return; // To avoid null pointer flagging
-		}
-
 		NamedGraphServer graphServer = null;
 		if ("-".equals(graphBasename)) {
 			if (! jsapResult.userSpecified("sites")) throw new IllegalArgumentException("You must specify the number of sites of the random server.");
@@ -330,20 +352,41 @@ public class NamedGraphServerHttpProxy extends Thread {
 		}
 
 		final int numThreads = jsapResult.getInt("threads");
+
+		try {
+			serverSocket = new ServerSocket(port,500);
+			System.err.println("Started on: " + port);
+		} catch (final IOException e) {
+			System.err.println("Could not listen on port: " + port);
+			System.exit(1);
+			return; // To avoid null pointer flagging
+		}
 		final Executor exec = Executors.newFixedThreadPool(numThreads);
 		final Semaphore stuckInCapriciousWriting = new Semaphore(Math.max(numThreads / 10, 1));
 
 		long lastReportTime = System.currentTimeMillis(), lastBusyTime = 0;
 		final long startTime = lastReportTime;
+		int generalPageSpeed = jsapResult.getInt("generalPageSpeed");
+		double frac404 = jsapResult.getDouble("frac404");
+		double frac500 = jsapResult.getDouble("frac500");
+		double fracDelayed = jsapResult.getDouble("fracDelayed");
+		long averageDelay = jsapResult.getLong("averageDelay");
+		long delayDeviation = jsapResult.getLong("delayDeviation");
+		boolean uniquify = jsapResult.getBoolean("uniquify");
+		boolean notescurl = jsapResult.getBoolean("notescurl");
+
 		for (long i = 0;; i++) {
-			final Task task = new Task(serverSocket.accept(), graphServer.copy(), stuckInCapriciousWriting, jsapResult.getInt("generalPageSpeed"), jsapResult.getDouble("frac404"), jsapResult.getDouble("frac500"), jsapResult.getDouble("fracDelayed"),
-					jsapResult.getLong("averageDelay"), jsapResult.getLong("delayDeviation"), jsapResult.getBoolean("uniquify"), jsapResult.getBoolean("notescurl"));
+			final Task task = new Task(graphServer.copy(), stuckInCapriciousWriting, generalPageSpeed, frac404, frac500,
+					fracDelayed, averageDelay, delayDeviation, uniquify, notescurl);
+			task.setSocket(serverSocket.accept());
 			exec.execute(task);
+
 			if ((i & 0xFFFF) != 0) {
 				final long currentTime = System.currentTimeMillis();
 				if (currentTime - lastReportTime > 10000) {
 					final long currentBusyTime = busyTime.get();
 					System.err.println(Util.format(currentBusyTime / 10000.0 / numThreads / (currentTime - startTime)) + "% [" + Util.format((currentBusyTime - lastBusyTime) / 10000.0 / numThreads / (currentTime - lastReportTime)) + "%]");
+					System.err.println("Max simultaneaous queries : " + maxSimultaneousQueries.getAndSet(0));
 					lastReportTime = currentTime;
 					lastBusyTime = currentBusyTime;
 				}
