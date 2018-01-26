@@ -4,6 +4,10 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -12,6 +16,7 @@ import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
+import it.unimi.di.law.bubing.frontier.*;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.jgroups.JChannel;
@@ -47,10 +52,6 @@ import com.martiansoftware.jsap.UnflaggedOption;
  */
 
 
-import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.di.law.bubing.frontier.MessageThread;
-import it.unimi.di.law.bubing.frontier.QuickMessageThread;
-import it.unimi.di.law.bubing.frontier.QuickToSendThread;
 import it.unimi.di.law.bubing.store.Store;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.BubingJob;
@@ -83,38 +84,37 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	private final RuntimeConfiguration rc;
 	/** The frontier of this agent. */
 	private final Frontier frontier;
-	/** The store of this agent. */
-	private final Store store;
 	/** @see MessageThread */
 	protected final MessageThread messageThread;
 	/** @see QuickMessageThread */
 	protected final QuickMessageThread quickMessageThread;
 	/** @see QuickToSendThread */
 	protected final QuickToSendThread quickToSendThread;
+	/** @see QuickToQueueThread */
+	protected final QuickToQueueThread quickToQueueThread;
 
 	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
 		// TODO: configure strategies
 
-		super(rc.name, rc.weight, new InetSocketAddress(hostname,  jmxPort),
-				new JChannel(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null ? (InputStream)new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME)) : JGroupsJobManager.class.getResourceAsStream('/' + JGroupsJobManager.class.getPackage().getName().replace('.',  '/') + "/jgroups.xml")),
-				 rc.group, new ConsistentHashAssignmentStrategy<BubingJob>(), new LinkedBlockingQueue<BubingJob>(),
-				 new TimedDroppingThreadFactory<BubingJob>(1800000), new DiscardMessagesStrategy<BubingJob>());
+		super(rc.name, rc.weight, new InetSocketAddress(hostname, jmxPort),
+				new JChannel(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null ? (InputStream) new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME)) : JGroupsJobManager.class.getResourceAsStream('/' + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml")),
+				rc.group, new ConsistentHashAssignmentStrategy<BubingJob>(), new LinkedBlockingQueue<BubingJob>(),
+				new TimedDroppingThreadFactory<BubingJob>(1800000), new DiscardMessagesStrategy<BubingJob>());
 
 		LOGGER.info("Creating Agent instance with properties {}", rc);
 
 		// TODO: check crawlIsNew for all components.
 		this.rc = rc;
 
-		store = rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(rc);
-
 		register();
 
-		frontier = new Frontier(rc, store, this);
+		frontier = new Frontier(rc, this);
 		setListener(frontier);
 
 		(messageThread = new MessageThread(frontier)).start();
 		(quickMessageThread = new QuickMessageThread(frontier)).start();
 		(quickToSendThread = new QuickToSendThread(frontier)).start();
+		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
 
 		connect();
 
@@ -125,13 +125,13 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 		frontier.rc.ensureNotPaused();
 		final ByteArrayList list = new ByteArrayList();
-		while(rc.seed.hasNext()) {
+		while (rc.seed.hasNext()) {
 			final URI nextSeed = rc.seed.next();
 			if (nextSeed != null) frontier.enqueue(BURL.toByteArrayList(nextSeed, list));
 		}
 		LOGGER.info("Finished reading seeds");
 
-		//Schedule
+		//Schedule snaptoseed
 		final Agent agent = this;
 		/*new java.util.Timer().schedule(
 				new java.util.TimerTask() {
@@ -143,12 +143,18 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 				30*60*1000,
 				30*60*1000
 		);*/
+	}
 
+	public void run() throws Exception {
 		// We wait for the notification of a stop event, usually caused by a call to stop().
-		synchronized(this) {
-			if (! rc.stopping) wait();
+		synchronized (this) {
+			if (!rc.stopping) wait();
 		}
 
+		terminate();
+	}
+
+	public void terminate() throws Exception {
 		// Stuff to be done at stopping time
 
 		// The message thread uses the sieve, which will be closed by the frontier.
@@ -167,6 +173,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		quickMessageThread.join();
 		quickToSendThread.stop = true;
 		quickToSendThread.join();
+		quickToQueueThread.stop = true;
+		quickToQueueThread.join();
 		LOGGER.info("Joined quick message thread");
 
 		frontier.snap();
@@ -314,7 +322,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	}
 
 	@ManagedAttribute
-	public void setParsingThreads(final int parsingThreads) throws IllegalArgumentException {
+	public void setParsingThreads(final int parsingThreads) throws IllegalArgumentException, NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException, IOException, NoSuchAlgorithmException {
 		frontier.parsingThreads(rc.parsingThreads = parsingThreads);
 	}
 
@@ -715,7 +723,30 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.requiredFrontSize.get();
 	}
 
+	/**
+	 * Hack for allowing hostnames with "_"
+	 */
+	private static void patchUriField(String methodName, String fieldName)
+			throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, NoSuchFieldException {
+		Method lowMask = URI.class.getDeclaredMethod(methodName, String.class);
+		lowMask.setAccessible(true);
+		long lowMaskValue = (long) lowMask.invoke(null, "-_");
+
+		Field lowDash = URI.class.getDeclaredField(fieldName);
+
+		Field modifiers = Field.class.getDeclaredField("modifiers");
+		modifiers.setAccessible(true);
+		modifiers.setInt(lowDash, lowDash.getModifiers() & ~Modifier.FINAL);
+
+		lowDash.setAccessible(true);
+		lowDash.setLong(null, lowMaskValue);
+	}
+
 	public static void main(final String arg[]) throws Exception {
+		patchUriField("lowMask", "L_DASH");
+		patchUriField("highMask", "H_DASH");
+
+
 		final SimpleJSAP jsap = new SimpleJSAP(Agent.class.getName(), "Starts a BUbiNG agent (note that you must enable JMX by means of the standard Java system properties).",
 				new Parameter[] {
 					new FlaggedOption("weight", JSAP.INTEGER_PARSER, "1", JSAP.NOT_REQUIRED, 'w', "weight", "The agent weight."),
@@ -727,27 +758,37 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 					new UnflaggedOption("name", JSAP.STRING_PARSER, JSAP.REQUIRED, "The agent name (an identifier that must be unique across the group).")
 			});
 
-			final JSAPResult jsapResult = jsap.parse(arg);
-			if (jsap.messagePrinted()) System.exit(1);
+		final JSAPResult jsapResult = jsap.parse(arg);
+		if (jsap.messagePrinted()) System.exit(1);
 
-			// JMX *must* be set up.
-			final String portProperty = System.getProperty(JMX_REMOTE_PORT_SYSTEM_PROPERTY);
-			if (portProperty == null) throw new IllegalArgumentException("You must specify a JMX service port using the property " + JMX_REMOTE_PORT_SYSTEM_PROPERTY);
+		// JMX *must* be set up.
+		final String portProperty = System.getProperty(JMX_REMOTE_PORT_SYSTEM_PROPERTY);
+		if (portProperty == null) throw new IllegalArgumentException("You must specify a JMX service port using the property " + JMX_REMOTE_PORT_SYSTEM_PROPERTY);
 
-			final String name = jsapResult.getString("name");
-			final int weight = jsapResult.getInt("weight");
-			final String group = jsapResult.getString("group");
-			final String host = jsapResult.getString("jmxHost");
-			final int port = Integer.parseInt(portProperty);
+		final String name = jsapResult.getString("name");
+		final int weight = jsapResult.getInt("weight");
+		final String group = jsapResult.getString("group");
+		final String host = jsapResult.getString("jmxHost");
+		final int port = Integer.parseInt(portProperty);
 
-			final BaseConfiguration additional = new BaseConfiguration();
-			additional.addProperty("name", name);
-			additional.addProperty("group", group);
-			additional.addProperty("weight", Integer.toString(weight));
-			additional.addProperty("crawlIsNew", Boolean.valueOf(jsapResult.getBoolean("new")));
-			if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));
+		final BaseConfiguration additional = new BaseConfiguration();
+		additional.addProperty("name", name);
+		additional.addProperty("group", group);
+		additional.addProperty("weight", Integer.toString(weight));
+		additional.addProperty("crawlIsNew", Boolean.valueOf(jsapResult.getBoolean("new")));
+		if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));
+		Agent agent = new Agent(host, port, new RuntimeConfiguration(new StartupConfiguration(jsapResult.getString("properties"), additional)));
 
-			new Agent(host, port, new RuntimeConfiguration(new StartupConfiguration(jsapResult.getString("properties"), additional)));
-			System.exit(0); // Kills remaining FetchingThread instances, if any.
+		Runtime.getRuntime().addShutdownHook(new Thread( () -> {
+			agent.stop();
+			try {
+				agent.terminate();
+			} catch (Exception e) {
+				LOGGER.error("Error during shutdown",e);
+			}
+		}));
+		agent.run();
+		System.exit(0); // Kills remaining FetchingThread instances, if any.
 	}
+
 }
