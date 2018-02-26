@@ -70,7 +70,7 @@ public class Cld2Tool {
             }
             int language = Cld2Library.INSTANCE._ZN4CLD224ExtDetectLanguageSummaryEPKcibPKNS_8CLDHintsEiPNS_8LanguageEPiPdPSt6vectorINS_11ResultChunkESaISA_EES7_Pb(
                     utf8EncodedText,
-                    utf8EncodedText.length,
+                    utf8EncodedText.length-1, // Workaround CLD2 bug (SIGSEGV) part 2.
                     isPlainText,
                     cld2Hints,
                     flags,
