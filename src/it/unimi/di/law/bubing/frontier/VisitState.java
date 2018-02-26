@@ -16,11 +16,13 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.sieve.AbstractSieve.NewFlowReceiver;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.bubing.util.Util;
+import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
@@ -112,8 +114,8 @@ public class VisitState implements Delayed, Serializable {
 	public volatile int retries;
 	/** Whether this visit state is currently {@linkplain Workbench#acquire() acquired}. */
 	protected volatile transient boolean acquired;
-	/** A reference to the frontier. */
-	public transient Frontier frontier;
+	/** Whether this visit state is currently {@linkplain Workbench#acquire() scheduled for purge}. */
+	protected volatile transient boolean purgeRequired;
 	/** The path+queries that must be visited for this visit state. */
 	private final transient ObjectArrayFIFOQueue<byte[]> pathQueries;
 	/** A map from term indices to counts for the pages of this host. This map is instantiated only if {@link RuntimeConfiguration#spamDetector} is not {@code null}. */
@@ -125,16 +127,17 @@ public class VisitState implements Delayed, Serializable {
 
 	/** Creates a visit state.
 	 *
-	 * @param frontier the frontier for which the state is being created.
 	 * @param schemeAuthority the scheme+authority of this {@link VisitState}.
 	 */
-	public VisitState(final Frontier frontier, final byte[] schemeAuthority) {
-		this.frontier = frontier;
+	public VisitState(final byte[] schemeAuthority) {
+
 		this.schemeAuthority = schemeAuthority;
 		cookies = EMPTY_COOKIE_ARRAY;
 		pathQueries = new ObjectArrayFIFOQueue<>();
+		Frontier frontier = Agent.getFrontier();
 		termCount = frontier != null && frontier.rc.spamDetector == null ? null : new Short2ShortOpenHashMap();
 		spammicity = -1;
+		purgeRequired = false;
 	}
 
 
@@ -147,7 +150,7 @@ public class VisitState implements Delayed, Serializable {
 	public synchronized void setWorkbenchEntry(final WorkbenchEntry workbenchEntry) {
 		assert ! acquired : this;
 		this.workbenchEntry = workbenchEntry;
-		if (! isEmpty()) workbenchEntry.add(this, frontier.workbench);
+		if (! isEmpty()) workbenchEntry.add(this, Agent.getFrontier().workbench);
 	}
 
 	/** Puts this visit state in its entry, if it is not acquired and it has a non-{@code null} {@link #workbenchEntry}.
@@ -160,6 +163,7 @@ public class VisitState implements Delayed, Serializable {
 	 */
 	private void putInEntryIfNotAcquired() {
 		assert ! isEmpty() : this;
+		Frontier frontier = Agent.getFrontier();
 		if (! acquired && workbenchEntry != null) workbenchEntry.add(this, frontier.workbench);
 	}
 
@@ -269,6 +273,7 @@ public class VisitState implements Delayed, Serializable {
 			pathQueries.enqueue(pathQuery);
 			if (wasEmpty) putInEntryIfNotAcquired();
 		}
+		Frontier frontier = Agent.getFrontier();
 		frontier.pathQueriesInQueues.incrementAndGet();
 		frontier.weightOfpathQueriesInQueues.addAndGet(BURL.memoryUsageOf(pathQuery));
 	}
@@ -295,6 +300,7 @@ public class VisitState implements Delayed, Serializable {
 		synchronized (this) {
 			array = pathQueries.dequeue();
 		}
+		Frontier frontier = Agent.getFrontier();
 		if (array != ROBOTS_PATH) {
 			frontier.pathQueriesInQueues.decrementAndGet();
 			frontier.weightOfpathQueriesInQueues.addAndGet(-BURL.memoryUsageOf(array));
@@ -357,9 +363,34 @@ public class VisitState implements Delayed, Serializable {
 	 */
 	public synchronized void schedulePurge() {
 		assert acquired || workbenchEntry == null : acquired + " " + workbenchEntry;
+		Frontier frontier = Agent.getFrontier();
 		frontier.schemeAuthority2Count.put(schemeAuthority, Integer.MAX_VALUE);
 		nextFetch = Long.MAX_VALUE;
 		clear();
+	}
+
+	public synchronized void directPurgeWithRequeue() {
+		assert acquired || workbenchEntry == null : acquired + " " + workbenchEntry;
+		Frontier frontier = Agent.getFrontier();
+		purgeRequired = true;
+		while(! isEmpty()) {
+			byte[] pathQuery = dequeue();
+			if (pathQuery != ROBOTS_PATH) {
+				ByteArrayList url = new ByteArrayList(schemeAuthority);
+				url.addElements(url.size(), pathQuery, 0, pathQuery.length);
+				LOGGER.info("Re-enqueing {} in the sieve", Util.toString(url));
+				// Re-enqueue the urls into the local sieve
+				try {
+					frontier.holdBackURLs.enqueue(url.elements(), 0, url.size());
+				} catch (Exception e) {
+					// At this point, we should ignore any error here
+					LOGGER.error("Error while re-enqueueing into local sieve overflow urls of workbench");
+				}
+				url.clear();
+			}
+		}
+		// TODO: we should find a way to release more resources.
+		pathQueries.trim();
 	}
 
 	/** Checks whether the current robots information has expired and, if necessary, schedules a new <code>robots.txt</code> download.
@@ -380,6 +411,7 @@ public class VisitState implements Delayed, Serializable {
 
 		if (lastExceptionClass == null) {
 			// If we are not retrying an exception, we check whether it is time to reload robots.txt
+			Frontier frontier = Agent.getFrontier();
 			final long robotsExpiration = frontier.rc.robotsExpiration;
 			if (time - robotsExpiration >= lastRobotsFetch) {
 				if (robotsFilter == null) {
@@ -398,6 +430,7 @@ public class VisitState implements Delayed, Serializable {
 	 * @return an estimate of the number of path+queries that this visit state should keep in memory.
 	 */
 	public int pathQueryLimit() {
+		Frontier frontier = Agent.getFrontier();
 		/* We first compute the ratio beween the delay for scheme+authorities and the IP delay.
 		 * It is usually greater than one and it expresses the number of scheme+authorities
 		 * that can "fit" the IP delay. */
