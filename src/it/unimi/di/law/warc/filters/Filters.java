@@ -47,7 +47,7 @@ public class Filters {
 					HostEndsWith.class, HostEndsWithOneOf.class, HostEquals.class,
 					IsHttpResponse.class, IsProbablyBinary.class, PathEndsWithOneOf.class,
 					ResponseMatches.class, SchemeEquals.class, StatusCategory.class, URLEquals.class,
-					URLMatchesRegex.class, URLShorterThan.class
+					URLMatchesRegex.class, URLShorterThan.class, LanguageIsOneOf.class
 					}
 			);
 
