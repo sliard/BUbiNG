@@ -33,6 +33,8 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.nio.channels.ClosedChannelException;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Queue;
 
 import org.apache.commons.io.IOUtils;
@@ -187,6 +189,7 @@ public class FetchData implements URIResponse, Closeable {
 	/** The {@link RuntimeConfiguration}, cached. */
 	private final RuntimeConfiguration rc;
 
+	public volatile Map<String,String> extraMap;
 
 	/** Creates a fetched response according to the given properties.
 	 *
@@ -202,6 +205,8 @@ public class FetchData implements URIResponse, Closeable {
 		//context = new BasicHttpContext();
 		//cachingAsyncByteConsumer = new CachingAsyncByteConsumer(this);
 		//enqueueFetchedHttpResponseFutureCallback = new EnqueueFetchedHttpResponseFutureCallback(this);
+		extraMap = new HashMap<>();
+
 	}
 
 	/** Returns (an approximation of) the length of the response (headers and body).
@@ -286,6 +291,7 @@ public class FetchData implements URIResponse, Closeable {
 		this.exception = null;
 		this.truncated = false;
 		this.isDuplicate = false;
+		this.extraMap.clear();
 		this.robots = robots;
 
 		assert url.getHost() != null : url;
