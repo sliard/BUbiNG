@@ -544,7 +544,6 @@ public class HTMLParser<T> implements Parser<T> {
 					LOGGER.debug("Found charset {} in HTTP HEADER of {}", charsetDetectionInfo.httpHeaderCharset, uri.toString());
 				try {
 					guessedCharset = Charset.forName(charsetDetectionInfo.httpHeaderCharset);
-					charsetValid = checkCharset(inspectableEntityContent, inspectableEntityContentLength, guessedCharset);
 				} catch (Exception e) {
 					LOGGER.debug("Charset {} found in header is not supported", charsetDetectionInfo.httpHeaderCharset);
 				}
@@ -573,17 +572,16 @@ public class HTMLParser<T> implements Parser<T> {
 
 		if (bubingGuessedCharsetHeader != null) guessedCharset = Charset.forName(bubingGuessedCharsetHeader.getValue());
 		else {
-			if (!charsetValid) {
-				charsetDetectionInfo.htmlMetaCharset = getCharsetName(inspectableEntityContent, inspectableEntityContentLength);
-				if (charsetDetectionInfo.htmlMetaCharset != null) {
-					if (LOGGER.isDebugEnabled())
-						LOGGER.debug("Found charset {} in META HTML of {}", charsetDetectionInfo.htmlMetaCharset, uri.toString());
-					try {
-						guessedCharset = Charset.forName(charsetDetectionInfo.htmlMetaCharset);
-						charsetValid = checkCharset(inspectableEntityContent, inspectableEntityContentLength, guessedCharset);
-					} catch (Exception e) {
-						LOGGER.debug("Charset {} found in HTML <meta> is not supported", charsetDetectionInfo.htmlMetaCharset);
-					}
+
+			charsetDetectionInfo.htmlMetaCharset = getCharsetName(inspectableEntityContent, inspectableEntityContentLength);
+			if (charsetDetectionInfo.htmlMetaCharset != null) {
+				if (LOGGER.isDebugEnabled())
+					LOGGER.debug("Found charset {} in META HTML of {}", charsetDetectionInfo.htmlMetaCharset, uri.toString());
+				try {
+					guessedCharset = Charset.forName(charsetDetectionInfo.htmlMetaCharset);
+					charsetValid = true;
+				} catch (Exception e) {
+					LOGGER.debug("Charset {} found in HTML <meta> is not supported", charsetDetectionInfo.htmlMetaCharset);
 				}
 			}
 		}
@@ -642,14 +640,15 @@ public class HTMLParser<T> implements Parser<T> {
 			if (byteCounter > 0) {
 				charsetDetector.setText(new ByteArrayInputStream(charsetDetectionBuffer, 0, byteCounter));
 				CharsetMatch match = charsetDetector.detect();
-				charsetDetectionInfo.icuCharset = match.getName();
-				if (LOGGER.isDebugEnabled())
-					LOGGER.debug("Found charset {} with ICU {}", charsetDetectionInfo.icuCharset, uri.toString());
-				try {
-					guessedCharset = Charset.forName(charsetDetectionInfo.icuCharset);
-					charsetValid = checkCharset(inspectableEntityContent, inspectableEntityContentLength, guessedCharset);
-				} catch (UnsupportedCharsetException e) {
-					LOGGER.error("Charset {} found in header is not supported", charsetDetectionInfo.icuCharset);
+				if (match != null) {
+					charsetDetectionInfo.icuCharset = match.getName();
+					if (LOGGER.isDebugEnabled())
+						LOGGER.debug("Found charset {} with ICU {}", charsetDetectionInfo.icuCharset, uri.toString());
+					try {
+						guessedCharset = Charset.forName(charsetDetectionInfo.icuCharset);
+					} catch (UnsupportedCharsetException e) {
+						LOGGER.error("Charset {} found in header is not supported", charsetDetectionInfo.icuCharset);
+					}
 				}
 			}
 		}
@@ -729,7 +728,6 @@ public class HTMLParser<T> implements Parser<T> {
 					else if (name == HTMLElementName.OBJECT) process(linkReceiver, base, startTag.getAttributeValue("data"));
 					else if (name == HTMLElementName.A || name == HTMLElementName.AREA || name == HTMLElementName.LINK) process(linkReceiver, base, startTag.getAttributeValue("href"));
 					else if (name == HTMLElementName.BASE) {
-						textContent.append(" ");
 						final String s = startTag.getAttributeValue("href");
 						if (s != null) {
 							final URI link = BURL.parse(s);
@@ -837,14 +835,14 @@ public class HTMLParser<T> implements Parser<T> {
 
 		String tld = uri.getHost().substring(uri.getHost().lastIndexOf('.') + 1);
 		String guessedLang = guessedLanguage == null ? null : guessedLanguage.getLanguage();
+		textContent.append(" "); // Workaround CLD2 bug (SIGSEGV)
 		Cld2Result result = Cld2Tool.detect(textContent.toString(),tld,guessedLang);
-
+		LOGGER.debug("Raw text submitted to language detection is {}", textContent.toString());
 		//cld2Result.setEncoding_hint(22); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h
 		languageDetectionInfo.cld2Language = result.code;
 		if (result.language.equals("Unknown")) {
 			if (LOGGER.isDebugEnabled()) {
 				LOGGER.debug("Unable to guess language for {}", uri);
-				LOGGER.debug("Raw text is {}", textContent.toString());
 			}
 		} else {
 			Locale localeFromCLD = Locale.forLanguageTag(result.code);
