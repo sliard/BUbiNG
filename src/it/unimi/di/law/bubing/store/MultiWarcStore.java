@@ -18,6 +18,7 @@ package it.unimi.di.law.bubing.store;
  *
  */
 
+import com.hadoop.compression.fourmc.*;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
@@ -56,7 +57,7 @@ public class MultiWarcStore implements Closeable, Store {
 	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );
 
 	private final int OUTPUT_STREAM_BUFFER_SIZE = 32*1024 * 1024;
-	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.lz4";
+	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.zst";
 	private final static String URL_NAME_FORMAT = "urls.%s.%s.gz";
 	public final static String DIGESTS_NAME = "digests.bloom";
 
@@ -78,11 +79,13 @@ public class MultiWarcStore implements Closeable, Store {
 		storeDir = rc.storeDir;
 		maxRecordsPerFile = rc.maxRecordsPerFile;
 		maxSecondsBetweenDumps = rc.maxSecondsBetweenDumps;
-		LOGGER.info("Max record per file = " + maxRecordsPerFile);
-		LOGGER.info("Max seconds between dumps = " + maxSecondsBetweenDumps);
-		Configuration conf = new Configuration(true);
+		LOGGER.debug("Max record per file = " + maxRecordsPerFile);
+		LOGGER.debug("Max seconds between dumps = " + maxSecondsBetweenDumps);
+
+		Configuration conf = new Configuration();
+		conf.addResource(ClassLoader.getSystemResourceAsStream("core-site.xml"));
 		CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
-		codec = ccf.getCodecByClassName(Lz4Codec.class.getName());
+		codec = ccf.getCodecByClassName(ZstdCodec.class.getName());
 		createNewWriter( );	
 	}
 	private String generateStoreName(Date d) {
