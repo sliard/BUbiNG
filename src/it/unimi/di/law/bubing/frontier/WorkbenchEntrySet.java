@@ -65,8 +65,8 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 	}
 
 	// TODO: change with something better
-	private final static int hashCode(final byte[] a) {
-		return it.unimi.dsi.fastutil.HashCommon.murmurHash3(Arrays.hashCode(a));
+	private final static int hashCode(final byte[] a, final int overflowCounter) {
+		return it.unimi.dsi.fastutil.HashCommon.murmurHash3(Arrays.hashCode(a) + overflowCounter);
 	}
 
 	/** Adds a workbench entry to the set, if necessary.
@@ -76,7 +76,7 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 	 */
 	public boolean add(final WorkbenchEntry e) {
 		// The starting point.
-		int pos = hashCode(e.ipAddress) & mask;
+		int pos = hashCode(e.ipAddress, e.overflowCounter) & mask;
 		// There's always an unused entry.
 		while (workbenchEntry[pos] != null) {
 			if (Arrays.equals(workbenchEntry[pos].ipAddress, e.ipAddress)) return false;
@@ -98,7 +98,7 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 		for (;;) {
 			pos = ((last = pos) + 1) & mask;
 			while (workbenchEntry[pos] != null) {
-				slot = hashCode(workbenchEntry[pos].ipAddress) & mask;
+				slot = hashCode(workbenchEntry[pos].ipAddress, workbenchEntry[pos].overflowCounter) & mask;
 				if (last <= pos ? last >= slot || slot > pos : last >= slot && slot > pos) break;
 				pos = (pos + 1) & mask;
 			}
@@ -116,7 +116,7 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 	 */
 	public boolean remove(final WorkbenchEntry e) {
 		// The starting point.
-		int pos = hashCode(e.ipAddress) & mask;
+		int pos = hashCode(e.ipAddress, e.overflowCounter) & mask;
 		// There's always an unused entry.
 		while (workbenchEntry[pos] != null) {
 			if (workbenchEntry[pos] == e) {
@@ -135,12 +135,12 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 	 * @param address the IP address.
 	 * @return the workbench entry corresponding to a given address, or {@code null}.
 	 */
-	public WorkbenchEntry get(final byte[] address) {
+	public WorkbenchEntry get(final byte[] address, final int overflowCounter) {
 		// The starting point.
-		int pos = hashCode(address) & mask;
+		int pos = hashCode(address, overflowCounter) & mask;
 		// There's always an unused entry.
 		while (workbenchEntry[pos] != null) {
-			if (Arrays.equals(workbenchEntry[pos].ipAddress, address)) return workbenchEntry[pos];
+			if (Arrays.equals(workbenchEntry[pos].ipAddress, address) && workbenchEntry[pos].overflowCounter == overflowCounter) return workbenchEntry[pos];
 			pos = (pos + 1) & mask;
 		}
 		return null;
@@ -185,7 +185,7 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 		for (int j = size; j-- != 0;) {
 			while (workbenchEntry[i] == null) i++;
 			WorkbenchEntry e = workbenchEntry[i];
-			pos = hashCode(e.ipAddress) & newMask;
+			pos = hashCode(e.ipAddress, e.overflowCounter) & newMask;
 			while (newWorkbenchEntry[pos] != null) pos = (pos + 1) & newMask;
 			newWorkbenchEntry[pos] = e;
 			i++;
@@ -210,7 +210,7 @@ public class WorkbenchEntrySet implements java.io.Serializable, Hash {
 		final WorkbenchEntry[] workbenchEntry = this.workbenchEntry = new WorkbenchEntry[n];
 		for (int i = size, pos = 0; i-- != 0;) {
 			WorkbenchEntry e = (WorkbenchEntry)s.readObject();
-			pos = hashCode(e.ipAddress) & mask;
+			pos = hashCode(e.ipAddress, e.overflowCounter) & mask;
 			while (workbenchEntry[pos] != null) pos = (pos + 1) & mask;
 		}
 	}

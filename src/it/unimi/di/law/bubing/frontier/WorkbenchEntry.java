@@ -59,6 +59,7 @@ public final class WorkbenchEntry implements Delayed {
 	private final PriorityQueue<VisitState> visitStates;
 	/** The IP address of this workbench entry, computed by {@link DnsResolver#resolve(String)}. */
 	public final byte[] ipAddress;
+	public transient int overflowCounter;
 	/** A cached reference to {@link Workbench#broken}. */
 	private final AtomicLong workbenchBroken;
 	/** The number of broken (i.e., {@link VisitState#lastExceptionClass} &ne; {@code null}) visit states in {@link #visitStates}.*/
@@ -73,8 +74,9 @@ public final class WorkbenchEntry implements Delayed {
 	 * @param ipAddress the IP address.
 	 * @param brokenVisitStates a reference to {@link Frontier#brokenVisitStates}.
 	 */
-	public WorkbenchEntry(final byte[] ipAddress, final AtomicLong brokenVisitStates) {
+	public WorkbenchEntry(final byte[] ipAddress, final AtomicLong brokenVisitStates, final int overflowCounter) {
 		this.ipAddress = ipAddress;
+		this.overflowCounter = overflowCounter;
 		this.workbenchBroken = brokenVisitStates;
 		this.visitStates = new PriorityQueue<>();
 	}

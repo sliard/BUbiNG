@@ -114,11 +114,11 @@ public class Workbench implements Iterable<WorkbenchEntry> {
 	 * @return a workbench entry for {@code address} (possibly a new one).
 	 */
 
-	public WorkbenchEntry getWorkbenchEntry(final byte[] address) {
+	public WorkbenchEntry getWorkbenchEntry(final byte[] address, int overflowCounter) {
 		WorkbenchEntry workbenchEntry;
 		synchronized (address2WorkbenchEntry) {
-			workbenchEntry = address2WorkbenchEntry.get(address);
-			if (workbenchEntry == null) address2WorkbenchEntry.add(workbenchEntry = new WorkbenchEntry(address, broken));
+			workbenchEntry = address2WorkbenchEntry.get(address, overflowCounter);
+			if (workbenchEntry == null) address2WorkbenchEntry.add(workbenchEntry = new WorkbenchEntry(address, broken, overflowCounter));
 		}
 		return workbenchEntry;
 	}
