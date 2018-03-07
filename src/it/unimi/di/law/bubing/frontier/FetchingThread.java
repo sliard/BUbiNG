@@ -92,7 +92,6 @@ public final class FetchingThread extends Thread implements Closeable {
 
 	/** Whether we should stop (used also to reduce the number of threads). */
 	public volatile boolean stop;
-
 	/** A reference to the frontier. */
 	private final Frontier frontier;
 	/** The synchronous HTTP client used by this thread. */
@@ -223,7 +222,9 @@ public final class FetchingThread extends Thread implements Closeable {
 
 	/** Causes the {@link FetchData} used by this thread to be {@linkplain FetchData#abort()} (whence, the corresponding connection to be closed). */
 	public void abort() {
-		fetchData.abort();
+		FetchData fd = fetchData;
+		if (fd != null)
+			fd.abort();
 	}
 
 	@Override
@@ -322,7 +323,8 @@ public final class FetchingThread extends Thread implements Closeable {
 						frontier.done.add(visitState);
 					}
 					else {
-						if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null) LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
+						if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null)
+							LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
 						fetchData.inUse = true;
 						cookieStore.clear();
 
@@ -371,6 +373,8 @@ public final class FetchingThread extends Thread implements Closeable {
 
 	@Override
 	public void close() throws IOException {
-		fetchData.close();
+		FetchData fd = fetchData;
+		if (fd != null)
+			fd.close();
 	}
 }
