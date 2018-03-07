@@ -58,12 +58,15 @@
 
 	<path id="compile.classpath">
 		<fileset dir="${jars.dir}/compile" erroronmissingdir="false"/>
+		<fileset dir="extjars" erroronmissingdir="false"/>
+
 	</path>
 	<path id="test.classpath">
 		<fileset dir="${jars.dir}/test" erroronmissingdir="false"/>
 	</path>
 	<path id="project.classpath">
 		<fileset dir="${jars.dir}/runtime" erroronmissingdir="false"/>
+		<fileset dir="extjars" erroronmissingdir="false"/>
 	</path>
 
 	<!-- ] === using ivy to setup the classpath === -->
