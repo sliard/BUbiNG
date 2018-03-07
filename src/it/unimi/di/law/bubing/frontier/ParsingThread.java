@@ -208,7 +208,8 @@ public class ParsingThread extends Thread {
 			assert it.unimi.di.law.bubing.util.Util.toString(schemeAuthority).equals(BURL.schemeAndAuthority(url)) == sameSchemeAuthority : "(" + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority) + ").equals(" + BURL.schemeAndAuthority(url) + ") != " + sameSchemeAuthority;
 
 			if (RuntimeConfiguration.FETCH_ROBOTS) {
-				if (robotsFilter == null) LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority));
+				if (robotsFilter == null)
+					LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority));
 				else if (sameSchemeAuthority && ! URLRespectsRobots.apply(robotsFilter, url)) {
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not scheduling URL " + url + ": forbidden by robots");
 					return;
@@ -272,7 +273,7 @@ public class ParsingThread extends Thread {
 			if (rng.nextDouble() < p)
 				toAdd ++;
 			if (toAdd > 0)
-			count = frontier.schemeAuthority2Count.increment(visitState.schemeAuthority);
+				count = frontier.schemeAuthority2Count.increment(visitState.schemeAuthority);
 		}
 		if (count >= rc.maxUrlsPerSchemeAuthority - 1) {
 			LOGGER.info("Reached maximum number of URLs for scheme+authority " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
@@ -307,7 +308,7 @@ public class ParsingThread extends Thread {
 					final int knownCount = frontier.agent.getKnownCount();
 					if (knownCount > 1 && rc.ipDelayFactor != 0) ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * frontier.agent.getKnownCount() * entrySize / (entrySize + 1.)));
 							visitState.workbenchEntry.nextFetch = fetchData.endTime + ipDelay;
-
+					visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
 					if (fetchData.exception != null) {
 						LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
 						LOGGER.debug("Exception content : ", fetchData.exception);
@@ -377,7 +378,7 @@ public class ParsingThread extends Thread {
 					byte[] digest = null;
 					Charset guessedCharset = null;
 					String guessedLanguage = null;
-					final LinkReceiver linkReceiver = rc.followFilter.apply(fetchData) ? new HTMLParser.SetLinkReceiver() : Parser.NULL_LINK_RECEIVER;
+					final LinkReceiver linkReceiver = new HTMLParser.SetLinkReceiver();
 
 					frontierLinkReceiver.init(fetchData.uri(), visitState.schemeAuthority, visitState.robotsFilter);
 					final long streamLength = fetchData.response().getEntity().getContentLength();
@@ -426,16 +427,18 @@ public class ParsingThread extends Thread {
 												rewrittenEntity.setContentLength(modifiableEntity.getContentLength());
 												fetchData.response().setHeader("Content-Length", Long.toString(modifiableEntity.getContentLength()));
 												fetchData.response().setEntity(modifiableEntity);
-
 												// We are cheating with the truth, so we must change the response's header
-
 											}
 										}
-										extraMap = ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
+										fetchData.extraMap.putAll(ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
 												"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
 												"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
 												"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
-												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset);
+												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset));
+										if (guessedCharset != null)
+											fetchData.extraMap.put("BUbiNG-Guessed-Charset",guessedCharset.name());
+										if (guessedLanguage != null)
+											fetchData.extraMap.put("BUbiNG-Guessed-Language", guessedLanguage);
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
@@ -465,11 +468,13 @@ public class ParsingThread extends Thread {
 
 					final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
 					if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, Boolean.valueOf(isNotDuplicate));
-					if (isNotDuplicate) for(final URI u: linkReceiver) frontierLinkReceiver.enqueue(u);
-					else fetchData.isDuplicate(true);
-
-					frontierLinkReceiver.close();
-
+					fetchData.isDuplicate(!isNotDuplicate);
+					if (isNotDuplicate && (rc.followFilter.apply(fetchData))) {
+						for (final URI u : linkReceiver) frontierLinkReceiver.enqueue(u);
+						frontierLinkReceiver.close();
+					} else {
+						LOGGER.debug("NOT Following {}", fetchData.uri());
+					}
 					// ALERT: store exceptions should cause shutdown.
 					final String result;
 					if (mustBeStored) {
@@ -499,7 +504,7 @@ public class ParsingThread extends Thread {
 							result = "duplicate";
 						}
 						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset == null ? null : guessedCharset.name(), guessedLanguage,
-								extraMap);
+								fetchData.extraMap);
 					}
 					else {
 						result = "not stored";
