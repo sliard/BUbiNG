@@ -363,8 +363,7 @@ public class VisitState implements Delayed, Serializable {
 	 */
 	public synchronized void schedulePurge() {
 		assert acquired || workbenchEntry == null : acquired + " " + workbenchEntry;
-		Frontier frontier = Agent.getFrontier();
-		frontier.schemeAuthority2Count.put(schemeAuthority, Integer.MAX_VALUE);
+		this.purgeRequired = true;
 		nextFetch = Long.MAX_VALUE;
 		clear();
 	}
@@ -381,7 +380,7 @@ public class VisitState implements Delayed, Serializable {
 				LOGGER.info("Re-enqueing {} in the sieve", Util.toString(url));
 				// Re-enqueue the urls into the local sieve
 				try {
-					frontier.holdBackURLs.enqueue(url.elements(), 0, url.size());
+					frontier.heldBackURLs.enqueue(url.elements(), 0, url.size());
 				} catch (Exception e) {
 					// At this point, we should ignore any error here
 					LOGGER.error("Error while re-enqueueing into local sieve overflow urls of workbench");
