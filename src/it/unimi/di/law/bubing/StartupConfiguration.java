@@ -166,6 +166,14 @@ public class StartupConfiguration {
 	/** The maximum number of URLs we shall download from each scheme+authority. */
 	public int maxUrlsPerSchemeAuthority;
 
+	/** The maximum number of Scheme://Authority we shall keep in the Workbench for a given IP address at any given moment. */
+	@OptionalSpecification(value="100")
+	public int maxInstantSchemeAuthorityPerIP;
+
+	/** The maximum number of VisitState we shall keep in memory at any given moment. */
+	@OptionalSpecification(value="256000")
+	public int maxVisitStates;
+
 	/** The maximum number of request we shall allow from each scheme+authority. */
 	@OptionalSpecification(value="2000000000")
 	public int maxRequestsPerSchemeAuthority;
@@ -192,12 +200,12 @@ public class StartupConfiguration {
 	public Filter<URIResponse> parseFilter;
 
 	/** A filter that will be applied to all parsed resources to decide whether to follow their links. */
-	@FilterSpecification(type = URIResponse.class)
-	public Filter<URIResponse> followFilter;
+	@FilterSpecification(type = FetchData.class)
+	public Filter<FetchData> followFilter;
 
 	/** A filter that will be applied to all fetched resources to decide whether to store them. */
-	@FilterSpecification(type = URIResponse.class)
-	public Filter<URIResponse> storeFilter;
+	@FilterSpecification(type = FetchData.class)
+	public Filter<FetchData> storeFilter;
 
 	/** If zero, connections are closed at each downloaded resource.
 	 * Otherwise, the time span to download continuously from
@@ -326,6 +334,9 @@ public class StartupConfiguration {
 
 	/** Whether we should start in paused state. */
 	public boolean startPaused;
+
+	/** Whether we should reinit the schemeAuthorty countts on restart. */
+	public boolean reinitCounts;
 
 	/** The class used to {@link Store} the resources. */
 	@StoreSpecification
