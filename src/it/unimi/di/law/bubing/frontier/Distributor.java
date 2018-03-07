@@ -62,7 +62,7 @@ public final class Distributor extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Distributor.class);
 	/** We purge {@linkplain VisitState visit states} from {@link #schemeAuthority2VisitState} when
 	 * this amount of time has passed (approximately) since the last fetch. */
-	private static final long PURGE_DELAY = TimeUnit.HOURS.toMillis(1);
+	private static final long PURGE_DELAY = TimeUnit.MINUTES.toMillis(15);
 	/** We prints low-cost stats at this interval. */
 	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.SECONDS.toMillis(30);
 	/** We prints high-cost stats at this interval. */
@@ -81,6 +81,7 @@ public final class Distributor extends Thread {
 	/** The last time we checked for visit states to be purged. */
 	protected volatile long lastPurgeCheck;
 
+	protected long movedFromSieveToVirtualizer = 0, movedFromSieveToOverflow = 0, movedFromSieveToWorkbench = 0, deletedFromSieve = 0;
 	/** Creates a distributor for the given frontier.
 	 *
 	 * @param frontier the frontier instantiating this distribution.
@@ -93,12 +94,65 @@ public final class Distributor extends Thread {
 		statsThread = new StatsThread(frontier, this);
 	}
 
+	private boolean processURL(final ByteArrayList url, long now) {
+		try {
+			VisitState visitState;
+			final byte[] urlBuffer = url.elements();
+			final int startOfpathAndQuery = BURL.startOfpathAndQuery(urlBuffer);
+
+			final int currentlyInStore = frontier.schemeAuthority2Count.get(urlBuffer, 0, startOfpathAndQuery);
+			if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
+				visitState = schemeAuthority2VisitState.get(urlBuffer, 0, startOfpathAndQuery);
+				if (visitState == null) {
+					// Test if we can add it to the newVisitState list or if we must hold it back !
+					if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
+						final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray(urlBuffer);
+						if (LOGGER.isTraceEnabled())
+							LOGGER.trace("New scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(schemeAuthority), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
+						visitState = new VisitState(schemeAuthority);
+						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
+						visitState.enqueueRobots();
+						visitState.enqueuePathQuery(BURL.pathAndQueryAsByteArray(url));
+						synchronized (schemeAuthority2VisitState) {
+							schemeAuthority2VisitState.add(visitState);
+						}
+						// Send the visit state to the DNS threads
+						frontier.newVisitStates.add(visitState);
+						movedFromSieveToWorkbench++;
+					} else {
+						frontier.heldBackURLs.enqueue(urlBuffer, 0, url.size());
+						return false;
+					}
+				} else {
+					if (frontier.virtualizer.count(visitState) > 0) {
+						// Safe: there are URLs on disk, and this fact cannot change concurrently.
+						movedFromSieveToVirtualizer++;
+						frontier.virtualizer.enqueueURL(visitState, url);
+					} else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
+						/* Safe: we are enqueueing to a sane (modulo race conditions)
+						 * visit state, which will be necessarily go through the DoneThread later. */
+						visitState.checkRobots(now);
+						visitState.enqueuePathQuery(BURL.pathAndQueryAsByteArray(url));
+						movedFromSieveToWorkbench++;
+					} else { // visitState.urlsOnDisk == 0
+						movedFromSieveToVirtualizer++;
+						frontier.virtualizer.enqueueURL(visitState, url);
+					}
+				}
+			} else deletedFromSieve++;
+		} catch (Throwable t) {
+			LOGGER.error("Unexpected exception", t);
+			return false;
+		}
+		return true;
+	}
+
 	@Override
 	public void run() {
 		try {
 			long movedFromQueues = 0, deletedFromQueues = 0, lastLowCostStat = 0;
 			long fullWorkbenchSleepTime = 0, largeFrontSleepTime = 0, noReadyURLsSleepTime = 0;
-			long movedFromSieveToVirtualizer = 0, movedFromSieveToOverflow = 0, movedFromSieveToWorkbench = 0, deletedFromSieve = 0;
+
 			/* During the following loop, you should set round to -1 every time something useful is done (e.g., a URL is read from the sieve, or from the virtual queues etc.) */
 			for(int round = 0; ; round++) {
 				frontier.rc.ensureNotPaused();
@@ -131,11 +185,22 @@ public final class Distributor extends Thread {
 					}
 					else if (frontIsSmall){
 						// It is necessary to enrich the workbench picking up URLs from the sieve
+
 						if (frontier.readyURLs.isEmpty() && now >= frontier.nextFlush) { // No URLs--time for a forced flush
 							round = -1;
+							frontier.readyURLs.trim();
+							// Empties holdBackUrls
+							while (!frontier.heldBackURLs.isEmpty()) {
+								frontier.heldBackURLs.dequeue();
+								ByteArrayList url = frontier.heldBackURLs.buffer();
+								frontier.readyURLs.enqueue(url.elements(),0,url.size());
+							}
+							frontier.heldBackURLs.trim();
+
 							frontier.sieve.flush();
 							final long endOfFlush = System.currentTimeMillis();
-							frontier.nextFlush = endOfFlush + Math.max(Frontier.MIN_FLUSH_INTERVAL, (endOfFlush - now) * 10);
+							frontier.nextFlush = endOfFlush + Math.max(Frontier.MIN_FLUSH_INTERVAL, (endOfFlush - now) * 4);
+							LOGGER.info("Flush took {} secs", (endOfFlush - now)/1000);
 							now = endOfFlush;
 						}
 
@@ -143,47 +208,8 @@ public final class Distributor extends Thread {
 						for(int i = 100; i-- != 0 && ! frontier.readyURLs.isEmpty();) {
 							round = -1;
 							frontier.readyURLs.dequeue();
-							final ByteArrayList url = frontier.readyURLs.buffer();
-							final byte[] urlBuffer = url.elements();
-							final int startOfpathAndQuery = BURL.startOfpathAndQuery(urlBuffer);
-
-							final int currentlyInStore = frontier.schemeAuthority2Count.get(urlBuffer, 0, startOfpathAndQuery);
-							if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
-
-								visitState = schemeAuthority2VisitState.get(urlBuffer, 0, startOfpathAndQuery);
-
-								if (visitState == null) {
-									final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray(urlBuffer);
-									if (LOGGER.isTraceEnabled()) LOGGER.trace("New scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(schemeAuthority), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
-									visitState = new VisitState(frontier, schemeAuthority);
-									visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
-									visitState.enqueueRobots();
-									visitState.enqueuePathQuery(BURL.pathAndQueryAsByteArray(url));
-									schemeAuthority2VisitState.add(visitState);
-									// Send the visit state to the DNS threads
-									frontier.newVisitStates.add(visitState);
-									movedFromSieveToWorkbench++;
-								}
-								else {
-									if (frontier.virtualizer.count(visitState) > 0) {
-										// Safe: there are URLs on disk, and this fact cannot change concurrently.
-										movedFromSieveToVirtualizer++;
-										frontier.virtualizer.enqueueURL(visitState, url);
-									}
-									else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
-										/* Safe: we are enqueueing to a sane (modulo race conditions)
-										 * visit state, which will be necessarily go through the DoneThread later. */
-										visitState.checkRobots(now);
-										visitState.enqueuePathQuery(BURL.pathAndQueryAsByteArray(url));
-										movedFromSieveToWorkbench++;
-									}
-									else { // visitState.urlsOnDisk == 0
-										movedFromSieveToVirtualizer++;
-										frontier.virtualizer.enqueueURL(visitState, url);
-									}
-								}
-							}
-							else deletedFromSieve++;
+							if (!processURL(frontier.readyURLs.buffer(), now))
+								i++;
 						}
 					}
 				}
@@ -212,23 +238,31 @@ public final class Distributor extends Thread {
 				}
 
 				if (now - PURGE_CHECK_INTERVAL > lastPurgeCheck) {
-					for(VisitState visitState: schemeAuthority2VisitState.visitStates())
-						if (visitState != null) {
-							/* We've been scheduled for purge, or we have fetched at least a
-							 * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
-							 * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
-							 * same visit state later, in which case we will create it again. */
-							if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0
-									&& visitState.nextFetch < now - PURGE_DELAY
-									&& visitState.isEmpty()
-									&& ! visitState.acquired
+					synchronized (schemeAuthority2VisitState) {
+						for (VisitState visitState : schemeAuthority2VisitState.visitStates())
+							if (visitState != null) {
+								/* We've been scheduled for purge, or we have fetched at least a
+								 * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
+								 * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
+								 * same visit state later, in which case we will create it again. */
+								if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0
+										&& visitState.nextFetch < now - PURGE_DELAY
+										&& visitState.isEmpty()
+										&& !visitState.acquired
 									/*&& visitState.lastExceptionClass == null*/) {
-								LOGGER.info((visitState.nextFetch == Long.MAX_VALUE ? "Purging " : "Purging by delay ") + visitState);
-								// This will modify the backing array on which we are enumerating, but it won't be a serious problem.
-								frontier.virtualizer.remove(visitState);
-								schemeAuthority2VisitState.remove(visitState);
+									LOGGER.info((visitState.nextFetch == Long.MAX_VALUE ? "Purging " : "Purging by delay ") + visitState);
+									// This will modify the backing array on which we are enumerating, but it won't be a serious problem.
+									frontier.virtualizer.remove(visitState);
+									schemeAuthority2VisitState.remove(visitState);
+								} else {
+									if (visitState.purgeRequired) {
+
+										frontier.virtualizer.remove(visitState);
+										frontier.distributor.schemeAuthority2VisitState.remove(visitState);
+									}
+								}
 							}
-						}
+					}
 					lastPurgeCheck = now;
 				}
 
