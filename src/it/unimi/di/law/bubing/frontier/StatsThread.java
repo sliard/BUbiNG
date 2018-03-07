@@ -24,6 +24,7 @@ import it.unimi.dsi.stat.SummaryStats;
 
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLongArray;
 
@@ -49,6 +50,8 @@ public final class StatsThread implements Runnable {
 	public final ProgressLogger transferredBytesLogger;
 	/** A global progress logger, counting the URLs received from other agents. */
 	public final ProgressLogger receivedURLsLogger;
+
+	public final Random rng;
 
 	/** A variable used for exponentially-binned distribution of visit state sizes. */
 	public volatile int dist[] = new int[0];
@@ -90,6 +93,8 @@ public final class StatsThread implements Runnable {
 		receivedURLsLogger = new ProgressLogger(LOGGER, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "receivedURLs");
 		receivedURLsLogger.displayLocalSpeed = true;
 		receivedURLsLogger.speedTimeUnit = TimeUnit.SECONDS;
+
+		rng = new Random();
 	}
 
 	/** Starst all progress loggers.
@@ -157,6 +162,7 @@ public final class StatsThread implements Runnable {
 				+ Util.format(frontier.contentTypeOthers.get()));
 
 		LOGGER.info("Ready URLs: " + Util.format(frontier.readyURLs.size64()));
+		LOGGER.info("Held Back URLs: " + Util.format(frontier.heldBackURLs.size64()));
 
 		LOGGER.info("FetchingThread waits: " + frontier.fetchingThreadWaits.get() + "; total wait time: " + frontier.fetchingThreadWaitingTimeSum.get());
 		frontier.resetFetchingThreadsWaitingStats();
@@ -259,7 +265,6 @@ public final class StatsThread implements Runnable {
 
 		LOGGER.info("Entry stats: " + entrySummaryStats);
 		LOGGER.info("Virtualizer stats: " + frontier.virtualizer);
-
 		LOGGER.info("Visit states: " + distributor.schemeAuthority2VisitState.size()
 				+ "; resolved: " + resolvedVisitStates
 				+ "; on workbench (IP): " + frontier.workbench.approximatedSize()
