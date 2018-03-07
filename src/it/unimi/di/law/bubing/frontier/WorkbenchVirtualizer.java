@@ -114,7 +114,9 @@ public class WorkbenchVirtualizer implements Closeable {
 	 * @throws IOException
 	 */
 	public void remove(VisitState visitState) throws IOException {
-		byteArrayDiskQueues.remove(visitState);
+		synchronized (byteArrayDiskQueues) {
+			byteArrayDiskQueues.remove(visitState);
+		}
 	}
 
 	/** Enqueues the given URL as a path+query associated to the scheme+authority of the given visit state.
@@ -137,7 +139,9 @@ public class WorkbenchVirtualizer implements Closeable {
 	public void collectIf(final double threshold, final double targetRatio) throws IOException {
 		if (byteArrayDiskQueues.ratio() < threshold) {
 			LOGGER.info("Starting collection...");
-			byteArrayDiskQueues.collect(targetRatio);
+			synchronized(byteArrayDiskQueues) {
+				byteArrayDiskQueues.collect(targetRatio);
+			}
 			LOGGER.info("Completed collection.");
 		}
 	}
