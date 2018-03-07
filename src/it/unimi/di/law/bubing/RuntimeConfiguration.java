@@ -19,6 +19,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
+import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.http.conn.DnsResolver;
 import org.slf4j.Logger;
@@ -100,6 +101,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#maxUrlsPerSchemeAuthority */
 	public final int maxUrlsPerSchemeAuthority;
 
+	/** @see StartupConfiguration#maxInstantSchemeAuthorityPerIP */
+	public volatile int maxInstantSchemeAuthorityPerIP;
+
+	/** @see StartupConfiguration#maxVisitStates */
+	public volatile int maxVisitStates;
+
 	/** @see StartupConfiguration#maxRequestsPerSchemeAuthority */
 	public final int maxRequestsPerSchemeAuthority;
 
@@ -122,10 +129,10 @@ public class RuntimeConfiguration {
 	public volatile Filter<URIResponse> parseFilter;
 
 	/** @see StartupConfiguration#followFilter */
-	public volatile Filter<URIResponse> followFilter;
+	public volatile Filter<FetchData> followFilter;
 
 	/** @see StartupConfiguration#storeFilter */
-	public volatile Filter<URIResponse> storeFilter;
+	public volatile Filter<FetchData> storeFilter;
 
 	/** @see StartupConfiguration#keepAliveTime */
 	public volatile long keepAliveTime;
@@ -219,6 +226,9 @@ public class RuntimeConfiguration {
 
 	/** @see StartupConfiguration#startPaused */
 	public final boolean startPaused;
+
+	/** @see StartupConfiguration#reinitCounts */
+	public final boolean reinitCounts;
 
 	/** @see StartupConfiguration#storeClass */
 	public final Class<? extends Store> storeClass;
@@ -439,8 +449,9 @@ public class RuntimeConfiguration {
 			group = startupConfiguration.group;
 			weight = startupConfiguration.weight;
 			maxUrlsPerSchemeAuthority = startupConfiguration.maxUrlsPerSchemeAuthority;
+			maxInstantSchemeAuthorityPerIP = startupConfiguration.maxInstantSchemeAuthorityPerIP;
+			maxVisitStates = startupConfiguration.maxVisitStates;
 			maxRequestsPerSchemeAuthority = startupConfiguration.maxRequestsPerSchemeAuthority;
-
 			fetchingThreads = startupConfiguration.fetchingThreads;
 			parsingThreads = startupConfiguration.parsingThreads;
 			dnsThreads = startupConfiguration.dnsThreads;
@@ -456,6 +467,7 @@ public class RuntimeConfiguration {
 			maxUrls = startupConfiguration.maxUrls;
 			bloomFilterPrecision = startupConfiguration.bloomFilterPrecision;
 			startPaused = startupConfiguration.startPaused;
+			reinitCounts = startupConfiguration.reinitCounts;
 			storeClass = startupConfiguration.storeClass;
 			maxRecordsPerFile = startupConfiguration.maxRecordsPerFile;
 			maxSecondsBetweenDumps = startupConfiguration.maxSecondsBetweenDumps;
