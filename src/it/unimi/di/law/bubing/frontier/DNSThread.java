@@ -24,6 +24,7 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Random;
 import java.util.ArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
@@ -108,7 +109,15 @@ public final class DNSThread extends Thread {
 
 					visitState.lastExceptionClass = null; // In case we had previously set UnknownHostException.class
 					// Fetch or create atomically a new workbench entry.
-					visitState.setWorkbenchEntry(frontier.workbench.getWorkbenchEntry(address));
+					WorkbenchEntry entry = null;
+					ThreadLocalRandom tlrng = ThreadLocalRandom.current();
+					int overflowCounter = 0;
+					do {
+						// First entry is 0, then 1 or 2, then 3,4,5 or 6, and so on
+						entry = frontier.workbench.getWorkbenchEntry(address, tlrng.nextInt(1 << overflowCounter,1 << (overflowCounter+1))-1);
+						overflowCounter++;
+					} while (entry.size() > frontier.rc.maxInstantSchemeAuthorityPerIP);
+					visitState.setWorkbenchEntry(entry);
 				}
 				catch(UnknownHostException e) {
 					LOGGER.info("Unknown host " + host + " for visit state " + visitState);
