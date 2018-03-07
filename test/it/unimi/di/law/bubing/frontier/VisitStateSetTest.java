@@ -32,8 +32,8 @@ public class VisitStateSetTest {
 
 	@Test
 	public void testAddRemove() {
-		VisitState a = new VisitState(null, "a".getBytes(Charsets.ISO_8859_1));
-		VisitState b = new VisitState(null, "b".getBytes(Charsets.ISO_8859_1));
+		VisitState a = new VisitState("a".getBytes(Charsets.ISO_8859_1));
+		VisitState b = new VisitState("b".getBytes(Charsets.ISO_8859_1));
 		VisitStateSet s = new VisitStateSet();
 
 		assertTrue(s.add(a));
@@ -49,12 +49,12 @@ public class VisitStateSetTest {
 	@Test
 	public void testResize() {
 		final VisitState[] visitState = new VisitState[2000];
-		for(int i = visitState.length; i-- != 0;) visitState[i] = new VisitState(null, Integer.toString(i).getBytes(Charsets.ISO_8859_1));
+		for(int i = visitState.length; i-- != 0;) visitState[i] = new VisitState(Integer.toString(i).getBytes(Charsets.ISO_8859_1));
 
 		VisitStateSet s = new VisitStateSet();
 		for(int i = 2000; i-- != 0;) assertTrue(s.add(visitState[i]));
 		assertEquals(2000, s.size());
-		for(int i = 2000; i-- != 0;) assertFalse(s.add(new VisitState(null, Integer.toString(i).getBytes(Charsets.ISO_8859_1))));
+		for(int i = 2000; i-- != 0;) assertFalse(s.add(new VisitState(Integer.toString(i).getBytes(Charsets.ISO_8859_1))));
 		for(int i = 1000; i-- != 0;) assertTrue(s.remove(visitState[i]));
 
 		for(int i = 1000; i-- != 0;) assertFalse(s.remove(visitState[i]));
