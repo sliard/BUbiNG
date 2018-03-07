@@ -51,6 +51,7 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -64,7 +65,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.io.compress.CompressionCodecFactory;
 import org.apache.hadoop.io.compress.Lz4Codec;
-import org.apache.hadoop.io.compress.lz4.Lz4Compressor;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.slf4j.Logger;
@@ -175,6 +175,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		VIRTUALQUEUESBIRTHTIME,
 		READYURLSSIZE,
 		RECEIVEDURLSSIZE,
+		HOLDBACKURLSSIZE,
 		// DISTRIBUTOR EXTRAS
 		DISTRIBUTORWARMUP,
 		DISTRIBUTORVISITSTATESONDISK,
@@ -237,6 +238,9 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 	/** A queue to store URLs coming out of the {@link #sieve}. */
 	public ByteArrayDiskQueue readyURLs;
+
+	/** A queue to store URLs that have been held back because they have an IP address with too many hosts. */
+	public ByteArrayDiskQueue heldBackURLs;
 
 	/** A queue to quickly buffer URLs communicated by {@link #receive(BubingJob)}. */
 	public ArrayBlockingQueue<ByteArrayList> quickReceivedURLs;
@@ -410,25 +414,24 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	public Frontier(final RuntimeConfiguration rc, final Agent agent) throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException,
 			InterruptedException {
 		this.rc = rc;
+		this.agent = agent;
 
-		schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.sqrt((double)rc.maxUrlsPerSchemeAuthority)),3);
 		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
 
-		robotsWarcParallelOutputStream =  new ThreadLocal<WarcWriter>(){
+		robotsWarcParallelOutputStream = new ThreadLocal<WarcWriter>() {
 			@Override
-			protected WarcWriter initialValue()
-			{
-				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID()+".lz4");
+			protected WarcWriter initialValue() {
+				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID() + ".lz4");
 				LOGGER.info("Opening file " + robotsFile + " to write robots.txt");
 				Configuration conf = new Configuration(true);
 				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
 				CompressionCodec codec = ccf.getCodecByClassName(Lz4Codec.class.getName());
 				OutputStream warcOutputStream = null;
 				try {
-					warcOutputStream = new FastBufferedOutputStream( codec.createOutputStream(new FileOutputStream( robotsFile )), 1024 * 1024 );
+					warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
 				} catch (IOException e) {
-					LOGGER.error("Unable to create file" , e);
+					LOGGER.error("Unable to create file", e);
 					System.exit(1);
 				}
 				WarcWriter warcWriter = new UncompressedWarcWriter(warcOutputStream);
@@ -438,12 +441,13 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		};
 
 		urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize);
-				if (rc.sieveSize == 0) sieve = new IdentitySieve<>(this, new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID,
-				BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
-		else sieve = new MercatorSieve<>(rc.crawlIsNew, rc.sieveDir, rc.sieveSize, rc.sieveStoreIOBufferByteSize, rc.sieveAuxFileIOBufferByteSize, this,
-				new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID, BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
+		if (rc.sieveSize == 0)
+			sieve = new IdentitySieve<>(this, new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID,
+					BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
+		else
+			sieve = new MercatorSieve<>(rc.crawlIsNew, rc.sieveDir, rc.sieveSize, rc.sieveStoreIOBufferByteSize, rc.sieveAuxFileIOBufferByteSize, this,
+					new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID, BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
 
-		this.agent = agent;
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();
 		this.virtualizer = new WorkbenchVirtualizer(this);
@@ -506,15 +510,22 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		// Configures Jericho to use SLF4J
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
-		quickReceivedURLs = new ArrayBlockingQueue<>(64*1024);
-		quickToSendURLs = new ArrayBlockingQueue<>(64*1024);;
+		quickReceivedURLs = new ArrayBlockingQueue<>(64 * 1024);
+		quickToSendURLs = new ArrayBlockingQueue<>(64 * 1024);
+		;
 		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
 		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
 			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
+	}
 
+	public void init() throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException, InterruptedException {
 		if (rc.crawlIsNew) {
+			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
+
 			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
 			readyURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "ready"), READY_URLS_BUFFER_SIZE, true);
+			heldBackURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "holdBack"), READY_URLS_BUFFER_SIZE, true);
+
 			receivedURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "received"), 16 * 1024, true);
 			distributor.statsThread.start(0);
 		}
@@ -766,7 +777,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 			// Note that this is blocking, but blocking should be very rare and short
 			// still, we don't want to block.
 			if (!quickReceivedURLs.offer(job.url))
-				LOGGER.warn("Dropping {} to avoid blocking ! you should increase the quickReceivedURLs queue size", job.toString());
+				if (LOGGER.isDebugEnabled()) LOGGER.debug("Dropping {} to avoid blocking ! you should increase the quickReceivedURLs queue size", job.toString());
 		}
 		catch (Exception e) {
 			LOGGER.error("Error while enqueueing " + job.url, e);
@@ -853,6 +864,9 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		LOGGER.info("Joined parsing threads and closed stores");
 
 		for (FetchingThread t : fetchingThreads) t.close();
+		for (FetchData fd; (fd = availableFetchData.poll()) != null;) { fd.close(); }
+		for (FetchData fd; (fd = results.poll()) != null;) { fd.close(); }
+
 		LOGGER.info("Closed fetching threads");
 
 		// Move the todo list back into the workbench
@@ -992,6 +1006,8 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		readyURLs.freeze();
 		scalarData.addProperty(PropertyKeys.RECEIVEDURLSSIZE, receivedURLs.size64());
 		receivedURLs.freeze();
+		scalarData.addProperty(PropertyKeys.HOLDBACKURLSSIZE, heldBackURLs.size64());
+		heldBackURLs.freeze();
 
 		scalarData.save(new File(snapDir, "frontier.data"));
 
@@ -1025,9 +1041,17 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	}
 
 	/** Snaps the current URL queues to a TXT file to be used for seed in a next launch */
-	public void snapToSeed() throws ConfigurationException, IllegalArgumentException, IOException {
+	public void snapToSeed() throws ConfigurationException, IllegalArgumentException, IOException, InterruptedException {
 
-		LOGGER.info( "Storing URLS to visit" );
+		// First, finish transferring the receivedURLS to sieve, and flush the sieve
+		sieve.flush();
+		// Empties heldBackUrls
+		while (!heldBackURLs.isEmpty()) {
+			heldBackURLs.dequeue();
+			ByteArrayList url = heldBackURLs.buffer();
+			readyURLs.enqueue(url.elements(),0,url.size());
+		}
+		LOGGER.info( "Storing URLS found but not yet visited to visit" );
 		File tempSnapSeed = new File( rc.storeDir, ".seed.txt.gz" );
 		final OutputStreamWriter stringWriter = new OutputStreamWriter(new FastBufferedOutputStream( new GZIPOutputStream( new FileOutputStream( tempSnapSeed ) ) ) );
 
@@ -1052,8 +1076,6 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		newReadyURLs.close(); // deletes the file
 		// recreate ReadyURLs from initial state (freeze() put it in wrong state)
 		readyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize,readyURLsFile,READY_URLS_BUFFER_SIZE,true);
-
-
 		receivedURLs.freeze();
 		final long receivedURLsSize = receivedURLs.size64();
 		File receivedURLsFile = new File( rc.frontierDir, "received" );
@@ -1077,7 +1099,7 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		for ( VisitState visitState : distributor.schemeAuthority2VisitState.visitStates() ) {
 			// Create copy buffer
 			if (visitState != null) {
-				VisitState copyVisitState = new VisitState(this, visitState.schemeAuthority);
+				VisitState copyVisitState = new VisitState( visitState.schemeAuthority);
 				byte[] schemeAuthority = visitState.schemeAuthority;
 				while (!visitState.isEmpty()) {
 					byte[] url = visitState.dequeue();
@@ -1162,7 +1184,11 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		 * numVirtualQueues, false, virtualQueueSize); } */
 
 		LOGGER.info("Restoring counts");
-		schemeAuthority2Count = (IntCountMinSketchUnsafe) BinIO.loadObject(new File(snapDir, "schemeAuthority2Count"));
+		if (!rc.reinitCounts)
+			schemeAuthority2Count = (IntCountMinSketchUnsafe) BinIO.loadObject(new File(snapDir, "schemeAuthority2Count"));
+		else
+			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
+
 
 		LOGGER.info("Restoring workbench");
 		final ObjectInputStream workbenchStream = new ObjectInputStream(new FastBufferedInputStream(new FileInputStream(new File(snapDir, "workbench"))));
@@ -1170,14 +1196,25 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		final long workbenchSize = workbenchStream.readLong();
 		long w = workbenchSize;
 		try {
+			ThreadLocalRandom tlrng = ThreadLocalRandom.current();
 			while(w-- != 0) {
 				final VisitState visitState = (VisitState)workbenchStream.readObject();
-				visitState.frontier = this;
 				distributor.schemeAuthority2VisitState.add(visitState);
 				final boolean nonNullWorkbenchEntry = workbenchStream.readBoolean();
 				if (visitState.lastRobotsFetch == Long.MAX_VALUE) visitState.forciblyEnqueueRobotsFirst();
-				if (nonNullWorkbenchEntry) visitState.setWorkbenchEntry(workbench.getWorkbenchEntry(Util.readByteArray(workbenchStream)));
-				else newVisitStates.add(visitState);
+
+				if (nonNullWorkbenchEntry) {
+					WorkbenchEntry entry = null;
+					byte[] address = Util.readByteArray(workbenchStream);
+					int overflowCounter = 0;
+					do {
+						entry = workbench.getWorkbenchEntry(address, tlrng.nextInt(1 << overflowCounter,1 << (overflowCounter+1))-1);
+						overflowCounter++;
+					} while (entry.size() >= rc.maxInstantSchemeAuthorityPerIP);
+					visitState.setWorkbenchEntry(entry);
+				}
+				else
+					newVisitStates.add(visitState);
 
 				if (visitState.isEmpty() && virtualizer.count(visitState) > 0) {
 					LOGGER.error("Empty visit state, URLs on disk: " + visitState);
@@ -1196,6 +1233,9 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		LOGGER.info("Defreezing byte disk queues");
 		long readyURLsSize = scalarData.getLong(PropertyKeys.READYURLSSIZE);
 		readyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize, new File(rc.frontierDir, "ready"), READY_URLS_BUFFER_SIZE, true);
+		long heldBackURLsSize = scalarData.getLong(PropertyKeys.HOLDBACKURLSSIZE);
+		heldBackURLs = ByteArrayDiskQueue.createFromFile(heldBackURLsSize, new File(rc.frontierDir, "holdBack"), READY_URLS_BUFFER_SIZE, true);
+
 		long receivedURLsSize = scalarData.getLong(PropertyKeys.RECEIVEDURLSSIZE);
 		receivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize, new File(rc.frontierDir, "received"), 16 * 1024, true);
 
