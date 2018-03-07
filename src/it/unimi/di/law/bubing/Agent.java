@@ -17,6 +17,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
+import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.jgroups.JChannel;
@@ -93,6 +94,9 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	/** @see QuickToQueueThread */
 	protected final QuickToQueueThread quickToQueueThread;
 
+	private static Agent theAgent;
+	private static volatile boolean hasStopped = false;
+
 	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
 		// TODO: configure strategies
 
@@ -100,6 +104,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 				new JChannel(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null ? (InputStream) new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME)) : JGroupsJobManager.class.getResourceAsStream('/' + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml")),
 				rc.group, new ConsistentHashAssignmentStrategy<BubingJob>(), new LinkedBlockingQueue<BubingJob>(),
 				new TimedDroppingThreadFactory<BubingJob>(1800000), new DiscardMessagesStrategy<BubingJob>());
+
+		theAgent = this;
 
 		LOGGER.info("Creating Agent instance with properties {}", rc);
 
@@ -109,6 +115,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		register();
 
 		frontier = new Frontier(rc, this);
+		frontier.init();
 		setListener(frontier);
 
 		(messageThread = new MessageThread(frontier)).start();
@@ -123,63 +130,71 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		frontier.parsingThreads(rc.parsingThreads);
 		frontier.fetchingThreads(rc.fetchingThreads);
 
-		frontier.rc.ensureNotPaused();
-		final ByteArrayList list = new ByteArrayList();
-		while (rc.seed.hasNext()) {
-			final URI nextSeed = rc.seed.next();
-			if (nextSeed != null) frontier.enqueue(BURL.toByteArrayList(nextSeed, list));
-		}
-		LOGGER.info("Finished reading seeds");
+	}
 
-		//Schedule snaptoseed
-		final Agent agent = this;
-		/*new java.util.Timer().schedule(
-				new java.util.TimerTask() {
-					@Override
-					public void run() {
-						agent.snapSeed();
-					}
-				},
-				30*60*1000,
-				30*60*1000
-		);*/
+	public static Agent getAgent() {
+		return theAgent;
+	}
+
+	public static Frontier getFrontier() {
+		return theAgent.frontier;
 	}
 
 	public void run() throws Exception {
 		// We wait for the notification of a stop event, usually caused by a call to stop().
-		synchronized (this) {
-			if (!rc.stopping) wait();
+		frontier.rc.ensureNotPaused();
+		final ByteArrayList list = new ByteArrayList();
+		// Limit seed rate to seedPerMillisecond url/ms
+		long seedCount = 0;
+		long startTime = System.currentTimeMillis();
+		long seedPerMillisecond = 2;
+		while (rc.seed.hasNext() && !rc.stopping) {
+			final URI nextSeed = rc.seed.next();
+			if (nextSeed != null)
+				frontier.enqueue(BURL.toByteArrayList(nextSeed, list).clone());
+			seedCount ++;
+			long diff = startTime + seedCount/seedPerMillisecond - System.currentTimeMillis();
+			if (diff > 0)
+				Thread.sleep(diff);
+		}
+		LOGGER.info("Finished reading seeds");
+		synchronized (rc) {
+			if (!rc.stopping)
+				rc.wait();
 		}
 
+		LOGGER.info("Terminating the agent");
 		terminate();
 	}
 
 	public void terminate() throws Exception {
 		// Stuff to be done at stopping time
+		if (!hasStopped) {
+			hasStopped = true;
+			// The message thread uses the sieve, which will be closed by the frontier.
+			messageThread.stop = true;
+			messageThread.join();
+			LOGGER.info("Joined message thread");
 
-		// The message thread uses the sieve, which will be closed by the frontier.
-		messageThread.stop = true;
-		messageThread.join();
-		LOGGER.info("Joined message thread");
+			frontier.close();
 
-		frontier.close();
+			LOGGER.info("Going to close job manager " + this);
+			close();
+			LOGGER.info("Job manager closed");
 
-		LOGGER.info("Going to close job manager " + this);
-		close();
-		LOGGER.info("Job manager closed");
+			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
+			quickMessageThread.stop = true;
+			quickMessageThread.join();
+			quickToSendThread.stop = true;
+			quickToSendThread.join();
+			quickToQueueThread.stop = true;
+			quickToQueueThread.join();
+			LOGGER.info("Joined quick message thread");
 
-		// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
-		quickMessageThread.stop = true;
-		quickMessageThread.join();
-		quickToSendThread.stop = true;
-		quickToSendThread.join();
-		quickToQueueThread.stop = true;
-		quickToQueueThread.join();
-		LOGGER.info("Joined quick message thread");
+			frontier.snap();
 
-		frontier.snap();
-
-		LOGGER.info("Agent " + this + " exits");
+			LOGGER.info("Agent " + this + " exits");
+		}
 	}
 
 	/* Methods required to extend JGroupsJobManager. */
@@ -215,10 +230,12 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	/* Main Managed Operations */
 
 	@ManagedOperation @Description("Stop this agent")
-	public synchronized void stop() {
+	public void stop() {
 		LOGGER.info("Going to stop the agent...");
-		rc.stopping = true;
-		notify();
+		synchronized(rc) {
+			rc.stopping = true;
+			rc.notifyAll();
+		}
 	}
 
 
@@ -253,6 +270,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			LOGGER.error("Wrong configuration", e);
 		} catch (IOException e) {
 			LOGGER.error("Error while writing", e);
+		} catch (InterruptedException e) {
+			LOGGER.error("Error while writing : interrupted", e);
 		}
 
 		synchronized( rc ) {
@@ -363,7 +382,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setFollowFilter(String spec) throws ParseException {
-		rc.followFilter = new FilterParser<>(URIResponse.class).parse(spec);
+		rc.followFilter = new FilterParser<>(FetchData.class).parse(spec);
 	}
 
 	@ManagedAttribute @Description("Filter that will be applied to all fetched responses to decide whether to follow their links")
@@ -373,7 +392,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setStoreFilter(String spec) throws ParseException {
-		rc.storeFilter = new FilterParser<>(URIResponse.class).parse(spec);
+		rc.storeFilter = new FilterParser<>(FetchData.class).parse(spec);
 	}
 
 	@ManagedAttribute @Description("Filter that will be applied to all fetched responses to decide whether to store them")
@@ -407,7 +426,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	}
 
 	@ManagedAttribute @Description("Delay in milliseconds between two consecutive fetches from the same scheme+authority")
-	public long getUrlDelay() {
+	public long getSchemeAuthorityDelay() {
 		return rc.schemeAuthorityDelay;
 	}
 
@@ -429,6 +448,26 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute @Description("Maximum number of URLs to crawl")
 	public long getMaxUrls() {
 		return rc.maxUrls;
+	}
+
+	@ManagedAttribute
+	public void setMaxInstantSchemeAuthorityPerIP(final int maxInstantSchemeAuthorityPerIP) {
+		rc.maxInstantSchemeAuthorityPerIP = maxInstantSchemeAuthorityPerIP;
+	}
+
+	@ManagedAttribute @Description("Maximum number of SchemeAuthority in a live WorkbenchEntry")
+	public int getMaxInstantSchemeAuthorityPerIP() {
+		return rc.maxInstantSchemeAuthorityPerIP;
+	}
+
+	@ManagedAttribute
+	public void setMaxVisitStates(final int maxVisitStates) {
+		rc.maxVisitStates = maxVisitStates;
+	}
+
+	@ManagedAttribute @Description("Maximum number of VisitStates in memory")
+	public int getMaxVisitStates() {
+		return rc.maxVisitStates;
 	}
 
 	@ManagedAttribute
@@ -684,7 +723,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	}
 
 	@ManagedAttribute @Description("Number of FetchingThread instances downloading data")
-	public int getActiveFecthingThreads() {
+	public int getActiveFetchingThreads() {
 		return  (int)(frontier.rc.fetchingThreads - frontier.results.size());
 	}
 
@@ -780,9 +819,9 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		Agent agent = new Agent(host, port, new RuntimeConfiguration(new StartupConfiguration(jsapResult.getString("properties"), additional)));
 
 		Runtime.getRuntime().addShutdownHook(new Thread( () -> {
-			agent.stop();
 			try {
-				agent.terminate();
+				if (!hasStopped)
+					agent.terminate();
 			} catch (Exception e) {
 				LOGGER.error("Error during shutdown",e);
 			}
