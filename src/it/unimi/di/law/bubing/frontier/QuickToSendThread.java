@@ -59,12 +59,13 @@ public final class QuickToSendThread extends Thread {
 
                 if (url != null) {
                     final BubingJob job = new BubingJob(url);
-                    LOGGER.debug("Passing job " + job.toString());
+                    if (LOGGER.isDebugEnabled())
+                        LOGGER.debug("Passing job " + job.toString());
                     try {
                         frontier.agent.submit(job);
-                    } catch (NoSuchJobManagerException e) {
+                    } catch (Exception e) {
                         // This just shouldn't happen.
-                        LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(url.toByteArray()), e);
+                        LOGGER.warn("Impossible to submit URL \"" + BURL.fromNormalizedByteArray(url.toByteArray())+"\"", e);
                     }
                 }
             }

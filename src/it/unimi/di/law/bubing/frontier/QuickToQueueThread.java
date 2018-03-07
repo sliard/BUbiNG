@@ -54,13 +54,17 @@ public final class QuickToQueueThread extends Thread {
         try {
             final ArrayBlockingQueue<ObjectArrayList<ByteArrayList>> quickToQueueURLLists[] = frontier.quickToQueueURLLists;
             while(! stop) {
+                boolean found = false;
                 for (int i=0; i<quickToQueueURLLists.length;i++) {
-                    final ObjectArrayList<ByteArrayList> urls = quickToQueueURLLists[i].poll(1000 / quickToQueueURLLists.length, TimeUnit.MILLISECONDS);
+                    final ObjectArrayList<ByteArrayList> urls = quickToQueueURLLists[i].poll();
                     if (urls != null) {
+                        found = true;
                         for (ByteArrayList url : urls)
                             frontier.enqueue(url);
                     }
                 }
+                if (!found)
+                    Thread.sleep(200);
             }
         }
         catch (Throwable t) {

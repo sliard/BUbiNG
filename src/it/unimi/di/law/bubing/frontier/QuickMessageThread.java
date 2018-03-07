@@ -19,6 +19,7 @@ package it.unimi.di.law.bubing.frontier;
 import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
+import java.util.ArrayList;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -53,9 +54,15 @@ public final class QuickMessageThread extends Thread {
 		try {
 			final ByteArrayDiskQueue receivedURLs = frontier.receivedURLs;
 			final ArrayBlockingQueue<ByteArrayList> quickReceivedURLs = frontier.quickReceivedURLs;
+			final ArrayList<ByteArrayList> receiveBuffer = new ArrayList<>(1024);
 			while(! stop) {
-				final ByteArrayList list = quickReceivedURLs.poll(1, TimeUnit.SECONDS);
-				if (list != null) receivedURLs.enqueue(list.elements(), 0, list.size());
+				quickReceivedURLs.drainTo(receiveBuffer,1024);
+				if (receiveBuffer.size() > 0) {
+					for (ByteArrayList url : receiveBuffer)
+						receivedURLs.enqueue(url.elements(), 0, url.size());
+					receiveBuffer.clear();
+				} else
+					Thread.sleep(50);
 			}
 		}
 		catch (Throwable t) {
