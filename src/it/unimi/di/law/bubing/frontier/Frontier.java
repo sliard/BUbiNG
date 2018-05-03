@@ -17,6 +17,7 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 import com.google.common.io.Files;
+import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.sieve.AbstractSieve;
@@ -422,11 +423,11 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		robotsWarcParallelOutputStream = new ThreadLocal<WarcWriter>() {
 			@Override
 			protected WarcWriter initialValue() {
-				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID() + ".lz4");
+				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID() + ".zstm");
 				LOGGER.info("Opening file " + robotsFile + " to write robots.txt");
 				Configuration conf = new Configuration(true);
 				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
-				CompressionCodec codec = ccf.getCodecByClassName(Lz4Codec.class.getName());
+				CompressionCodec codec = ccf.getCodecByClassName(ZstdCodec.class.getName());
 				OutputStream warcOutputStream = null;
 				try {
 					warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
@@ -682,10 +683,10 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 		final BubingJob job = new BubingJob(url);
 
-		if (agent.local(job)) {
+		/*f (agent.local(job)) {
 			if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
 		}
-		else try {
+		else*/ try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
 			quickToSendURLs.offer(url);
 			// was agent.submit(job);
@@ -760,12 +761,12 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	 *
 	 * @param url a BUbiNG URL to be enqueued to the BUbiNG crawl, in byte-array representation.
 	 * @throws InterruptedException from {@link AbstractSieve#enqueue(Object, Object)}. */
-	public void enqueueLocal(ByteArrayList url) throws IOException, InterruptedException {
+	public void enqueueLocal(ByteArrayList url, boolean force) throws IOException, InterruptedException {
 		final byte[] urlBuffer = url.elements();
 		final int inStore = schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer));
-		if (inStore >= rc.maxUrlsPerSchemeAuthority) return;
+		if (!force && inStore >= rc.maxUrlsPerSchemeAuthority) return;
 
-		if (!urlCache.add(url)) return;
+		if (!force && !urlCache.add(url)) return;
 
 		if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
 	}

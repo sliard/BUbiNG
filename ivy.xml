@@ -28,12 +28,15 @@
 		<dependency org="it.unimi.di.law" name="jai4j" rev="latest.release"/>
 
 		<dependency org="it.unimi.di.law" name="jericho-html-dev" rev="20131217" conf="runtime->default"/>
+		<dependency org="com.ibm.icu" name="icu4j" rev="60.1"/>
+		<dependency org="com.github.crawler-commons" name="crawler-commons" rev="latest.release"/>
+
 
 		<dependency org="org.slf4j" name="log4j-over-slf4j" rev="latest.release"/>
 		<dependency org="org.slf4j" name="jcl-over-slf4j" rev="latest.release"/>
 		<dependency org="ch.qos.logback" name="logback-classic" rev="latest.release"/>
 
-		<dependency org="it.unimi.dsi" name="fastutil" rev="8.1.1"/>
+		<dependency org="it.unimi.dsi" name="fastutil" rev="latest.release"/>
 		<dependency org="it.unimi.dsi" name="webgraph" rev="latest.release"/>
 		<dependency org="it.unimi.dsi" name="webgraph-big" rev="latest.release"/>
 		<dependency org="it.unimi.dsi" name="sux4j" rev="latest.release" />
@@ -45,16 +48,13 @@
 		<dependency org="org.apache.httpcomponents"  name="httpcore" rev="latest.release"/>
 		<dependency org="org.apache.httpcomponents" name="httpclient" rev="latest.release"/>
 		<!-- <dependency org="org.apache.httpcomponents" name="httpasyncclient" rev="latest.release"/>-->
-		<!-- https://mvnrepository.com/artifact/org.iq80.snappy/snappy -->
-		<!--dependency org="org.iq80.snappy" name="snappy" rev="0.4"/-->
-		<!--dependency org="org.lz4" name="lz4-java" rev="1.4.1"/-->
-		<!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-common -->
-		<dependency org="org.apache.hadoop" name="hadoop-common" rev="2.7.5"/>
-
+                <dependency org="org.apache.hadoop" name="hadoop-common" rev="2.7.5"/>
+		
 		<dependency org="org.cyclopsgroup" name="jmxterm" rev="1.0-alpha-4"/>
 
 		<dependency org="com.martiansoftware" name="jsap" rev="latest.release"/>
-		<dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
+                <dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
+
 		<dependency org="org.softee" name="pojo-mbean" rev="latest.release"/>
 		<!-- <dependency org="org.jgroups" name="jgroups" rev="latest.release"/> -->
 		<dependency org="com.google.guava" name="guava" rev="latest.release"/>
@@ -62,16 +62,14 @@
 		<dependency org="net.java.dev.javacc" name="javacc" rev="5.0" conf="compile"/>
 
 		<dependency org="org.apache.commons" name="commons-math" rev="latest.release" conf="test"/>
+		<dependency org="org.apache.ignite" name="ignite-core" rev="2.4.0"/>
+		<dependency org="org.apache.pulsar" name="pulsar-client" rev="1.22.0-incubating"/>
 		<dependency org="junit" name="junit" rev="latest.release" conf="test"/>
 
 		<!-- Fixed release for making staging work; please check how to make it work in general -->
 		<dependency org="org.jacoco" name="org.jacoco.ant" rev="0.7.2.201409121644" conf="test"/>
 
 		<dependency org="org.umlgraph" name="umlgraph" rev="latest.release"/>
-
-		<!-- https://mvnrepository.com/artifact/com.ibm.icu/icu4j -->
-		<dependency org="com.ibm.icu" name="icu4j" rev="60.1"/>
-		<dependency org="com.github.crawler-commons" name="crawler-commons" rev="latest.release"/>
 
 		<exclude org="org.slf4j" artifact="slf4j-log4j12"/>
 		<exclude org="log4j" artifact="log4j"/>

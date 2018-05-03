@@ -57,7 +57,7 @@ public class MultiWarcStore implements Closeable, Store {
 	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );
 
 	private final int OUTPUT_STREAM_BUFFER_SIZE = 32*1024 * 1024;
-	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.zst";
+	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.zstm";
 	private final static String URL_NAME_FORMAT = "urls.%s.%s.gz";
 	public final static String DIGESTS_NAME = "digests.bloom";
 
@@ -122,6 +122,7 @@ public class MultiWarcStore implements Closeable, Store {
 		warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.WARC_PAYLOAD_DIGEST, "bubing:" + Hex.encodeHexString( contentDigest ) ) );
 		if ( guessedCharset != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_CHARSET, guessedCharset ) );
 		if ( guessedLanguage != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_LANGUAGE, guessedLanguage ) );
+
 		for(String header: extraHeaders.keySet()) {
 			warcHeaders.updateHeader(new BasicHeader(header, extraHeaders.get(header)));
 		}

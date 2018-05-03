@@ -824,6 +824,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 					agent.terminate();
 			} catch (Exception e) {
 				LOGGER.error("Error during shutdown",e);
+			} finally {
+				System.exit(0);
 			}
 		}));
 		agent.run();
