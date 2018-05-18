@@ -349,11 +349,19 @@ public class StartupConfiguration {
 
 	/** The number of URL records to store per file with MultiWarcStore class (for instance 256000 produces 100-300MB files approx.). */
 	@OptionalSpecification(value="256000")
-        public int maxRecordsPerFile;
+	public int maxRecordsPerFile;
 
-        /** The maximum number of seconds between two dumps for MultiWarcStore class. */
-        @OptionalSpecification(value="600")
-        public int maxSecondsBetweenDumps;
+	/** The maximum number of seconds between two dumps for MultiWarcStore class. */
+	@OptionalSpecification(value="600")
+	public int maxSecondsBetweenDumps;
+
+	/** For PulsarWarcStore class : pulsar client connection. */
+	@OptionalSpecification(value="pulsar://localhost:6500")
+	public String pulsarClientConnection;
+
+	/** For PulsarWarcStore class : pulsar topic uri. */
+	@OptionalSpecification(value="persistent://sample/standalone/crawling/warcs")
+	public String pulsarTopicURI;
 
 	/** The maximum size of the workbench in bytes. */
 	public long workbenchMaxByteSize;

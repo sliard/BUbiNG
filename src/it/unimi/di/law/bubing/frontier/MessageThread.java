@@ -37,20 +37,20 @@ import java.util.concurrent.ExecutionException;
  *  {@link Frontier#enqueue(it.unimi.dsi.fastutil.bytes.ByteArrayList)} method). The {@link #run()} method performs a busy polling on the {@link Frontier#receivedURLs}
  *  queue, at exponentially spaced time intervals (but anyway not less infrequently than 1s).
  */
-public final class MessageThread extends Thread implements MessageListener {
+public final class MessageThread extends Thread /*implements MessageListener*/ {
 	private static final Logger LOGGER = LoggerFactory.getLogger(MessageThread.class);
 
 	/** A reference to the frontier. */
 	private final Frontier frontier;
-	private final PulsarClient pulsarClient;
-	private final List<Consumer> pulsarConsumers;
+	//private final PulsarClient pulsarClient;
+	//private final List<Consumer> pulsarConsumers;
 	/** Creates the thread.
 	 *
 	 * @param frontier the frontier instantiating this thread.
 	 */
 	public MessageThread(final Frontier frontier) throws PulsarClientException {
 		setName(this.getClass().getSimpleName());
-		ClientConfiguration conf = new ClientConfiguration();
+/*		ClientConfiguration conf = new ClientConfiguration();
 
 		pulsarClient = PulsarClient.create("pulsar://localhost:6650",conf);
 		pulsarConsumers = new ArrayList<Consumer>(512);
@@ -73,7 +73,7 @@ public final class MessageThread extends Thread implements MessageListener {
 			} catch (ExecutionException e) {
 				LOGGER.error("Error while getting Pulsar consumer",e);
 			}
-		}
+		}*/
 		this.frontier = frontier;
 	}
 
@@ -98,7 +98,7 @@ public final class MessageThread extends Thread implements MessageListener {
 		catch (Throwable t) {
 			LOGGER.error("Unexpected exception ", t);
 		}
-		for (Consumer c: pulsarConsumers) {
+		/*for (Consumer c: pulsarConsumers) {
 			try {
 				c.close();
 			} catch (PulsarClientException e) {
@@ -109,10 +109,10 @@ public final class MessageThread extends Thread implements MessageListener {
 			pulsarClient.close();
 		} catch (PulsarClientException e) {
 			e.printStackTrace();
-		}
+		}*/
 		LOGGER.info("Completed");
 	}
-
+/*
 	@Override
 	public void received(Consumer consumer, Message message) {
 		frontier.numberOfReceivedURLs.incrementAndGet();
@@ -129,5 +129,5 @@ public final class MessageThread extends Thread implements MessageListener {
 		} catch (PulsarClientException e) {
 			LOGGER.error("Error while acknowledging message to Pulsar",e);
 		}
-	}
+	}*/
 }

@@ -683,13 +683,13 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 		final BubingJob job = new BubingJob(url);
 
-		/*f (agent.local(job)) {
+		if (agent.local(job)) {
 			if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
 		}
-		else*/ try {
+		else
+			try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
 			quickToSendURLs.offer(url);
-			// was agent.submit(job);
 		}
 		catch (IllegalStateException e) {
 			// This just shouldn't happen.

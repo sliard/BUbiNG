@@ -239,6 +239,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#maxSecondsBetweenDumps */
 	public volatile int maxSecondsBetweenDumps;
 
+	/** @see StartupConfiguration#pulsarClientConnection */
+	public volatile String pulsarClientConnection;
+
+	/** @see StartupConfiguration#pulsarTopicURI */
+	public volatile String pulsarTopicURI;
+
 	/** @see StartupConfiguration#workbenchMaxByteSize */
 	public volatile long workbenchMaxByteSize;
 
@@ -471,6 +477,8 @@ public class RuntimeConfiguration {
 			storeClass = startupConfiguration.storeClass;
 			maxRecordsPerFile = startupConfiguration.maxRecordsPerFile;
 			maxSecondsBetweenDumps = startupConfiguration.maxSecondsBetweenDumps;
+			pulsarClientConnection = startupConfiguration.pulsarClientConnection;
+			pulsarTopicURI = startupConfiguration.pulsarTopicURI;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;
 			virtualizerMaxByteSize = startupConfiguration.virtualizerMaxByteSize;
 			urlCacheMaxByteSize = startupConfiguration.urlCacheMaxByteSize;
