@@ -1,0 +1,14 @@
+syntax = "proto3";
+option java_outer_classname = "DiscoveredURLProto";
+option java_package = "it.unimi.di.law.bubing.protobuf";
+
+message DiscoveredURL {
+    bytes urlOrigin = 1;
+    bytes urlDiscovered = 2;
+    int32 originCentrality = 3;
+    int32 originRank = 4;
+    int32 originTrust = 5;
+    int32 depth = 6;
+    string linkContent = 7;
+}
+

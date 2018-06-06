@@ -170,6 +170,14 @@ public interface Parser<T> extends Filter<URIResponse> {
 	public StringBuilder getRewrittenContent();
 
 	/**
+	 * Return text content (without html tags & html entities)
+	 *
+	 * @return the cleaned page content or {@code null}.
+	 */
+
+	public StringBuilder getTextContent();
+
+	/**
 	 * Returns the result of the processing.
 	 *
 	 * <p>Note that this method must be idempotent.

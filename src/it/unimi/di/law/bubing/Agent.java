@@ -53,7 +53,6 @@ import com.martiansoftware.jsap.UnflaggedOption;
  */
 
 
-import it.unimi.di.law.bubing.store.Store;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.BubingJob;
 import it.unimi.di.law.bubing.util.Link;
@@ -85,14 +84,17 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	private final RuntimeConfiguration rc;
 	/** The frontier of this agent. */
 	private final Frontier frontier;
-	/** @see MessageThread */
-	protected final MessageThread messageThread;
+	/** @see DiscoveredURLReceiveThread */
+	protected final DiscoveredURLReceiveThread discoveredURLReceiveThread;
 	/** @see QuickMessageThread */
 	protected final QuickMessageThread quickMessageThread;
-	/** @see QuickToSendThread */
-	protected final QuickToSendThread quickToSendThread;
+	/** @see DiscoveredURLSendThread */
+	protected final DiscoveredURLSendThread discoveredURLSendThread;
 	/** @see QuickToQueueThread */
 	protected final QuickToQueueThread quickToQueueThread;
+
+	protected final ToCrawlURLReceiver toCrawlURLReceiver;
+	protected final ToCrawlURLSendThread toCrawlURLSendThread;
 
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
@@ -118,10 +120,12 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		frontier.init();
 		setListener(frontier);
 
-		(messageThread = new MessageThread(frontier)).start();
+		(discoveredURLReceiveThread = new DiscoveredURLReceiveThread(frontier)).start();
 		(quickMessageThread = new QuickMessageThread(frontier)).start();
-		(quickToSendThread = new QuickToSendThread(frontier)).start();
+		(discoveredURLSendThread = new DiscoveredURLSendThread(frontier)).start();
 		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
+		(toCrawlURLSendThread = new ToCrawlURLSendThread(frontier)).start();
+		toCrawlURLReceiver = new ToCrawlURLReceiver(frontier);
 
 		connect();
 
@@ -172,8 +176,9 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		if (!hasStopped) {
 			hasStopped = true;
 			// The message thread uses the sieve, which will be closed by the frontier.
-			messageThread.stop = true;
-			messageThread.join();
+			discoveredURLReceiveThread.stop = true;
+			discoveredURLReceiveThread.join();
+			toCrawlURLReceiver.stop();
 			LOGGER.info("Joined message thread");
 
 			frontier.close();
@@ -185,8 +190,10 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
 			quickMessageThread.stop = true;
 			quickMessageThread.join();
-			quickToSendThread.stop = true;
-			quickToSendThread.join();
+			discoveredURLSendThread.stop = true;
+			discoveredURLSendThread.join();
+			toCrawlURLSendThread.stop = true;
+			toCrawlURLSendThread.join();
 			quickToQueueThread.stop = true;
 			quickToQueueThread.join();
 			LOGGER.info("Joined quick message thread");
@@ -639,7 +646,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute @Description("Number of ready URLs")
 	public long getReadyURLs() {
-		return frontier.readyURLs.size64();
+		return frontier.quickReceivedToCrawlURLs.size();
 	}
 
 	@ManagedAttribute @Description("Number of FetchingThread waits")
@@ -784,7 +791,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	public static void main(final String arg[]) throws Exception {
 		patchUriField("lowMask", "L_DASH");
 		patchUriField("highMask", "H_DASH");
-
 
 		final SimpleJSAP jsap = new SimpleJSAP(Agent.class.getName(), "Starts a BUbiNG agent (note that you must enable JMX by means of the standard Java system properties).",
 				new Parameter[] {

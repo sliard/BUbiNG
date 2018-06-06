@@ -383,6 +383,7 @@ public class ParsingThread extends Thread {
 					frontierLinkReceiver.init(fetchData.uri(), visitState.schemeAuthority, visitState.robotsFilter);
 					final long streamLength = fetchData.response().getEntity().getContentLength();
 					Map<String, String> extraMap = ImmutableMap.of("","");
+					StringBuilder textContent = null;
 					if (streamLength != 0) { // We don't parse zero-length streams
 						try {
 							if (rc.parseFilter.apply(fetchData)) {
@@ -430,6 +431,9 @@ public class ParsingThread extends Thread {
 												// We are cheating with the truth, so we must change the response's header
 											}
 										}
+										textContent = parser.getTextContent();
+
+
 										fetchData.extraMap.putAll(ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
 												"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
 												"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
@@ -505,7 +509,8 @@ public class ParsingThread extends Thread {
 						}
 						fetchData.extraMap.put("BUbiNG-Fetching-Duration", Long.toString(fetchData.endTime - fetchData.startTime));
 						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset == null ? null : guessedCharset.name(), guessedLanguage,
-								fetchData.extraMap);
+								fetchData.extraMap, textContent);
+
 					}
 					else {
 						result = "not stored";

@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 
 //RELEASE-STATUS: DIST
 
-/** A thread that distributes {@linkplain Frontier#readyURLs ready URLs}
+/** A thread that distributes {@linkplain Frontier#quickReceivedToCrawlURLs ready URLs}
  *  (coming out of the {@linkplain Frontier#sieve sieve}) into
  *  the {@link Workbench} queues with the help of a {@link WorkbenchVirtualizer}.
  *  We invite the reader to consult the documentation of {@link WorkbenchVirtualizer} first.
@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
  *		in which case it performs a refill.
  *  	<li>Otherwise, if there are no ready URLs and it is too early to force a flush of the sieve, this thread is put
  *      to sleep with an exponential backoff.
- *      <li>Otherwise, (possibly after a flush) a ready URL is loaded from {@link Frontier#readyURLs} and either deleted
+ *      <li>Otherwise, (possibly after a flush) a ready URL is loaded from {@link Frontier#quickReceivedToCrawlURLs} and either deleted
  *      (if we already have too many URLs for its scheme+authority),
  *      or enqueued to the workbench (if its visit state has no virtualized URLs and has not reached {@link VisitState#pathQueryLimit()}),
  *      or otherwise enqueued to the {@link WorkbenchVirtualizer}.
@@ -105,7 +105,8 @@ public final class Distributor extends Thread {
 				visitState = schemeAuthority2VisitState.get(urlBuffer, 0, startOfpathAndQuery);
 				if (visitState == null) {
 					// Test if we can add it to the newVisitState list or if we must hold it back !
-					if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
+					// Todo : if maxVisitStates reached, send url to pulsar topic
+					// if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
 						final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray(urlBuffer);
 						if (LOGGER.isTraceEnabled())
 							LOGGER.trace("New scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(schemeAuthority), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
@@ -119,10 +120,6 @@ public final class Distributor extends Thread {
 						// Send the visit state to the DNS threads
 						frontier.newVisitStates.add(visitState);
 						movedFromSieveToWorkbench++;
-					} else {
-						frontier.heldBackURLs.enqueue(urlBuffer, 0, url.size());
-						return false;
-					}
 				} else {
 					if (frontier.virtualizer.count(visitState) > 0) {
 						// Safe: there are URLs on disk, and this fact cannot change concurrently.
@@ -186,16 +183,8 @@ public final class Distributor extends Thread {
 					else if (frontIsSmall){
 						// It is necessary to enrich the workbench picking up URLs from the sieve
 
-						if (frontier.readyURLs.isEmpty() && now >= frontier.nextFlush) { // No URLs--time for a forced flush
+						if (frontier.quickReceivedToCrawlURLs.isEmpty() && now >= frontier.nextFlush) { // No URLs--time for a forced flush
 							round = -1;
-							frontier.readyURLs.trim();
-							// Empties holdBackUrls
-							while (!frontier.heldBackURLs.isEmpty()) {
-								frontier.heldBackURLs.dequeue();
-								ByteArrayList url = frontier.heldBackURLs.buffer();
-								frontier.readyURLs.enqueue(url.elements(),0,url.size());
-							}
-							frontier.heldBackURLs.trim();
 
 							frontier.sieve.flush();
 							final long endOfFlush = System.currentTimeMillis();
@@ -205,10 +194,10 @@ public final class Distributor extends Thread {
 						}
 
 						// Note that this might make temporarily the workbench too big by a little bit.
-						for(int i = 100; i-- != 0 && ! frontier.readyURLs.isEmpty();) {
+						for(int i = 100; i-- != 0 && ! frontier.quickReceivedToCrawlURLs.isEmpty();) {
 							round = -1;
-							frontier.readyURLs.dequeue();
-							if (!processURL(frontier.readyURLs.buffer(), now))
+							ByteArrayList url = frontier.quickReceivedToCrawlURLs.take();
+							if (!processURL(url, now))
 								i++;
 						}
 					}

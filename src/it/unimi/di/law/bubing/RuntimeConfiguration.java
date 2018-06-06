@@ -242,8 +242,20 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#pulsarClientConnection */
 	public volatile String pulsarClientConnection;
 
-	/** @see StartupConfiguration#pulsarTopicURI */
-	public volatile String pulsarTopicURI;
+	/** @see StartupConfiguration#pulsarWARCTopic */
+	public volatile String pulsarWARCTopic;
+
+	/** @see StartupConfiguration#pulsarPlainTextTopic */
+	public volatile String pulsarPlainTextTopic;
+
+	/** @see StartupConfiguration#pulsarFrontierTopicNumber */
+	public volatile int pulsarFrontierTopicNumber;
+
+	/** @see StartupConfiguration#pulsarFrontierDiscoveredURLsTopic */
+	public volatile String pulsarFrontierDiscoveredURLsTopic;
+
+	/** @see StartupConfiguration#pulsarFrontierDiscoveredURLsTopic */
+	public volatile String pulsarFrontierToCrawlURLsTopic;
 
 	/** @see StartupConfiguration#workbenchMaxByteSize */
 	public volatile long workbenchMaxByteSize;
@@ -478,7 +490,11 @@ public class RuntimeConfiguration {
 			maxRecordsPerFile = startupConfiguration.maxRecordsPerFile;
 			maxSecondsBetweenDumps = startupConfiguration.maxSecondsBetweenDumps;
 			pulsarClientConnection = startupConfiguration.pulsarClientConnection;
-			pulsarTopicURI = startupConfiguration.pulsarTopicURI;
+			pulsarWARCTopic = startupConfiguration.pulsarWARCTopic;
+			pulsarPlainTextTopic = startupConfiguration.pulsarPlainTextTopic;
+			pulsarFrontierTopicNumber = startupConfiguration.pulsarFrontierTopicNumber;
+			pulsarFrontierDiscoveredURLsTopic = startupConfiguration.pulsarFrontierDiscoveredURLsTopic;
+			pulsarFrontierToCrawlURLsTopic = startupConfiguration.pulsarFrontierToCrawlURLsTopic;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;
 			virtualizerMaxByteSize = startupConfiguration.virtualizerMaxByteSize;
 			urlCacheMaxByteSize = startupConfiguration.urlCacheMaxByteSize;

@@ -66,7 +66,9 @@ public class WarcStore implements Closeable, Store {
 	}
 
 	@Override
-	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, String guessedLanguage, Map<String,String> extraHeaders) throws IOException, InterruptedException {
+	public void store(final URI uri, final HttpResponse response, final boolean isDuplicate, final byte[] contentDigest,
+					  final String guessedCharset, String guessedLanguage, Map<String,String> extraHeaders,
+					  final StringBuilder textContent) throws IOException, InterruptedException {
 		if (contentDigest == null) throw new NullPointerException("Content digest is null");
 		LOGGER.debug("WarcStore:Store Uri = " + uri.toString());
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, response);

@@ -18,54 +18,58 @@ package it.unimi.di.law.bubing.frontier;
 //RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.BubingJob;
-import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
 import it.unimi.di.law.bubing.util.MurmurHash3;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
+import org.apache.pulsar.client.api.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import it.unimi.dsi.jai4j.NoSuchJobManagerException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+/** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
+ * The {@link #run()} method waits on the {@link Frontier#quickReceivedDiscoveredURLs} queue, checking that {@link #stop} becomes true every second. */
 
-/** A thread that takes care of sending the content of {@link Frontier#quickToSendURLs} with submit().
- * The {@link #run()} method waits on the {@link Frontier#quickReceivedURLs} queue, checking that {@link #stop} becomes true every second. */
-
-public final class QuickToSendThread extends Thread {
-    private static final Logger LOGGER = LoggerFactory.getLogger(QuickToSendThread.class);
+public final class ToCrawlURLSendThread extends Thread {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ToCrawlURLSendThread.class);
     /** A reference to the frontier. */
     private final Frontier frontier;
-    //private final PulsarClient pulsarClient;
-    //private final List<Producer> pulsarProducers;
+
+
+    private final PulsarClient pulsarClient; // PULSAR
+    private final List<Producer> pulsarProducers; // PULSAR
 
     /** Creates the thread.
      *
      * @param frontier the frontier instantiating the thread.
      */
-    public QuickToSendThread(final Frontier frontier) /*throws PulsarClientException*/ {
+    public ToCrawlURLSendThread(final Frontier frontier) throws PulsarClientException {
         setName(this.getClass().getSimpleName());
         setPriority(Thread.MAX_PRIORITY); // This must be done quickly
-        /*ClientConfiguration conf = new ClientConfiguration();
 
-        pulsarClient = PulsarClient.create("pulsar://localhost:6650",conf);
-        pulsarProducers = new ArrayList<Producer>(512);
-        List<CompletableFuture<Producer>> asyncProducers = new ArrayList<CompletableFuture<Producer>>(512);
-        for (int i=0; i<512; i++) {
+        // START PULSAR BLOCK
+        ClientConfiguration conf = new ClientConfiguration();
+        this.frontier = frontier;
+
+        pulsarClient = PulsarClient.create(frontier.rc.pulsarClientConnection,conf);
+        pulsarProducers = new ArrayList<>(frontier.rc.pulsarFrontierTopicNumber);
+        List<CompletableFuture<Producer>> asyncProducers = new ArrayList<CompletableFuture<Producer>>(frontier.rc.pulsarFrontierTopicNumber);
+        for (int i=0; i<frontier.rc.pulsarFrontierTopicNumber; i++) {
             ProducerConfiguration producerConfig = new ProducerConfiguration();
             producerConfig.setBatchingEnabled(true);
-            producerConfig.setBatchingMaxMessages(128);
-            producerConfig.setBatchingMaxPublishDelay(1000,TimeUnit.MILLISECONDS);
+            producerConfig.setBatchingMaxMessages(1024);
+            producerConfig.setBatchingMaxPublishDelay(100,TimeUnit.MILLISECONDS);
+            producerConfig.setBlockIfQueueFull(true);
+            producerConfig.setSendTimeout(30000, TimeUnit.MILLISECONDS);
+            producerConfig.setCompressionType(CompressionType.LZ4);
             producerConfig.setProducerName(frontier.rc.name);
-            asyncProducers.add(pulsarClient.createProducerAsync("persistent://exensa/standalone/crawling/urlsToProcess-"+Integer.toString(i),  producerConfig));
+            asyncProducers.add(pulsarClient.createProducerAsync(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-"+Integer.toString(i),  producerConfig));
         }
-        for (int i=0; i<512; i++) {
+        for (int i=0; i<frontier.rc.pulsarFrontierTopicNumber; i++) {
             try {
                 Producer p = asyncProducers.get(i).get();
                 pulsarProducers.add(p);
@@ -75,8 +79,7 @@ public final class QuickToSendThread extends Thread {
                 LOGGER.error("Error while getting Pulsar consumer",e);
             }
         }
-        */
-        this.frontier = frontier;
+        // END PULSAR BLOCK
     }
 
     /** When set to true, this thread will complete its execution. */
@@ -85,7 +88,7 @@ public final class QuickToSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendURLs;
+            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendToCrawlURLs;
             while(! stop) {
                 final ByteArrayList url = quickToSendURLs.poll(1, TimeUnit.SECONDS);
 
@@ -94,6 +97,7 @@ public final class QuickToSendThread extends Thread {
                     final int startOfHost = BURL.startOfHost(urlBuffer);
                     final long hash = MurmurHash3.hash(urlBuffer, startOfHost, BURL.lengthOfHost(urlBuffer, startOfHost));
 
+                    /* BEGIN NON-PULSAR BLOCK
                     final BubingJob job = new BubingJob(url);
                     if (LOGGER.isDebugEnabled())
                         LOGGER.debug("Passing job " + job.toString());
@@ -103,7 +107,9 @@ public final class QuickToSendThread extends Thread {
                         // This just shouldn't happen.
                         LOGGER.warn("Impossible to submit URL \"" + BURL.fromNormalizedByteArray(url.toByteArray())+"\"", e);
                     }
-                    //pulsarProducers.get((int)((hash & 0x7fffffffffffffffl) % pulsarProducers.size())).sendAsync(urlBuffer);
+                    END NON-PULSAR BLOCK */
+
+                    pulsarProducers.get((int)((hash & 0x7fffffffffffffffl) % pulsarProducers.size())).sendAsync(urlBuffer);
                 }
             }
         }
@@ -111,7 +117,7 @@ public final class QuickToSendThread extends Thread {
             LOGGER.error("Unexpected exception ", t);
         }
 
-        /*
+        /* BEGIN PULSAR */
         for (Producer p: pulsarProducers) {
             try {
                 p.close();
@@ -123,7 +129,8 @@ public final class QuickToSendThread extends Thread {
             pulsarClient.close();
         } catch (PulsarClientException e) {
             e.printStackTrace();
-        }*/
+        }
+        /* END PULSAR */
 
         LOGGER.info("Completed");
     }

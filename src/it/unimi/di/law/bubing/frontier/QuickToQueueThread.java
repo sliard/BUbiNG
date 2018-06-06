@@ -17,19 +17,15 @@ package it.unimi.di.law.bubing.frontier;
  */
 //RELEASE-STATUS: DIST
 
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.BubingJob;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import it.unimi.dsi.jai4j.NoSuchJobManagerException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
-/** A thread that takes care of sending the content of {@link Frontier#quickToSendURLs} with submit().
- * The {@link #run()} method waits on the {@link Frontier#quickReceivedURLs} queue, checking that {@link #stop} becomes true every second. */
+/** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
+ * The {@link #run()} method waits on the {@link Frontier#quickReceivedDiscoveredURLs} queue, checking that {@link #stop} becomes true every second. */
 
 public final class QuickToQueueThread extends Thread {
     private static final Logger LOGGER = LoggerFactory.getLogger(QuickToQueueThread.class);

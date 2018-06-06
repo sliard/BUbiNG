@@ -1,0 +1,8 @@
+syntax = "proto3";
+option java_outer_classname = "WebPageTextContentProto";
+option java_package = "it.unimi.di.law.bubing.protobuf";
+
+message WebPage {
+    string url = 1;
+    string content = 2;
+}

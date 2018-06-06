@@ -368,30 +368,6 @@ public class VisitState implements Delayed, Serializable {
 		clear();
 	}
 
-	public synchronized void directPurgeWithRequeue() {
-		assert acquired || workbenchEntry == null : acquired + " " + workbenchEntry;
-		Frontier frontier = Agent.getFrontier();
-		purgeRequired = true;
-		while(! isEmpty()) {
-			byte[] pathQuery = dequeue();
-			if (pathQuery != ROBOTS_PATH) {
-				ByteArrayList url = new ByteArrayList(schemeAuthority);
-				url.addElements(url.size(), pathQuery, 0, pathQuery.length);
-				LOGGER.info("Re-enqueing {} in the sieve", Util.toString(url));
-				// Re-enqueue the urls into the local sieve
-				try {
-					frontier.heldBackURLs.enqueue(url.elements(), 0, url.size());
-				} catch (Exception e) {
-					// At this point, we should ignore any error here
-					LOGGER.error("Error while re-enqueueing into local sieve overflow urls of workbench");
-				}
-				url.clear();
-			}
-		}
-		// TODO: we should find a way to release more resources.
-		pathQueries.trim();
-	}
-
 	/** Checks whether the current robots information has expired and, if necessary, schedules a new <code>robots.txt</code> download.
 	 *
 	 * @param time the current time.

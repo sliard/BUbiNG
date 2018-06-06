@@ -60,7 +60,9 @@ public class UnbufferedFileStore implements Closeable, Store {
 	}
 
 	@Override
-	public synchronized void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest, final String guessedCharset, final String guessedLanguage, final Map<String,String> extraHeaders) throws IOException, InterruptedException {
+	public synchronized void store(final URI uri, final HttpResponse response, boolean isDuplicate, final byte[] contentDigest,
+								   final String guessedCharset, final String guessedLanguage, final Map<String,String> extraHeaders,
+								   final StringBuilder textContent) throws IOException, InterruptedException {
 		if (contentDigest == null) throw new NullPointerException("Content digest is null");
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, response);
 		HeaderGroup warcHeaders = record.getWarcHeaders();

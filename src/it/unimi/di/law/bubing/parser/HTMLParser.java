@@ -1,6 +1,7 @@
 package it.unimi.di.law.bubing.parser;
 
 import com.google.common.base.Charsets;
+import com.google.common.collect.Sets;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
 import com.ibm.icu.text.CharsetDetector;
@@ -47,12 +48,11 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.UnsupportedCharsetException;
 import java.security.NoSuchAlgorithmException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static net.htmlparser.jericho.HTMLElementName.*;
 
 /*
  * Copyright (C) 2004-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -302,12 +302,14 @@ public class HTMLParser<T> implements Parser<T> {
 	public final static class PureTextAppendable implements Appendable, CharSequence {
 		/** True iff the last character appended was a space. */
 		protected boolean lastAppendedWasSpace;
+		protected boolean lastAppendedWasNewLine;
 
 		protected final StringBuilder textContent;
 
 		public PureTextAppendable() {
 			textContent = new StringBuilder();
 			lastAppendedWasSpace = true;
+			lastAppendedWasNewLine = true;
 		}
 
 		/** Initializes the digest computation.
@@ -315,6 +317,7 @@ public class HTMLParser<T> implements Parser<T> {
 		public void init() {
 			textContent.setLength(0);
 			lastAppendedWasSpace = true;
+			lastAppendedWasNewLine = true;
 		}
 
 		@Override
@@ -326,14 +329,25 @@ public class HTMLParser<T> implements Parser<T> {
 
 		@Override
 		public Appendable append(char c) {
-			if (Character.isWhitespace(c) || Character.isDigit(c)) {
-				if (!lastAppendedWasSpace) {
-					textContent.append(' ');
-					lastAppendedWasSpace = true;
+			if (Character.isWhitespace(c)) {
+				int charType = Character.getType(c);
+				if (charType == Character.SPACE_SEPARATOR) {
+					if (!lastAppendedWasSpace) {
+						textContent.append(' ');
+						lastAppendedWasSpace = true;
+					}
+				}
+				if (charType == Character.LINE_SEPARATOR || charType == Character.PARAGRAPH_SEPARATOR || charType == Character.CONTROL) {
+					if (!lastAppendedWasNewLine) {
+						textContent.append('\n');
+						lastAppendedWasSpace = true;
+						lastAppendedWasNewLine = true;
+					}
 				}
 			} else {
 				textContent.append(c);
 				lastAppendedWasSpace = false;
+				lastAppendedWasNewLine = false;
 			}
 			return this;
 		}
@@ -409,6 +423,8 @@ public class HTMLParser<T> implements Parser<T> {
 	protected StringBuilder rewritten;
 	protected PureTextAppendable textContent;
 
+	private static final HashSet<String> ENDLINE_SET = Sets.newHashSet(ARTICLE, ASIDE, FOOTER, DETAILS, SECTION, HEADER, HGROUP, NAV, P, H1, H2, H3, H4, H5, H6, UL, OL, DIR, MENU, PRE, DL, DIV, CENTER, NOSCRIPT, NOFRAMES, BLOCKQUOTE, FORM, ISINDEX, HR, TABLE, FIELDSET, ADDRESS, LI, DT, DD, TR, CAPTION, LEGEND, BR);
+	private static final HashSet<String> INDENT_SET = Sets.newHashSet( LI, DD );
 	/**
 	 * Builds a parser with a fixed buffer of {@link #CHAR_BUFFER_SIZE} characters for link extraction and, possibly, digesting a page. By default, only pages from within the same
 	 * scheme+authority may be considered to be duplicates.
@@ -439,6 +455,7 @@ public class HTMLParser<T> implements Parser<T> {
 		languageDetectionInfo = new LanguageDetectionInfo();
 		rewritten = new StringBuilder();
 		textContent = new PureTextAppendable();
+
 	}
 
 	/**
@@ -714,7 +731,10 @@ public class HTMLParser<T> implements Parser<T> {
 							skipping += 1;
 						rewrite = false; // IGNORABLE_ELEMENT
 					} else
-						textContent.append(" ");
+						if (ENDLINE_SET.contains(name))
+							textContent.append("\n");
+						else
+							textContent.append(" ");
 
 					if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) && !startTag.isSyntacticalEmptyElementTag()) inSpecialText++;
 
@@ -789,11 +809,14 @@ public class HTMLParser<T> implements Parser<T> {
 						rewrite = false;
 					else
 					if ( name == HTMLElementName.SCRIPT || name == HTMLElementName.OPTION || name == HTMLElementName.STYLE ) {
-						textContent.append(" ");
+						textContent.append("\n");
 						skipping = Math.max( 0, skipping-1 ); // Ignore extra closing tags
 						rewrite = false;
 					} else
-						textContent.append(" ");
+						if (ENDLINE_SET.contains(name))
+							textContent.append("\n");
+						else
+							textContent.append(" ");
 				}
 				else {
 					java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
@@ -814,12 +837,10 @@ public class HTMLParser<T> implements Parser<T> {
 								textProcessor.append(cb);
 							}
 						}
-						if (textContent.length() < MAX_LANGUAGE_PAGE_CONTENT) {
-							if (segment instanceof CharacterReference)
-								((CharacterReference) segment).appendCharTo(textContent);
-							else {
-								textContent.append(cb);
-							}
+						if (segment instanceof CharacterReference)
+							((CharacterReference) segment).appendCharTo(textContent);
+						else {
+							textContent.append(cb);
 						}
 					}
 
@@ -828,6 +849,7 @@ public class HTMLParser<T> implements Parser<T> {
 					java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
 					rewritten.append(cb.array(), cb.position(), cb.remaining());
 				}
+
 			}
 		}
 
@@ -835,23 +857,25 @@ public class HTMLParser<T> implements Parser<T> {
 
 		String tld = uri.getHost().substring(uri.getHost().lastIndexOf('.') + 1);
 		String guessedLang = guessedLanguage == null ? null : guessedLanguage.getLanguage();
-		textContent.append(" "); // Workaround CLD2 bug (SIGSEGV)
-		Cld2Result result = Cld2Tool.detect(textContent.toString(),tld,guessedLang);
-		LOGGER.debug("Raw text submitted to language detection is {}", textContent.toString());
-		//cld2Result.setEncoding_hint(22); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h
-		languageDetectionInfo.cld2Language = result.code;
-		if (result.language.equals("Unknown")) {
-			if (LOGGER.isDebugEnabled()) {
-				LOGGER.debug("Unable to guess language for {}", uri);
-			}
-		} else {
-			Locale localeFromCLD = Locale.forLanguageTag(result.code);
-			if (localeFromCLD != null && !localeFromCLD.getLanguage().equals(""))
-				guessedLanguage = localeFromCLD;
+		if (textContent.length() > 5) {
+			String textForLangDetect = textContent.subSequence(0, Math.min(textContent.length(), MAX_LANGUAGE_PAGE_CONTENT) - 1).toString() + " "; // +" " is Workaround CLD2 bug (SIGSEGV)
+			Cld2Result result = Cld2Tool.detect(textForLangDetect, tld, guessedLang);
 			if (LOGGER.isDebugEnabled())
-				LOGGER.debug("Guessed language {} for {}",result.language, uri);
+				LOGGER.debug("Raw text submitted to language detection is {}", textContent.toString());
+			//cld2Result.setEncoding_hint(22); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h
+			languageDetectionInfo.cld2Language = result.code;
+			if (result.language.equals("Unknown")) {
+				if (LOGGER.isDebugEnabled()) {
+					LOGGER.debug("Unable to guess language for {}", uri);
+				}
+			} else {
+				Locale localeFromCLD = Locale.forLanguageTag(result.code);
+				if (localeFromCLD != null && !localeFromCLD.getLanguage().equals(""))
+					guessedLanguage = localeFromCLD;
+				if (LOGGER.isDebugEnabled())
+					LOGGER.debug("Guessed language {} for {}", result.language, uri);
+			}
 		}
-
 
 		// This is to avoid collapsing 3xx pages with boilerplate content (as opposed to 0-length content).
 		if (digestAppendable != null && httpResponse.getStatusLine().getStatusCode() / 100 == 3) {
@@ -899,6 +923,10 @@ public class HTMLParser<T> implements Parser<T> {
 	@Override
 	public StringBuilder getRewrittenContent() {
 		return rewritten;
+	}
+	@Override
+	public StringBuilder getTextContent() {
+		return textContent.textContent;
 	}
 
 	/** Returns the BURL location header, if present; if it is not present, but the page contains a valid metalocation, the latter

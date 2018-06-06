@@ -355,13 +355,32 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="600")
 	public int maxSecondsBetweenDumps;
 
-	/** For PulsarWarcStore class : pulsar client connection. */
+	/** For Pulsar : pulsar client connection. */
 	@OptionalSpecification(value="pulsar://localhost:6500")
 	public String pulsarClientConnection;
 
-	/** For PulsarWarcStore class : pulsar topic uri. */
+
+	/** For PulsarWarcStore class : pulsar warc topic. */
 	@OptionalSpecification(value="persistent://sample/standalone/crawling/warcs")
-	public String pulsarTopicURI;
+	public String pulsarWARCTopic;
+
+	/** For Pulsar Plain Text : pulsar plaintext topic. */
+	@OptionalSpecification(value="persistent://sample/standalone/crawling/plaintexts")
+	public String pulsarPlainTextTopic;
+
+
+	/** For PulsarFrontier : pulsar frontier topic number */
+	@OptionalSpecification(value="512")
+	public int pulsarFrontierTopicNumber;
+
+	/** For Pulsar Frontier : discoveredURLs topic. */
+	@OptionalSpecification(value="persistent://sample/standalone/crawling/discoveredURLs")
+	public String pulsarFrontierDiscoveredURLsTopic;
+
+	/** For Pulsar Frontier : discoveredURLs topic. */
+	@OptionalSpecification(value="persistent://sample/standalone/crawling/toCrawl")
+	public String pulsarFrontierToCrawlURLsTopic;
+
 
 	/** The maximum size of the workbench in bytes. */
 	public long workbenchMaxByteSize;

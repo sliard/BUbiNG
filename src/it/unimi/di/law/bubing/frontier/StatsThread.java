@@ -161,8 +161,7 @@ public final class StatsThread implements Runnable {
 				+ Util.format(frontier.contentTypeApplication.get()) + "/"
 				+ Util.format(frontier.contentTypeOthers.get()));
 
-		LOGGER.info("Ready URLs: " + Util.format(frontier.readyURLs.size64()));
-		LOGGER.info("Held Back URLs: " + Util.format(frontier.heldBackURLs.size64()));
+		LOGGER.info("Ready URLs: " + Util.format(frontier.quickReceivedToCrawlURLs.size()));
 
 		LOGGER.info("FetchingThread waits: " + frontier.fetchingThreadWaits.get() + "; total wait time: " + frontier.fetchingThreadWaitingTimeSum.get());
 		frontier.resetFetchingThreadsWaitingStats();

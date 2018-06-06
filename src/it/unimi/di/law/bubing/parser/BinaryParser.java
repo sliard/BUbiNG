@@ -131,6 +131,11 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
+	public StringBuilder getTextContent() {
+		return null;
+	}
+
+	@Override
 	public BinaryParser copy() {
 		return new BinaryParser(hashFunction, crossAuthorityDuplicates);
 	}

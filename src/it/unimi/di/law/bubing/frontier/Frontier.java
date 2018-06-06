@@ -47,12 +47,8 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
-import java.util.Date;
-import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.DelayQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -65,7 +61,6 @@ import org.apache.commons.configuration.ConfigurationException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.io.compress.CompressionCodecFactory;
-import org.apache.hadoop.io.compress.Lz4Codec;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.slf4j.Logger;
@@ -98,7 +93,7 @@ import org.xbill.DNS.Lookup;
  *
  * <li><em>waiting (to be filtered)</em>: we have seen the URL and we have enqueued it in the
  * {@linkplain AbstractSieve sieve}, but the URL is waiting to be {@linkplain AbstractSieve#flush()
- * flushed} (i.e., to be poured from the sieve to the {@link #readyURLs} queue, which happens only
+ * flushed} (i.e., to be poured from the sieve to the {@link #quickReceivedToCrawlURLs} queue, which happens only
  * the first time for every given URL);
  *
  * <li><em>ready</em>: the URL has come out of the sieve, so it will be visited at some point in the
@@ -113,7 +108,7 @@ import org.xbill.DNS.Lookup;
  * <p>Note that waiting URLs that happen to be ready or visited will never come out of the sieve: it
  * is the logic of the sieve itself that inhibits the same object to be emitted twice.
  *
- * <p>All ready URLs are initially stored in a {@link ByteArrayDiskQueue} called {@link #readyURLs},
+ * <p>All ready URLs are initially stored in a {@link ByteArrayDiskQueue} called {@link #quickReceivedToCrawlURLs},
  * from which they are moved to the FIFO queue of their {@link VisitState} by the
  * {@link Distributor}. Inside a {@link VisitState}, we only store a byte-array represention of the
  * path+query of ready URLs. Some of them may be stored outside of the visit state, through
@@ -140,7 +135,8 @@ import org.xbill.DNS.Lookup;
  *
  * <p>Note that we expect that <em>the vast majority of URLs will be of the first kind</em>. This is
  * very important, as there is much less contention on visit state locks than on the frontier lock. */
-public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowReceiver<ByteArrayList> {
+public class Frontier implements JobListener<BubingJob>,
+		AbstractSieve.NewFlowReceiver<ByteArrayList> {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Frontier.class);
 
 	/** The size of the buffer used for {@link Frontier#readyURLs}. */
@@ -237,23 +233,24 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 	/** An instance of a {@link MercatorSieve}. */
 	public AbstractSieve<ByteArrayList, Void> sieve;
 
-	/** A queue to store URLs coming out of the {@link #sieve}. */
-	public ByteArrayDiskQueue readyURLs;
+	/** A queue to quickly buffer Incoming Discovered URLs */
+	public ArrayBlockingQueue<ByteArrayList> quickReceivedDiscoveredURLs;
 
-	/** A queue to store URLs that have been held back because they have an IP address with too many hosts. */
-	public ByteArrayDiskQueue heldBackURLs;
+	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
+	public ArrayBlockingQueue<ByteArrayList> quickToSendDiscoveredURLs;
 
-	/** A queue to quickly buffer URLs communicated by {@link #receive(BubingJob)}. */
-	public ArrayBlockingQueue<ByteArrayList> quickReceivedURLs;
+	/** A queue to quickly buffer to be crawled URLs. */
+	public ArrayBlockingQueue<ByteArrayList> quickReceivedToCrawlURLs;
 
-	/** A queue to quickly buffer discovered URLs that will be submitted as remote jobs. */
-	public ArrayBlockingQueue<ByteArrayList> quickToSendURLs;
+	/** A queue to quickly buffer URLs to be crawled that will be submitted to pulsar. */
+	public ArrayBlockingQueue<ByteArrayList> quickToSendToCrawlURLs;
 
 	/** A queue to buffer in the long run URLs communicated by {@link #receive(BubingJob)}. */
 	public ByteArrayDiskQueue receivedURLs;
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
 	public ArrayBlockingQueue<ObjectArrayList<ByteArrayList>> quickToQueueURLLists[];
+
 	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
 	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
 		@Override
@@ -511,9 +508,11 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		// Configures Jericho to use SLF4J
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
-		quickReceivedURLs = new ArrayBlockingQueue<>(64 * 1024);
-		quickToSendURLs = new ArrayBlockingQueue<>(64 * 1024);
-		;
+		quickReceivedDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
+		quickReceivedToCrawlURLs = new ArrayBlockingQueue<>(64 * 1024);
+		quickToSendToCrawlURLs = new ArrayBlockingQueue<>(64 * 1024);
+
 		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
 		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
 			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
@@ -524,8 +523,6 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
 
 			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
-			readyURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "ready"), READY_URLS_BUFFER_SIZE, true);
-			heldBackURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "holdBack"), READY_URLS_BUFFER_SIZE, true);
 
 			receivedURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "received"), 16 * 1024, true);
 			distributor.statsThread.start(0);
@@ -683,13 +680,16 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 		final BubingJob job = new BubingJob(url);
 
+		/* BEGIN NON-PULSAR BLOCK
+		// In pulsar mode, there is no "local" job
 		if (agent.local(job)) {
 			if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
 		}
 		else
-			try {
+		END NON-PULSAR BLOCK */
+		try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
-			quickToSendURLs.offer(url);
+			quickToSendDiscoveredURLs.offer(url);
 		}
 		catch (IllegalStateException e) {
 			// This just shouldn't happen.
@@ -777,8 +777,8 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		try {
 			// Note that this is blocking, but blocking should be very rare and short
 			// still, we don't want to block.
-			if (!quickReceivedURLs.offer(job.url))
-				if (LOGGER.isDebugEnabled()) LOGGER.debug("Dropping {} to avoid blocking ! you should increase the quickReceivedURLs queue size", job.toString());
+			if (!quickReceivedDiscoveredURLs.offer(job.url))
+				if (LOGGER.isDebugEnabled()) LOGGER.debug("Dropping {} to avoid blocking ! you should increase the quickReceivedDiscoveredURLs queue size", job.toString());
 		}
 		catch (Exception e) {
 			LOGGER.error("Error while enqueueing " + job.url, e);
@@ -900,13 +900,20 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 	@Override
 	public void prepareToAppend() throws IOException {
+
 	}
 
 	@Override
 	public void append(final long hash, final ByteArrayList list) throws IOException {
 		final byte[] urlBuffer = list.elements();
-		final int length = list.size();
-		if (schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer)) < rc.maxUrlsPerSchemeAuthority) readyURLs.enqueue(urlBuffer, 0, length);
+		try {
+			quickToSendToCrawlURLs.put(list.clone());
+		} catch (InterruptedException e) {
+			LOGGER.error("Interrupted while adding a URL to quickToSendToCrawlURL");
+		}
+		// Previous NON-PULSAR :
+		// readyURLs.enqueue(urlBuffer, 0, length);
+
 	}
 
 	@Override
@@ -1003,12 +1010,8 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 		// readyURLs and receivedURLs
 		LOGGER.info("Freezing byte disk queues");
-		scalarData.addProperty(PropertyKeys.READYURLSSIZE, readyURLs.size64());
-		readyURLs.freeze();
 		scalarData.addProperty(PropertyKeys.RECEIVEDURLSSIZE, receivedURLs.size64());
 		receivedURLs.freeze();
-		scalarData.addProperty(PropertyKeys.HOLDBACKURLSSIZE, heldBackURLs.size64());
-		heldBackURLs.freeze();
 
 		scalarData.save(new File(snapDir, "frontier.data"));
 
@@ -1047,36 +1050,11 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 		// First, finish transferring the receivedURLS to sieve, and flush the sieve
 		sieve.flush();
 		// Empties heldBackUrls
-		while (!heldBackURLs.isEmpty()) {
-			heldBackURLs.dequeue();
-			ByteArrayList url = heldBackURLs.buffer();
-			readyURLs.enqueue(url.elements(),0,url.size());
-		}
+
 		LOGGER.info( "Storing URLS found but not yet visited to visit" );
 		File tempSnapSeed = new File( rc.storeDir, ".seed.txt.gz" );
 		final OutputStreamWriter stringWriter = new OutputStreamWriter(new FastBufferedOutputStream( new GZIPOutputStream( new FileOutputStream( tempSnapSeed ) ) ) );
 
-		readyURLs.freeze();
-		// copy queue file
-		File readyURLsFile = new File( rc.frontierDir, "ready" );
-		File copyReadyURLsFile = new File( rc.frontierDir, "ready.copy" );
-		Files.copy(readyURLsFile, copyReadyURLsFile);
-		// create new queue from copy
-		final long readyURLsSize = readyURLs.size64();
-
-		ByteArrayDiskQueue newReadyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize,copyReadyURLsFile,READY_URLS_BUFFER_SIZE,true);
-		while(!newReadyURLs.isEmpty()) {
-			newReadyURLs.dequeue();
-			final ByteArrayList url = newReadyURLs.buffer();
-			final byte[] urlBuffer = url.elements();
-			final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray( urlBuffer );
-			URI uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, BURL.pathAndQueryAsByteArray( url ) );
-			stringWriter.write(uri.toASCIIString());
-			stringWriter.write("\n");
-		}
-		newReadyURLs.close(); // deletes the file
-		// recreate ReadyURLs from initial state (freeze() put it in wrong state)
-		readyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize,readyURLsFile,READY_URLS_BUFFER_SIZE,true);
 		receivedURLs.freeze();
 		final long receivedURLsSize = receivedURLs.size64();
 		File receivedURLsFile = new File( rc.frontierDir, "received" );
@@ -1232,10 +1210,6 @@ public class Frontier implements JobListener<BubingJob>, AbstractSieve.NewFlowRe
 
 		// readyURLs and receivedURLs
 		LOGGER.info("Defreezing byte disk queues");
-		long readyURLsSize = scalarData.getLong(PropertyKeys.READYURLSSIZE);
-		readyURLs = ByteArrayDiskQueue.createFromFile(readyURLsSize, new File(rc.frontierDir, "ready"), READY_URLS_BUFFER_SIZE, true);
-		long heldBackURLsSize = scalarData.getLong(PropertyKeys.HOLDBACKURLSSIZE);
-		heldBackURLs = ByteArrayDiskQueue.createFromFile(heldBackURLsSize, new File(rc.frontierDir, "holdBack"), READY_URLS_BUFFER_SIZE, true);
 
 		long receivedURLsSize = scalarData.getLong(PropertyKeys.RECEIVEDURLSSIZE);
 		receivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize, new File(rc.frontierDir, "received"), 16 * 1024, true);

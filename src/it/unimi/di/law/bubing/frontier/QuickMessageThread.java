@@ -21,15 +21,14 @@ import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
 import java.util.ArrayList;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 //RELEASE-STATUS: DIST
 
-/** A thread that takes care of pouring the content of {@link Frontier#quickReceivedURLs} into {@link Frontier#receivedURLs}.
- * The {@link #run()} method waits on the {@link Frontier#quickReceivedURLs} queue, checking that {@link #stop} becomes true every second. */
+/** A thread that takes care of pouring the content of {@link Frontier#quickReceivedDiscoveredURLs} into {@link Frontier#receivedURLs}.
+ * The {@link #run()} method waits on the {@link Frontier#quickReceivedDiscoveredURLs} queue, checking that {@link #stop} becomes true every second. */
 
 public final class QuickMessageThread extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(QuickMessageThread.class);
@@ -53,7 +52,7 @@ public final class QuickMessageThread extends Thread {
 	public void run() {
 		try {
 			final ByteArrayDiskQueue receivedURLs = frontier.receivedURLs;
-			final ArrayBlockingQueue<ByteArrayList> quickReceivedURLs = frontier.quickReceivedURLs;
+			final ArrayBlockingQueue<ByteArrayList> quickReceivedURLs = frontier.quickReceivedDiscoveredURLs;
 			final ArrayList<ByteArrayList> receiveBuffer = new ArrayList<>(1024);
 			while(! stop) {
 				quickReceivedURLs.drainTo(receiveBuffer,1024);

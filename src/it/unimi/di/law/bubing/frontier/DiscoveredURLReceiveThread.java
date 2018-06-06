@@ -16,8 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
-import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
-import it.unimi.di.law.bubing.util.Util;
+import it.unimi.di.law.bubing.util.*;
 
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import org.apache.pulsar.client.api.*;
@@ -26,8 +25,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -37,44 +36,53 @@ import java.util.concurrent.ExecutionException;
  *  {@link Frontier#enqueue(it.unimi.dsi.fastutil.bytes.ByteArrayList)} method). The {@link #run()} method performs a busy polling on the {@link Frontier#receivedURLs}
  *  queue, at exponentially spaced time intervals (but anyway not less infrequently than 1s).
  */
-public final class MessageThread extends Thread /*implements MessageListener*/ {
-	private static final Logger LOGGER = LoggerFactory.getLogger(MessageThread.class);
+public final class DiscoveredURLReceiveThread extends Thread implements MessageListener {
+	private static final Logger LOGGER = LoggerFactory.getLogger(DiscoveredURLReceiveThread.class);
 
 	/** A reference to the frontier. */
 	private final Frontier frontier;
-	//private final PulsarClient pulsarClient;
-	//private final List<Consumer> pulsarConsumers;
+
+	private final PulsarClient pulsarClient;
+	private final List<Consumer> pulsarConsumers;
+	private final int topicNumber;
+	private final long[] topicReceiveCounts;
+
 	/** Creates the thread.
 	 *
 	 * @param frontier the frontier instantiating this thread.
 	 */
-	public MessageThread(final Frontier frontier) throws PulsarClientException {
+	public DiscoveredURLReceiveThread(final Frontier frontier) throws PulsarClientException {
 		setName(this.getClass().getSimpleName());
-/*		ClientConfiguration conf = new ClientConfiguration();
+		/* BEGIN PULSAR BLOCK */
+		ClientConfiguration conf = new ClientConfiguration();
+		this.topicReceiveCounts = new long[frontier.rc.pulsarFrontierTopicNumber];
+		this.frontier = frontier;
+		this.topicNumber = frontier.rc.pulsarFrontierTopicNumber;
+		pulsarClient = PulsarClient.create(frontier.rc.pulsarClientConnection,conf);
 
-		pulsarClient = PulsarClient.create("pulsar://localhost:6650",conf);
-		pulsarConsumers = new ArrayList<Consumer>(512);
-		List<CompletableFuture<Consumer>> asyncConsumers = new ArrayList<CompletableFuture<Consumer>>(512);
-		for (int i=0; i<512; i++) {
+		pulsarConsumers = new ArrayList<Consumer>(topicNumber);
+		List<CompletableFuture<Consumer>> asyncConsumers = new ArrayList<CompletableFuture<Consumer>>(topicNumber);
+		for (int i=0; i<topicNumber; i++) {
 			ConsumerConfiguration consumerConfig = new ConsumerConfiguration();
 			consumerConfig.setSubscriptionType(SubscriptionType.Failover);
-			consumerConfig.setReadCompacted(true);
-			consumerConfig.setConsumerName(UUID.randomUUID().toString());
+
+			consumerConfig.setConsumerName(Integer.toString(MurmurHash3_128.murmurhash3_x86_32(frontier.rc.name, 0, frontier.rc.name.length(), i)));
 			consumerConfig.setMessageListener(this);
-			asyncConsumers.add(pulsarClient.subscribeAsync("persistent://exensa/standalone/crawling/urlsToProcess-"+Integer.toString(i), "urlReceiveSubscription", consumerConfig));
+			asyncConsumers.add(pulsarClient.subscribeAsync(frontier.rc.pulsarFrontierDiscoveredURLsTopic+"-"+Integer.toString(i), "urlReceiveSubscription", consumerConfig));
 		}
-		for (int i=0; i<512; i++) {
+		for (int i=0; i<topicNumber; i++) {
 			try {
 				Consumer c = asyncConsumers.get(i).get();
-
 				pulsarConsumers.add(c);
 			} catch (InterruptedException e) {
 				LOGGER.error("Error while getting Pulsar consumer",e);
 			} catch (ExecutionException e) {
 				LOGGER.error("Error while getting Pulsar consumer",e);
 			}
-		}*/
-		this.frontier = frontier;
+		}
+
+		/* END PULSAR BLOCK*/
+
 	}
 
 	/** When set to true, this thread will complete its execution. */
@@ -98,7 +106,9 @@ public final class MessageThread extends Thread /*implements MessageListener*/ {
 		catch (Throwable t) {
 			LOGGER.error("Unexpected exception ", t);
 		}
-		/*for (Consumer c: pulsarConsumers) {
+		/* BEGIN PULSAR BLOCK */
+
+		for (Consumer c: pulsarConsumers) {
 			try {
 				c.close();
 			} catch (PulsarClientException e) {
@@ -109,16 +119,28 @@ public final class MessageThread extends Thread /*implements MessageListener*/ {
 			pulsarClient.close();
 		} catch (PulsarClientException e) {
 			e.printStackTrace();
-		}*/
+		}
+		/* END PULSAR BLOCK*/
 		LOGGER.info("Completed");
 	}
-/*
+	/* BEGIN PULSAR BLOCK */
 	@Override
 	public void received(Consumer consumer, Message message) {
-		frontier.numberOfReceivedURLs.incrementAndGet();
+		long receivedURLs = frontier.numberOfReceivedURLs.incrementAndGet();
+
+		byte[] messageData = message.getData();
+		final int startOfHost = BURL.startOfHost(messageData);
+		final long hash = MurmurHash3.hash(messageData, startOfHost, BURL.lengthOfHost(messageData, startOfHost));
+		final int topicId = (int)((hash & 0x7fffffffffffffffl) % topicNumber);
+
+		topicReceiveCounts[topicId] ++;
+
+		if ((receivedURLs & 0x0fffff)==0)
+			LOGGER.info("Topics received :  {}", Arrays.toString(topicReceiveCounts));
 
 		try {
-			frontier.enqueueLocal(new ByteArrayList(message.getData()), true);
+			// The received discovered URL will go through the sieve now
+			frontier.enqueueLocal(new ByteArrayList(messageData), true);
 		} catch (IOException e) {
 			LOGGER.error("Error while enqueueing message from Pulsar",e);
 		} catch (InterruptedException e) {
@@ -129,5 +151,7 @@ public final class MessageThread extends Thread /*implements MessageListener*/ {
 		} catch (PulsarClientException e) {
 			LOGGER.error("Error while acknowledging message to Pulsar",e);
 		}
-	}*/
+	}
+	/* END PULSAR BLOCK*/
+
 }
