@@ -68,7 +68,6 @@ public class PulsarWarcStore implements Closeable, Store {
 		pulsarPlainTextProducer = pulsarClient.createProducer(rc.pulsarPlainTextTopic,  producerConfig);
 		outputStream = new ByteArrayOutputStream();
 		warcWriter = new UncompressedWarcWriter(outputStream);
-
 	}
 
 	@Override
