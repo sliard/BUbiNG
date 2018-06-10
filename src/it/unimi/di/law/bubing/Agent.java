@@ -17,6 +17,9 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
+import it.unimi.di.law.bubing.frontier.comm.DiscoveredURLSendThread;
+import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
+import it.unimi.di.law.bubing.frontier.comm.ToCrawlURLReceiver;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
@@ -84,17 +87,15 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	private final RuntimeConfiguration rc;
 	/** The frontier of this agent. */
 	private final Frontier frontier;
-	/** @see DiscoveredURLReceiveThread */
-	protected final DiscoveredURLReceiveThread discoveredURLReceiveThread;
-	/** @see QuickMessageThread */
-	protected final QuickMessageThread quickMessageThread;
+
 	/** @see DiscoveredURLSendThread */
 	protected final DiscoveredURLSendThread discoveredURLSendThread;
+
 	/** @see QuickToQueueThread */
 	protected final QuickToQueueThread quickToQueueThread;
 
+	/** @see ToCrawlURLReceiver */
 	protected final ToCrawlURLReceiver toCrawlURLReceiver;
-	protected final ToCrawlURLSendThread toCrawlURLSendThread;
 
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
@@ -114,20 +115,17 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		// TODO: check crawlIsNew for all components.
 		this.rc = rc;
 
-		register();
+		//register();
 
 		frontier = new Frontier(rc, this);
 		frontier.init();
-		setListener(frontier);
+		//setListener(frontier);
 
-		(discoveredURLReceiveThread = new DiscoveredURLReceiveThread(frontier)).start();
-		(quickMessageThread = new QuickMessageThread(frontier)).start();
 		(discoveredURLSendThread = new DiscoveredURLSendThread(frontier)).start();
 		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
-		(toCrawlURLSendThread = new ToCrawlURLSendThread(frontier)).start();
 		toCrawlURLReceiver = new ToCrawlURLReceiver(frontier);
 
-		connect();
+		//connect();
 
 		// It is important that threads are allocated here, that is, after the agent has been connected.
 		frontier.dnsThreads(rc.dnsThreads);
@@ -176,8 +174,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		if (!hasStopped) {
 			hasStopped = true;
 			// The message thread uses the sieve, which will be closed by the frontier.
-			discoveredURLReceiveThread.stop = true;
-			discoveredURLReceiveThread.join();
+			//discoveredURLReceiveThread.stop = true;
+			//discoveredURLReceiveThread.join();
 			toCrawlURLReceiver.stop();
 			LOGGER.info("Joined message thread");
 
@@ -188,12 +186,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			LOGGER.info("Job manager closed");
 
 			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
-			quickMessageThread.stop = true;
-			quickMessageThread.join();
 			discoveredURLSendThread.stop = true;
 			discoveredURLSendThread.join();
-			toCrawlURLSendThread.stop = true;
-			toCrawlURLSendThread.join();
 			quickToQueueThread.stop = true;
 			quickToQueueThread.join();
 			LOGGER.info("Joined quick message thread");
@@ -273,12 +267,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		rc.paused = true;
 		try {
 			frontier.snapToSeed();
-		} catch (ConfigurationException e) {
-			LOGGER.error("Wrong configuration", e);
 		} catch (IOException e) {
 			LOGGER.error("Error while writing", e);
-		} catch (InterruptedException e) {
-			LOGGER.error("Error while writing : interrupted", e);
 		}
 
 		synchronized( rc ) {
@@ -287,12 +277,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			rc.notifyAll();
 		}
 
-	}
-
-
-	@ManagedOperation @Description("Flush the sieve")
-	public void flush() throws IOException, InterruptedException {
-		frontier.sieve.flush();
 	}
 
 	@ManagedOperation @Description("Add a new IPv4 to the black list; it can be a single IP address or a file (prefixed by file:)")

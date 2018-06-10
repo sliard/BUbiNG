@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.frontier;
+package it.unimi.di.law.bubing.frontier.comm;
 
 /*
  * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import org.apache.pulsar.client.api.*;
@@ -23,7 +24,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;

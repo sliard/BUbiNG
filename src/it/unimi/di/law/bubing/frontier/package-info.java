@@ -6,7 +6,7 @@
 	<p>To start understanding how the frontier works, we should consider three levels of aggregation
 	of the jobs that a BUbiNG agent is to perform:
 		<ul>
-			<li>at the ground level, we have URLs, as they come out of the {@linkplain it.unimi.di.law.bubing.sieve.AbstractSieve sieve}: these
+			<li>at the ground level, we have URLs, as they come out of the sieve: these
 			are known unvisited URLs that should eventually be considered;
 			<li>URLs are grouped by their scheme+authority part, to form a {@link it.unimi.di.law.bubing.frontier.VisitState}:
 			the visit state collects the statistics related to how the visit of that scheme+authority
@@ -21,7 +21,7 @@
 	the documentation of the approprate classes to get more information.
 
 	<p><b>How visit states are born.</b>
-	URLs come out of the {@linkplain it.unimi.di.law.bubing.sieve.AbstractSieve sieve} and are accumulated in the {@link it.unimi.di.law.bubing.frontier.Frontier#readyURLs} queue.
+	URLs come out of the sieve and are accumulated in the toCrawl queue.
 	URLs from the latter queue are read (by a process called distributor) and taken care of, one at a time.
 	Every time a URL is considered, the distributor must know if the URL belongs to an already-known
 	scheme+authority or not.

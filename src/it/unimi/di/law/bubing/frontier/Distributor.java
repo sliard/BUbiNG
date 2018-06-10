@@ -28,8 +28,7 @@ import org.slf4j.LoggerFactory;
 
 //RELEASE-STATUS: DIST
 
-/** A thread that distributes {@linkplain Frontier#quickReceivedToCrawlURLs ready URLs}
- *  (coming out of the {@linkplain Frontier#sieve sieve}) into
+/** A thread that distributes {@linkplain Frontier#quickReceivedToCrawlURLs ready URLs} into
  *  the {@link Workbench} queues with the help of a {@link WorkbenchVirtualizer}.
  *  We invite the reader to consult the documentation of {@link WorkbenchVirtualizer} first.
  *
@@ -165,8 +164,6 @@ public final class Distributor extends Thread {
 				 * visit states in the todo list plus workbench.size() is below the current required size
 				 * (i.e., we are counting IPs). */
 				if (! workbenchIsFull) {
-					synchronized(frontier.sieve) {} // We stop here if we are flushing.
-
 					VisitState visitState = frontier.refill.poll();
 					if (visitState != null) { // The priority is given to already started visits
 						round = -1;
@@ -182,16 +179,6 @@ public final class Distributor extends Thread {
 					}
 					else if (frontIsSmall){
 						// It is necessary to enrich the workbench picking up URLs from the sieve
-
-						if (frontier.quickReceivedToCrawlURLs.isEmpty() && now >= frontier.nextFlush) { // No URLs--time for a forced flush
-							round = -1;
-
-							frontier.sieve.flush();
-							final long endOfFlush = System.currentTimeMillis();
-							frontier.nextFlush = endOfFlush + Math.max(Frontier.MIN_FLUSH_INTERVAL, (endOfFlush - now) * 4);
-							LOGGER.info("Flush took {} secs", (endOfFlush - now)/1000);
-							now = endOfFlush;
-						}
 
 						// Note that this might make temporarily the workbench too big by a little bit.
 						for(int i = 100; i-- != 0 && ! frontier.quickReceivedToCrawlURLs.isEmpty();) {

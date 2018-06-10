@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.frontier;
+package it.unimi.di.law.bubing.frontier.comm;
 
 /*
  * Copyright (C) 2013-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -17,6 +17,7 @@ package it.unimi.di.law.bubing.frontier;
  */
 //RELEASE-STATUS: DIST
 
+import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.slf4j.Logger;
@@ -25,7 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.ArrayBlockingQueue;
 
 /** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
- * The {@link #run()} method waits on the {@link Frontier#quickReceivedDiscoveredURLs} queue, checking that {@link #stop} becomes true every second. */
+ * The {@link #run()} method waits on the {@link Frontier#quickToQueueURLLists} queue, checking that {@link #stop} becomes true every second. */
 
 public final class QuickToQueueThread extends Thread {
     private static final Logger LOGGER = LoggerFactory.getLogger(QuickToQueueThread.class);

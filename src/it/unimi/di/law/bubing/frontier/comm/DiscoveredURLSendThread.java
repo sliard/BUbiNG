@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.frontier;
+package it.unimi.di.law.bubing.frontier.comm;
 
 /*
  * Copyright (C) 2013-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -17,6 +17,7 @@ package it.unimi.di.law.bubing.frontier;
  */
 //RELEASE-STATUS: DIST
 
+import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.MurmurHash3;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;

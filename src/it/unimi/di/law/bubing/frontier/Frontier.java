@@ -20,11 +20,6 @@ import com.google.common.io.Files;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.sieve.AbstractSieve;
-import it.unimi.di.law.bubing.sieve.ByteArrayListByteSerializerDeserializer;
-import it.unimi.di.law.bubing.sieve.ByteSerializerDeserializer;
-import it.unimi.di.law.bubing.sieve.IdentitySieve;
-import it.unimi.di.law.bubing.sieve.MercatorSieve;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
@@ -34,7 +29,6 @@ import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.jai4j.Job;
-import it.unimi.dsi.jai4j.JobListener;
 import it.unimi.dsi.jai4j.JobManager;
 import it.unimi.dsi.stat.SummaryStats;
 import it.unimi.dsi.sux4j.mph.AbstractHashFunction;
@@ -89,13 +83,6 @@ import org.xbill.DNS.Lookup;
  *
  * <ul>
  *
- * <li><em>unknown</em>: we have never seen the URL as yet;
- *
- * <li><em>waiting (to be filtered)</em>: we have seen the URL and we have enqueued it in the
- * {@linkplain AbstractSieve sieve}, but the URL is waiting to be {@linkplain AbstractSieve#flush()
- * flushed} (i.e., to be poured from the sieve to the {@link #quickReceivedToCrawlURLs} queue, which happens only
- * the first time for every given URL);
- *
  * <li><em>ready</em>: the URL has come out of the sieve, so it will be visited at some point in the
  * future unless some limiting parameters (e.g.,
  * {@link RuntimeConfiguration#maxUrlsPerSchemeAuthority}) forbid it;
@@ -128,19 +115,12 @@ import org.xbill.DNS.Lookup;
  * responsible for the URL, and in this case the URL will be sent to the appropriate agent using the
  * JAI4J infrastructure. If all checks have passed, the URL will be put in the sieve.
  *
- * <p>The URL might never be dequeued from the sieve (because we have seen it already), but if it
- * is, it will become ready by going through the {@link #append(long, ByteArrayList)} method, which
- * will again check that we do not have too many URLs for the URL authority, and then will enqueue
- * the URL to the {@linkplain #readyURLs disk queue of ready URLs}.
  *
  * <p>Note that we expect that <em>the vast majority of URLs will be of the first kind</em>. This is
  * very important, as there is much less contention on visit state locks than on the frontier lock. */
-public class Frontier implements JobListener<BubingJob>,
-		AbstractSieve.NewFlowReceiver<ByteArrayList> {
+public class Frontier {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Frontier.class);
 
-	/** The size of the buffer used for {@link Frontier#readyURLs}. */
-	public static final int READY_URLS_BUFFER_SIZE = 64 * 1024 * 1024;
 	public static final int NUM_TO_QUEUE_URL_LISTS = 16;
 
 	/** Names of the scalar fields saved by {@link #snap()}. */
@@ -230,23 +210,11 @@ public class Frontier implements JobListener<BubingJob>,
 	/** The runtime configuration. */
 	public final RuntimeConfiguration rc;
 
-	/** An instance of a {@link MercatorSieve}. */
-	public AbstractSieve<ByteArrayList, Void> sieve;
-
-	/** A queue to quickly buffer Incoming Discovered URLs */
-	public ArrayBlockingQueue<ByteArrayList> quickReceivedDiscoveredURLs;
-
 	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
 	public ArrayBlockingQueue<ByteArrayList> quickToSendDiscoveredURLs;
 
 	/** A queue to quickly buffer to be crawled URLs. */
 	public ArrayBlockingQueue<ByteArrayList> quickReceivedToCrawlURLs;
-
-	/** A queue to quickly buffer URLs to be crawled that will be submitted to pulsar. */
-	public ArrayBlockingQueue<ByteArrayList> quickToSendToCrawlURLs;
-
-	/** A queue to buffer in the long run URLs communicated by {@link #receive(BubingJob)}. */
-	public ByteArrayDiskQueue receivedURLs;
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
 	public ArrayBlockingQueue<ObjectArrayList<ByteArrayList>> quickToQueueURLLists[];
@@ -409,8 +377,7 @@ public class Frontier implements JobListener<BubingJob>,
 	 *
 	 * @param rc the configuration to be used to set all parameters.
 	 * @param agent the BUbiNG agent possessing this frontier. */
-	public Frontier(final RuntimeConfiguration rc, final Agent agent) throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException,
-			InterruptedException {
+	public Frontier(final RuntimeConfiguration rc, final Agent agent) throws IllegalArgumentException {
 		this.rc = rc;
 		this.agent = agent;
 
@@ -439,12 +406,6 @@ public class Frontier implements JobListener<BubingJob>,
 		};
 
 		urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize);
-		if (rc.sieveSize == 0)
-			sieve = new IdentitySieve<>(this, new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID,
-					BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
-		else
-			sieve = new MercatorSieve<>(rc.crawlIsNew, rc.sieveDir, rc.sieveSize, rc.sieveStoreIOBufferByteSize, rc.sieveAuxFileIOBufferByteSize, this,
-					new ByteArrayListByteSerializerDeserializer(), ByteSerializerDeserializer.VOID, BYTE_ARRAY_LIST_HASHING_STRATEGY, null);
 
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();
@@ -508,11 +469,8 @@ public class Frontier implements JobListener<BubingJob>,
 		// Configures Jericho to use SLF4J
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
-		quickReceivedDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
 		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
 		quickReceivedToCrawlURLs = new ArrayBlockingQueue<>(64 * 1024);
-		quickToSendToCrawlURLs = new ArrayBlockingQueue<>(64 * 1024);
-
 		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
 		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
 			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
@@ -524,7 +482,6 @@ public class Frontier implements JobListener<BubingJob>,
 
 			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
 
-			receivedURLs = ByteArrayDiskQueue.createNew(new File(rc.frontierDir, "received"), 16 * 1024, true);
 			distributor.statsThread.start(0);
 		}
 		else {
@@ -599,24 +556,6 @@ public class Frontier implements JobListener<BubingJob>,
 		LOGGER.info("Number of Fetching Threads set to " + numFetchingThreads);
 	}
 
-	public void decreaseFetchingThreads() {
-		synchronized (fetchingThreads) {
-			if (fetchingThreads.size() > 0) {
-				fetchingThreads.get(fetchingThreads.size() - 1).stop = true;
-				fetchingThreads.size(fetchingThreads.size() - 1);
-			}
-			LOGGER.info("Number of fetching threads : {}", fetchingThreads.size());
-		}
-	}
-	public void increaseFetchingThreads() throws NoSuchAlgorithmException, IOException {
-		synchronized (fetchingThreads) {
-			final FetchingThread thread = new FetchingThread(this, fetchingThreads.size());
-			thread.start();
-			fetchingThreads.add(thread);
-			LOGGER.info("Number of fetching threads : {}", fetchingThreads.size());
-		}
-	}
-
 	/** Changes the number of parsing threads.
 	 *
 	 * <p>Note that when the number of thread is reduced, the stopped thread will actually terminate
@@ -651,9 +590,6 @@ public class Frontier implements JobListener<BubingJob>,
 
 	/** Enqueues a URL to the the BUbiNG crawl.
 	 *
-	 * <p>Before {@linkplain AbstractSieve#enqueue(Object, Object) enqueueing the URL to the sieve}
-	 * we perform a number of checks:
-	 *
 	 * <ul>
 	 *
 	 * <li>if there are too many URLs for the URL scheme+authority, we discard the URL;
@@ -665,28 +601,14 @@ public class Frontier implements JobListener<BubingJob>,
 	 *
 	 * </ul>
 	 *
-	 * <p>The difference between this method and {@link #enqueueLocal(ByteArrayList)} is that the
-	 * latter does not check whether the argument is
-	 * {@linkplain JobManager#local(it.unimi.dsi.jai4j.Job) local}.
-	 *
-	 * @param url a {@linkplain BURL BUbiNG URL} to be enqueued to the BUbiNG crawl.
-	 * @throws InterruptedException from {@link AbstractSieve#enqueue(Object, Object)}. */
-	public void enqueue(final ByteArrayList url) throws IOException, InterruptedException {
+	 * @param url a {@linkplain BURL BUbiNG URL} to be enqueued to the BUbiNG crawl. */
+	public void enqueue(final ByteArrayList url)  {
 		final byte[] urlBuffer = url.elements();
 		final int inStore = schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer));
 		if (inStore >= rc.maxUrlsPerSchemeAuthority) return;
 
 		if (!urlCache.add(url)) return;
 
-		final BubingJob job = new BubingJob(url);
-
-		/* BEGIN NON-PULSAR BLOCK
-		// In pulsar mode, there is no "local" job
-		if (agent.local(job)) {
-			if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
-		}
-		else
-		END NON-PULSAR BLOCK */
 		try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(BURL.schemeAndAuthorityAsByteArray(urlBuffer)), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
 			quickToSendDiscoveredURLs.offer(url);
@@ -698,43 +620,6 @@ public class Frontier implements JobListener<BubingJob>,
 
 		return;
 	}
-
-	/** Enqueues a URL to the the BUbiNG crawl if it is local
-	 *
-	 * <p>Before {@linkplain AbstractSieve#enqueue(Object, Object) enqueueing the URL to the sieve}
-	 * we perform a number of checks:
-	 *
-	 * <ul>
-	 *
-	 * <li>if there are too many URLs for the URL scheme+authority, we discard the URL;
-	 *
-	 * <li>if the URL appears in the URL cache, we discard it; otherwise, we add it to the cache;
-	 *
-	 * <li>if another agent is responsible for the URL, we disregard it
-	 *
-	 * </ul>
-	 *
-	 * <p>The difference between this method and {@link #enqueueLocal(ByteArrayList)} is that the
-	 * latter does not check whether the argument is
-	 * {@linkplain JobManager#local(it.unimi.dsi.jai4j.Job) local}.
-	 *
-	 * @param url a {@linkplain BURL BUbiNG URL} to be enqueued to the BUbiNG crawl.
-	 * @throws InterruptedException from {@link AbstractSieve#enqueue(Object, Object)}. */
-	public void enqueueIfLocal(final ByteArrayList url) throws IOException, InterruptedException {
-		final byte[] urlBuffer = url.elements();
-		final int inStore = schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer));
-		if (inStore >= rc.maxUrlsPerSchemeAuthority) return;
-
-		if (!urlCache.add(url)) return;
-
-		final BubingJob job = new BubingJob(url);
-
-		if (agent.local(job)) {
-			if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
-		}
-		return;
-	}
-
 	/** Returns whether the workbench is full.
 	 *
 	 * @return whether the workbench is full. */
@@ -742,48 +627,6 @@ public class Frontier implements JobListener<BubingJob>,
 		return weightOfpathQueriesInQueues.get() >= rc.workbenchMaxByteSize;
 	}
 
-
-	/** Enqueues a local URL represented by a byte array to the crawl of this agent.
-	 *
-	 * <p>Before {@linkplain AbstractSieve#enqueue(Object, Object) enqueueing the URL to the sieve}
-	 * we perform a number of checks:
-	 *
-	 * <ul>
-	 *
-	 * <li>if there are too many URLs for the URL scheme+authority, we discard the URL;
-	 *
-	 * <li>if the URL appears in the URL cache, we discard it; otherwise, we add it to the cache.
-	 *
-	 * </ul>
-	 *
-	 * <p>The difference between this method and {@link #enqueue(ByteArrayList)} is that the latter
-	 * checks whether the argument is {@linkplain JobManager#local(it.unimi.dsi.jai4j.Job) local}.
-	 *
-	 * @param url a BUbiNG URL to be enqueued to the BUbiNG crawl, in byte-array representation.
-	 * @throws InterruptedException from {@link AbstractSieve#enqueue(Object, Object)}. */
-	public void enqueueLocal(ByteArrayList url, boolean force) throws IOException, InterruptedException {
-		final byte[] urlBuffer = url.elements();
-		final int inStore = schemeAuthority2Count.get(urlBuffer, 0, BURL.startOfpathAndQuery(urlBuffer));
-		if (!force && inStore >= rc.maxUrlsPerSchemeAuthority) return;
-
-		if (!force && !urlCache.add(url)) return;
-
-		if (sieve.enqueue(url, null)) nextFlush = System.currentTimeMillis() + MIN_FLUSH_INTERVAL;
-	}
-
-	@Override
-	public void receive(final BubingJob job) {
-		if (LOGGER.isDebugEnabled()) LOGGER.debug("Receiving job {}", job.url);
-		try {
-			// Note that this is blocking, but blocking should be very rare and short
-			// still, we don't want to block.
-			if (!quickReceivedDiscoveredURLs.offer(job.url))
-				if (LOGGER.isDebugEnabled()) LOGGER.debug("Dropping {} to avoid blocking ! you should increase the quickReceivedDiscoveredURLs queue size", job.toString());
-		}
-		catch (Exception e) {
-			LOGGER.error("Error while enqueueing " + job.url, e);
-		}
-	}
 
 	/** Closes the frontier: threads are stopped (if necessary, aborted), sieve and store and robots
 	 * stream are closed.
@@ -887,43 +730,10 @@ public class Frontier implements JobListener<BubingJob>,
 			if (visitState.acquired) LOGGER.warn("Visit state in the poll queue is acquired: " + visitState);
 		}
 
-		// Finally, we close disk-based resources (sieve, queues, etc.).
-		sieve.close();
-
 		// We invoke done() here so the final stats are the last thing printed.
 		distributor.statsThread.done();
 	}
-
-	// NewFlowReceiver implementation.
-
-	/** A locked copy of the counting map used for quick analysis of candidate ready URLS. */
-
-	@Override
-	public void prepareToAppend() throws IOException {
-
-	}
-
-	@Override
-	public void append(final long hash, final ByteArrayList list) throws IOException {
-		final byte[] urlBuffer = list.elements();
-		try {
-			quickToSendToCrawlURLs.put(list.clone());
-		} catch (InterruptedException e) {
-			LOGGER.error("Interrupted while adding a URL to quickToSendToCrawlURL");
-		}
-		// Previous NON-PULSAR :
-		// readyURLs.enqueue(urlBuffer, 0, length);
-
-	}
-
-	@Override
-	public synchronized void finishedAppending() throws IOException {
-	}
-
-	@Override
-	public void noMoreAppend() throws IOException {}
-
-	/** Update, if necessary, the {@link #requiredFrontSize}. The current front size is the number of
+		/** Update, if necessary, the {@link #requiredFrontSize}. The current front size is the number of
 	 * visit states present in the workbench and in the {@link #todo} queue. If this quantity is
 	 * larged than the {@linkplain #requiredFrontSize currently-required front size}, the latter is
 	 * increase by {@link #FRONT_INCREASE}, although it will never be set to a value larger than
@@ -1010,8 +820,6 @@ public class Frontier implements JobListener<BubingJob>,
 
 		// readyURLs and receivedURLs
 		LOGGER.info("Freezing byte disk queues");
-		scalarData.addProperty(PropertyKeys.RECEIVEDURLSSIZE, receivedURLs.size64());
-		receivedURLs.freeze();
 
 		scalarData.save(new File(snapDir, "frontier.data"));
 
@@ -1045,35 +853,11 @@ public class Frontier implements JobListener<BubingJob>,
 	}
 
 	/** Snaps the current URL queues to a TXT file to be used for seed in a next launch */
-	public void snapToSeed() throws ConfigurationException, IllegalArgumentException, IOException, InterruptedException {
-
-		// First, finish transferring the receivedURLS to sieve, and flush the sieve
-		sieve.flush();
-		// Empties heldBackUrls
+	public void snapToSeed() throws IllegalArgumentException, IOException {
 
 		LOGGER.info( "Storing URLS found but not yet visited to visit" );
 		File tempSnapSeed = new File( rc.storeDir, ".seed.txt.gz" );
 		final OutputStreamWriter stringWriter = new OutputStreamWriter(new FastBufferedOutputStream( new GZIPOutputStream( new FileOutputStream( tempSnapSeed ) ) ) );
-
-		receivedURLs.freeze();
-		final long receivedURLsSize = receivedURLs.size64();
-		File receivedURLsFile = new File( rc.frontierDir, "received" );
-		File copyReceivedURLsFile = new File( rc.frontierDir, "received.copy" );
-		Files.copy(receivedURLsFile, copyReceivedURLsFile);
-		ByteArrayDiskQueue newReceivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize,copyReceivedURLsFile,16*1024,true);
-		while(!newReceivedURLs.isEmpty()) {
-			newReceivedURLs.dequeue();
-			final ByteArrayList url = newReceivedURLs.buffer();
-			final byte[] urlBuffer = url.elements();
-			final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray( urlBuffer );
-			URI uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, BURL.pathAndQueryAsByteArray( url ) );
-			stringWriter.write(uri.toASCIIString());
-			stringWriter.write("\n");
-		}
-		newReceivedURLs.close(); // deletes the file
-		// recreate ReadyURLs from initial state (freeze() put it in wrong state)
-		receivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize,receivedURLsFile,16 * 1024,true);
-
 
 		for ( VisitState visitState : distributor.schemeAuthority2VisitState.visitStates() ) {
 			// Create copy buffer
@@ -1104,12 +888,10 @@ public class Frontier implements JobListener<BubingJob>,
 		Files.move(new File( rc.storeDir, ".seed.txt.gz" ),finalSnapSeed);
 	}
 
-		/** Restores data from the given directory.
-         *
-         * @throws InterruptedException
+	/** Restores data from the given directory.
          * @see #snap() */
 	@SuppressWarnings("unchecked")
-	public void restore() throws ConfigurationException, IllegalArgumentException, IOException, ClassNotFoundException, InterruptedException {
+	public void restore() throws ConfigurationException, IllegalArgumentException, IOException, ClassNotFoundException {
 		File snapDir = new File(rc.frontierDir, "snap");
 		if (!snapDir.exists() || !snapDir.isDirectory()) {
 			LOGGER.error("Trying to restore state from snap directory " + snapDir + ", but it does not exist or is not a directory");
@@ -1210,9 +992,6 @@ public class Frontier implements JobListener<BubingJob>,
 
 		// readyURLs and receivedURLs
 		LOGGER.info("Defreezing byte disk queues");
-
-		long receivedURLsSize = scalarData.getLong(PropertyKeys.RECEIVEDURLSSIZE);
-		receivedURLs = ByteArrayDiskQueue.createFromFile(receivedURLsSize, new File(rc.frontierDir, "received"), 16 * 1024, true);
 
 		// Move away snap directory, as its contents will become unsynchronized with queue data.
 		final File renameDir = new File(snapDir + "-" + epoch);
