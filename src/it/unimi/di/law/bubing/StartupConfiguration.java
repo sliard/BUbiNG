@@ -52,7 +52,6 @@ import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.frontier.ParsingThread;
 import it.unimi.di.law.bubing.frontier.dns.DnsJavaResolver;
 import it.unimi.di.law.bubing.parser.Parser;
-import it.unimi.di.law.bubing.sieve.AbstractSieve;
 import it.unimi.di.law.bubing.spam.SpamDetector;
 import it.unimi.di.law.bubing.store.Store;
 import it.unimi.di.law.bubing.util.ByteArrayDiskQueue;
@@ -314,10 +313,6 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="cache")
 	public String responseCacheDir;
 
-	/** A directory for storing files related to the {@linkplain AbstractSieve sieve}.  It must <em>not</em> exist. */
-	@OptionalSpecification(value="sieve")
-	public String sieveDir;
-
 	/** A directory for storing files (mainly queues managed by {@link ByteArrayDiskQueue}) related to the {@linkplain Frontier frontier}.  It must <em>not</em> exist. */
 	@OptionalSpecification(value="frontier")
 	public String frontierDir;
@@ -515,12 +510,6 @@ public class StartupConfiguration {
 	private void checkResponseCacheDir() throws ConfigurationException {
 		checkRootDir();
 		chkSubDir(responseCacheDir);
-	}
-
-	@SuppressWarnings("unused")
-	private void checkSieveDir() throws ConfigurationException {
-		checkRootDir();
-		chkSubDir(sieveDir);
 	}
 
 	@SuppressWarnings("unused")

@@ -18,11 +18,9 @@ package it.unimi.di.law.bubing.frontier;
 
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.sieve.AbstractSieve.NewFlowReceiver;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.bubing.util.Util;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
@@ -259,8 +257,7 @@ public class VisitState implements Delayed, Serializable {
 	 * entry.
 	 *
 	 * <p>Note that if you enqueue more than once the same URL to a visit state using
-	 * this method, it will be fetched twice. Thus, this method should be called only
-	 * by the {@linkplain NewFlowReceiver receiver of new flows from the sieve}.
+	 * this method, it will be fetched twice.
 	 *
 	 * <p>Note that the scheme+authority of <code>url</code> must be {@link #schemeAuthority}.
 	 *
