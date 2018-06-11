@@ -90,7 +90,7 @@ public class HTMLParser<T> implements Parser<T> {
 		StartTagType.SERVER_COMMON_ESCAPED.deregister();
 	}
 
-	/** An implementation of a {@link Parser.LinkReceiver} that accumulates the URLs in a public set. */
+    /** An implementation of a {@link Parser.LinkReceiver} that accumulates the URLs in a public set. */
 	public final static class SetLinkReceiver implements LinkReceiver {
 		/** The set of URLs gathered so far. */
 		public final Set<URI> urls = new ObjectLinkedOpenHashSet<>();
@@ -455,7 +455,6 @@ public class HTMLParser<T> implements Parser<T> {
 		languageDetectionInfo = new LanguageDetectionInfo();
 		rewritten = new StringBuilder();
 		textContent = new PureTextAppendable();
-
 	}
 
 	/**
@@ -541,8 +540,8 @@ public class HTMLParser<T> implements Parser<T> {
 		guessedCharset = null;
 		boolean charsetValid = false;
 		guessedLanguage = null;
-		charsetDetectionInfo.icuCharset=charsetDetectionInfo.httpHeaderCharset=charsetDetectionInfo.htmlMetaCharset="-";
-		languageDetectionInfo.cld2Language=languageDetectionInfo.htmlLanguage=languageDetectionInfo.httpHeaderLanguage="-";
+		charsetDetectionInfo.icuCharset = charsetDetectionInfo.httpHeaderCharset = charsetDetectionInfo.htmlMetaCharset = "-";
+		languageDetectionInfo.cld2Language = languageDetectionInfo.htmlLanguage = languageDetectionInfo.httpHeaderLanguage = "-";
 		rewritten.setLength(0);
 		textContent.init();
 
@@ -564,7 +563,6 @@ public class HTMLParser<T> implements Parser<T> {
 				} catch (Exception e) {
 					LOGGER.debug("Charset {} found in header is not supported", charsetDetectionInfo.httpHeaderCharset);
 				}
-
 			}
 		}
 
@@ -620,6 +618,7 @@ public class HTMLParser<T> implements Parser<T> {
 			int lastSegmentEnd = 0;
 			int inSpecialText = 0;
 			int byteCounter = 0;
+
 			@SuppressWarnings("resource")
 			final StreamedSource streamedSource = new StreamedSource(new InputStreamReader(beginningOfStream,new NoOpDecoder()));
 			if (buffer != null) streamedSource.setBuffer(buffer);
@@ -633,6 +632,8 @@ public class HTMLParser<T> implements Parser<T> {
 						final StartTagType startTagType = startTag.getStartTagType();
 						if ( startTagType == StartTagType.COMMENT )
 							continue;
+						/*if ( startTagType == StartTagType.DOCTYPE_DECLARATION )
+							docTypeDeclaration( startTag );*/
 						final String name = startTag.getName();
 						if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT ) && !startTag.isSyntacticalEmptyElementTag()) inSpecialText++;
 					}
@@ -654,6 +655,7 @@ public class HTMLParser<T> implements Parser<T> {
 					}
 				}
 			}
+
 			if (byteCounter > 0) {
 				charsetDetector.setText(new ByteArrayInputStream(charsetDetectionBuffer, 0, byteCounter));
 				CharsetMatch match = charsetDetector.detect();
@@ -952,6 +954,7 @@ public class HTMLParser<T> implements Parser<T> {
 		return true;
 	}
 
+    protected static final TextPattern DOCTYPE_PATTERN = new TextPattern("<doctype", TextPattern.CASE_INSENSITIVE);
 	/** Used by {@link #getCharsetName(byte[], int)}. */
 	protected static final TextPattern META_PATTERN = new TextPattern("<meta", TextPattern.CASE_INSENSITIVE);
 	/** Used by {@link #getLanguageName(byte[], int)}. */
@@ -964,6 +967,7 @@ public class HTMLParser<T> implements Parser<T> {
 	/** Used by {@link #getCharsetName(byte[], int)}. */
 	protected static final Pattern CHARSET_PATTERN = Pattern.compile (".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE|Pattern.DOTALL);
 	protected static final Pattern LANG_PATTERN = Pattern.compile (".*lang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE|Pattern.DOTALL);
+
 	/** Returns the charset name as indicated by a <code>META</code>
 	 * <code>HTTP-EQUIV</code> element, if
 	 * present, interpreting the provided byte array as a sequence of
@@ -1008,6 +1012,7 @@ public class HTMLParser<T> implements Parser<T> {
 
 		return null; // no '<meta' found
 	}
+
 	public static String getLanguageName(final byte buffer[], final int length) {
 		int start = 0;
 		while((start = HTML_PATTERN.search(buffer, start, length)) != -1) {
@@ -1029,6 +1034,22 @@ public class HTMLParser<T> implements Parser<T> {
 
 		return null; // no '<meta' found
 	}
+
+	/**
+
+	 *//*
+    public static String getDocType(final String document) {
+        final Matcher m = DOCTYPE_PATTERN.matcher(document);
+        if (m.matches()) {
+            final String s = m.group(1);
+            int start = 0, end = s.length();
+            // TODO: we discard delimiting single/double quotes; is it necessary?
+            if (end > 0 && (s.charAt(0) == '\"' || s.charAt(0) == '\'')) start = 1;
+            if (end > 0 && (s.charAt(end - 1) == '\"' || s.charAt(end - 1) == '\'')) end--;
+            if (start < end) return s.substring(start, end);
+        }
+        return null;
+    }*/
 
 	/** Extracts the charset name from the header value of a <code>content-type</code>
 	 *  header using a regular expression.
@@ -1052,6 +1073,7 @@ public class HTMLParser<T> implements Parser<T> {
 		}
 		return null;
 	}
+
 	public static String getLanguageNameFromHTML(final String headerValue) {
 		final Matcher m = LANG_PATTERN.matcher(headerValue);
 		if (m.matches()) {
