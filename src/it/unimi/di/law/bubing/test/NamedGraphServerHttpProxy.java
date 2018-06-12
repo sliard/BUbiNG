@@ -104,6 +104,7 @@ public class NamedGraphServerHttpProxy extends Thread {
 	}
 
 	public static void generate(final long hashCode, final StringBuilder content, final CharSequence[] successors, boolean notescurl) {
+		content.append("<!DOCTYPE html>");
 		content.append("<html>\n<head>");
 		content.append("<!-- a very important comment -->");
 		content.append("<title>My page </title>");
@@ -124,6 +125,8 @@ public class NamedGraphServerHttpProxy extends Thread {
 				content.append("<meta \nhttp-equiv=\"content-type\" \ncontent=\"text/html; charset=utf-8\">\n");
 			else
 				content.append("<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n");
+            if (trng.nextDouble() > 0.8) // 30% of the time
+                content.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
 		}
 
 		content.append("</head>\n<body>\n");
