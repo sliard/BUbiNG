@@ -950,7 +950,17 @@ public class HTMLParser<T> implements Parser<T> {
 		return textContent.textContent;
 	}
 
-	/** Returns the BURL location header, if present; if it is not present, but the page contains a valid metalocation, the latter
+    @Override
+	public Boolean responsiveDesign() {
+	    return foundViewPortMeta;
+    }
+
+    @Override
+    public Boolean html5() {
+        return htmlVersionAtLeast5;
+    }
+
+    /** Returns the BURL location header, if present; if it is not present, but the page contains a valid metalocation, the latter
 	 *  is returned. Otherwise, {@code null} is returned.
 	 *
 	 * @return the location (or metalocation), if present; {@code null} otherwise.
