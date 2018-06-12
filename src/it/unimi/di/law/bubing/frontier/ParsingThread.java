@@ -439,8 +439,8 @@ public class ParsingThread extends Thread {
 												"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
 												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset)
                                                 );
-                                        fetchData.extraMap.put("BUbiNG-Guessed-Html5", parser.html5().toString());
-                                        fetchData.extraMap.put("BUbiNG-Guessed-responsive", parser.responsiveDesign().toString());
+                                        fetchData.extraMap.put("BUbiNG-Guessed-Html5", String.valueOf(parser.html5()));
+                                        fetchData.extraMap.put("BUbiNG-Guessed-responsive", String.valueOf(parser.responsiveDesign()));
 										if (guessedCharset != null)
 											fetchData.extraMap.put("BUbiNG-Guessed-Charset",guessedCharset.name());
 										if (guessedLanguage != null)
