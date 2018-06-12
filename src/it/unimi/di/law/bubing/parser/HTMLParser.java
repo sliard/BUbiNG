@@ -419,6 +419,9 @@ public class HTMLParser<T> implements Parser<T> {
 	/** A buffer used for storing raw non-html data and detectCharset */
 	private final byte[] charsetDetectionBuffer;
 
+	protected Boolean htmlVersionAtLeast5;
+	protected Boolean foundViewPortMeta;
+
 	/** The rewritten version of the page */
 	protected StringBuilder rewritten;
 	protected PureTextAppendable textContent;
@@ -455,6 +458,8 @@ public class HTMLParser<T> implements Parser<T> {
 		languageDetectionInfo = new LanguageDetectionInfo();
 		rewritten = new StringBuilder();
 		textContent = new PureTextAppendable();
+        htmlVersionAtLeast5 = false;
+        foundViewPortMeta = false;
 	}
 
 	/**
@@ -550,7 +555,7 @@ public class HTMLParser<T> implements Parser<T> {
 		byte[] inspectableEntityContent = ((InspectableFileCachedInputStream)contentStream).buffer;
 		int inspectableEntityContentLength = ((InspectableFileCachedInputStream)contentStream).inspectable;
 
-		// TODO: check if it will make sense to use getValue() of entity
+        // TODO: check if it will make sense to use getValue() of entity
 		// Try to guess using headers
 		final Header contentTypeHeader = entity.getContentType();
 		if (contentTypeHeader != null) {
@@ -585,10 +590,16 @@ public class HTMLParser<T> implements Parser<T> {
 
 		final Header bubingGuessedCharsetHeader = httpResponse instanceof WarcRecord ? ((WarcRecord)httpResponse).getWarcHeader(WarcHeader.Name.BUBING_GUESSED_CHARSET) : null;
 
+		List<ByteArrayCharSequence> allMetaEntries = getAllMetaEntries(inspectableEntityContent, inspectableEntityContentLength);
+
+		foundViewPortMeta = getViewport(allMetaEntries);
+        if (LOGGER.isDebugEnabled())
+            if (foundViewPortMeta)
+                LOGGER.debug("Found viewport in META HTML of {}", uri.toString());
+
 		if (bubingGuessedCharsetHeader != null) guessedCharset = Charset.forName(bubingGuessedCharsetHeader.getValue());
 		else {
-
-			charsetDetectionInfo.htmlMetaCharset = getCharsetName(inspectableEntityContent, inspectableEntityContentLength);
+            charsetDetectionInfo.htmlMetaCharset = getCharsetName(allMetaEntries);
 			if (charsetDetectionInfo.htmlMetaCharset != null) {
 				if (LOGGER.isDebugEnabled())
 					LOGGER.debug("Found charset {} in META HTML of {}", charsetDetectionInfo.htmlMetaCharset, uri.toString());
@@ -602,7 +613,15 @@ public class HTMLParser<T> implements Parser<T> {
 		}
 
 		if (contentStream instanceof InspectableFileCachedInputStream) {
-			final InspectableFileCachedInputStream inspectableStream = (InspectableFileCachedInputStream)contentStream;
+            final InspectableFileCachedInputStream inspectableStream = (InspectableFileCachedInputStream)contentStream;
+
+            String docTypeContent = getDocType(inspectableStream.buffer, Math.min(inspectableStream.inspectable, 50));
+            if (docTypeContent != null) {
+                htmlVersionAtLeast5 = docTypeContent.toLowerCase().equals("html");
+                if (htmlVersionAtLeast5)
+                    LOGGER.debug("HTML5 document");
+            }
+
 			languageDetectionInfo.htmlLanguage = getLanguageName(inspectableStream.buffer, inspectableStream.inspectable);
 			if (languageDetectionInfo.htmlLanguage != null) {
 				Locale fromHtmlLocal = Locale.forLanguageTag(languageDetectionInfo.htmlLanguage);
@@ -887,7 +906,7 @@ public class HTMLParser<T> implements Parser<T> {
 			if (metaLocation != null) digestAppendable.append(BURL.toByteArray(metaLocation));
 			digestAppendable.append((char)0);
 		}
-		//LOGGER.info("Finished parsing {} , digest : {}", base, digestAppendable != null ? digestAppendable.digest() : "null");
+		LOGGER.info("Finished parsing {} , digest : {}", base, digestAppendable != null ? digestAppendable.digest() : "null");
 		return digestAppendable != null ? digestAppendable.digest() : null;
 	}
 
@@ -954,7 +973,7 @@ public class HTMLParser<T> implements Parser<T> {
 		return true;
 	}
 
-    protected static final TextPattern DOCTYPE_PATTERN = new TextPattern("<doctype", TextPattern.CASE_INSENSITIVE);
+    protected static final TextPattern DOCTYPE_PATTERN = new TextPattern("<!doctype", TextPattern.CASE_INSENSITIVE);
 	/** Used by {@link #getCharsetName(byte[], int)}. */
 	protected static final TextPattern META_PATTERN = new TextPattern("<meta", TextPattern.CASE_INSENSITIVE);
 	/** Used by {@link #getLanguageName(byte[], int)}. */
@@ -968,7 +987,9 @@ public class HTMLParser<T> implements Parser<T> {
 	protected static final Pattern CHARSET_PATTERN = Pattern.compile (".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE|Pattern.DOTALL);
 	protected static final Pattern LANG_PATTERN = Pattern.compile (".*lang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE|Pattern.DOTALL);
 
-	/** Returns the charset name as indicated by a <code>META</code>
+    protected static final Pattern VIEWPORT_PATTERN = Pattern.compile(".*name\\s*=\\s*('|\")?viewport('|\")?.*", Pattern.CASE_INSENSITIVE|Pattern.DOTALL);
+
+    /** Returns the charset name as indicated by a <code>META</code>
 	 * <code>HTTP-EQUIV</code> element, if
 	 * present, interpreting the provided byte array as a sequence of
 	 * ISO-8859-1-encoded characters. Only the first such occurrence is considered (even if
@@ -987,7 +1008,7 @@ public class HTMLParser<T> implements Parser<T> {
 	 */
 	public static String getCharsetName(final byte buffer[], final int length) {
 		int start = 0;
-		while((start = META_PATTERN.search(buffer, start, length)) != -1) {
+		while ((start = META_PATTERN.search(buffer, start, length)) != -1) {
 
 			/* Look for attribute http-equiv with value content-type,
 			 * if present, look for attribute content and, if present,
@@ -1013,6 +1034,63 @@ public class HTMLParser<T> implements Parser<T> {
 		return null; // no '<meta' found
 	}
 
+	private static List<ByteArrayCharSequence> getAllMetaEntries(final byte buffer[], final int length) {
+	    ArrayList<ByteArrayCharSequence> metas = new ArrayList<ByteArrayCharSequence>();
+	    int start = 0;
+	    while ((start = META_PATTERN.search(buffer, start, length)) != -1) {
+            int end = start;
+            while (end < length && buffer[end] != '>') end++; // Look for closing '>'
+            if (end == length) return metas; // No closing '>'
+            metas.add(new ByteArrayCharSequence(buffer, start + META_PATTERN.length(), end - start - META_PATTERN.length()));
+            start = end + 1;
+        }
+        return metas;
+    }
+
+    /** Returns the charset name as indicated by a <code>META</code>
+     * <code>HTTP-EQUIV</code> element, if
+     * present, interpreting the provided byte array as a sequence of
+     * ISO-8859-1-encoded characters. Only the first such occurrence is considered (even if
+     * it might not correspond to a valid or available charset).
+     *
+     * <p><strong>Beware</strong>: it might not work if the
+     * <em>value</em> of some attribute in a <code>meta</code> tag
+     * contains a string matching (case insensitively) the r.e.
+     * <code>http-equiv\s*=\s*('|")content-type('|")</code>, or
+     * <code>content\s*=\s*('|")[^"']*('|")</code>.
+     *
+     * @param allMetaEntries a list of all meta entries found in the buffer.
+     * @return the charset name, or {@code null} if no
+     * charset is specified; note that the charset might be not valid or not available.
+     */
+    public static String getCharsetName(final List<ByteArrayCharSequence> allMetaEntries) {
+	    for (ByteArrayCharSequence meta : allMetaEntries) {
+	        if (HTTP_EQUIV_PATTERN.matcher(meta).matches()) {
+				final Matcher m = CONTENT_PATTERN.matcher(meta);
+				if (m.matches())
+					return getCharsetNameFromHeader(m.group(2)); // got it!
+			}
+
+			final Matcher mCharset = CHARSET_PATTERN.matcher(meta);
+			if (mCharset.matches())
+				return getCharsetNameFromHeader(mCharset.group(0)); // got it!
+        }
+        return null; // no '<meta' found
+    }
+
+    /** Returns a boolean which indicate if a viewport meta was found among meta entries of
+     * the document.
+     *
+     * @param allMetaEntries a list of all meta entries found in the buffer.
+     * @return true if the viewport meta was found and false otherwise
+     */
+    public static Boolean getViewport(final List<ByteArrayCharSequence> allMetaEntries) {
+	    for (ByteArrayCharSequence meta : allMetaEntries)
+            if (VIEWPORT_PATTERN.matcher(meta).matches())
+                return true;
+        return false;
+    }
+
 	public static String getLanguageName(final byte buffer[], final int length) {
 		int start = 0;
 		while((start = HTML_PATTERN.search(buffer, start, length)) != -1) {
@@ -1035,21 +1113,22 @@ public class HTMLParser<T> implements Parser<T> {
 		return null; // no '<meta' found
 	}
 
-	/**
-
-	 *//*
-    public static String getDocType(final String document) {
-        final Matcher m = DOCTYPE_PATTERN.matcher(document);
-        if (m.matches()) {
-            final String s = m.group(1);
-            int start = 0, end = s.length();
-            // TODO: we discard delimiting single/double quotes; is it necessary?
-            if (end > 0 && (s.charAt(0) == '\"' || s.charAt(0) == '\'')) start = 1;
-            if (end > 0 && (s.charAt(end - 1) == '\"' || s.charAt(end - 1) == '\'')) end--;
-            if (start < end) return s.substring(start, end);
+    /** Returns document doctype declaration if found.
+     *
+     * @param buffer a buffer containing raw bytes that will be interpreted as ISO-8859-1 characters.
+     * @param length the number of significant bytes in the buffer.
+     * @return the doctype declaration if found, null otherwise
+     */
+    public static String getDocType(final byte buffer[], final int length) {
+        int start = 0;
+        while ((start = DOCTYPE_PATTERN.search(buffer, 0, length)) != -1) {
+            int end = start;
+            while(end < length && buffer[end] != '>') end++; // Look for closing '>'
+            final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(buffer, start + DOCTYPE_PATTERN.length(), end - start - DOCTYPE_PATTERN.length());
+            return tagContent.toString().trim();
         }
         return null;
-    }*/
+    }
 
 	/** Extracts the charset name from the header value of a <code>content-type</code>
 	 *  header using a regular expression.
