@@ -174,8 +174,22 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 *
 	 * @return the cleaned page content or {@code null}.
 	 */
-
 	public StringBuilder getTextContent();
+
+	/**
+	 *
+	 *
+	 * @return a boolean which indicate if the html contains a rendering mode for narrow screen
+	 */
+	public Boolean responsiveDesign();
+
+	/**
+	 *
+	 *
+	 * @return a boolean which indicates if the html version is at least 5. Return false if the page can't be parse.
+	 */
+	public Boolean html5();
+
 
 	/**
 	 * Returns the result of the processing.

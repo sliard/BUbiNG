@@ -433,16 +433,19 @@ public class ParsingThread extends Thread {
 										}
 										textContent = parser.getTextContent();
 
-
 										fetchData.extraMap.putAll(ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
 												"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
 												"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
 												"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
-												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset));
+												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset)
+                                                );
+                                        fetchData.extraMap.put("BUbiNG-Guessed-Html5", String.valueOf(parser.html5()));
+                                        fetchData.extraMap.put("BUbiNG-Guessed-responsive", String.valueOf(parser.responsiveDesign()));
 										if (guessedCharset != null)
 											fetchData.extraMap.put("BUbiNG-Guessed-Charset",guessedCharset.name());
 										if (guessedLanguage != null)
 											fetchData.extraMap.put("BUbiNG-Guessed-Language", guessedLanguage);
+
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");

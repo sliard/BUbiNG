@@ -1,8 +1,13 @@
 syntax = "proto3";
+
 option java_outer_classname = "WebPageTextContentProto";
 option java_package = "it.unimi.di.law.bubing.protobuf";
 
 message WebPage {
     string url = 1;
     string content = 2;
+    bool html5 = 3;
+    bool viewport = 4;
+    string lang = 5;
+    string charset = 6;
 }
