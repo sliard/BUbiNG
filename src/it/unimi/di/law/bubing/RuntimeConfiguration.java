@@ -212,9 +212,6 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#responseCacheDir */
 	public final File responseCacheDir;
 
-	/** @see StartupConfiguration#sieveDir */
-	public final File sieveDir;
-
 	/** @see StartupConfiguration#frontierDir */
 	public final File frontierDir;
 
@@ -538,7 +535,6 @@ public class RuntimeConfiguration {
 			rootDir = new File(startupConfiguration.rootDir);
 			storeDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.storeDir);
 			responseCacheDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.responseCacheDir);
-			sieveDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.sieveDir);
 			frontierDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.frontierDir);
 			fetchDataBufferByteSize = startupConfiguration.fetchDataBufferByteSize;
 			proxyHost = startupConfiguration.proxyHost;

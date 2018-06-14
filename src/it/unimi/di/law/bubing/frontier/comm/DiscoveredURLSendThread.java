@@ -1,4 +1,4 @@
-package it.unimi.di.law.bubing.frontier;
+package it.unimi.di.law.bubing.frontier.comm;
 
 /*
  * Copyright (C) 2013-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -17,12 +17,10 @@ package it.unimi.di.law.bubing.frontier;
  */
 //RELEASE-STATUS: DIST
 
+import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.MurmurHash3;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import org.apache.pulsar.client.api.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,11 +29,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.pulsar.client.api.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
  * The {@link #run()} method waits on the {@link Frontier#quickReceivedDiscoveredURLs} queue, checking that {@link #stop} becomes true every second. */
 
-public final class ToCrawlURLSendThread extends Thread {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ToCrawlURLSendThread.class);
+public final class DiscoveredURLSendThread extends Thread {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DiscoveredURLSendThread.class);
     /** A reference to the frontier. */
     private final Frontier frontier;
 
@@ -47,7 +49,7 @@ public final class ToCrawlURLSendThread extends Thread {
      *
      * @param frontier the frontier instantiating the thread.
      */
-    public ToCrawlURLSendThread(final Frontier frontier) throws PulsarClientException {
+    public DiscoveredURLSendThread(final Frontier frontier) throws PulsarClientException {
         setName(this.getClass().getSimpleName());
         setPriority(Thread.MAX_PRIORITY); // This must be done quickly
 
@@ -67,7 +69,7 @@ public final class ToCrawlURLSendThread extends Thread {
             producerConfig.setSendTimeout(30000, TimeUnit.MILLISECONDS);
             producerConfig.setCompressionType(CompressionType.LZ4);
             producerConfig.setProducerName(frontier.rc.name);
-            asyncProducers.add(pulsarClient.createProducerAsync(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-"+Integer.toString(i),  producerConfig));
+            asyncProducers.add(pulsarClient.createProducerAsync(frontier.rc.pulsarFrontierDiscoveredURLsTopic + "-"+Integer.toString(i),  producerConfig));
         }
         for (int i=0; i<frontier.rc.pulsarFrontierTopicNumber; i++) {
             try {
@@ -88,7 +90,7 @@ public final class ToCrawlURLSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendToCrawlURLs;
+            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
             while(! stop) {
                 final ByteArrayList url = quickToSendURLs.poll(1, TimeUnit.SECONDS);
 
