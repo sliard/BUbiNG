@@ -16,10 +16,12 @@ package it.unimi.di.law.bubing.util;
  * limitations under the License.
  */
 
+import com.exensa.wdl.common.LanguageCodes;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.ParsingThread;
 import it.unimi.di.law.bubing.frontier.VisitState;
 import it.unimi.di.law.bubing.parser.BinaryParser;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.test.NamedGraphServerHttpProxy;
 import it.unimi.di.law.bubing.test.RandomNamedGraphServer;
 import it.unimi.di.law.warc.filters.URIResponse;
@@ -67,9 +69,9 @@ import com.google.common.net.HttpHeaders;
  * the associated overflow file, are created at construction time, and will be disposed only by
  * calling {@link #close()}.
  *
- * <p>After construction, the {@link #fetch(URI, HttpClient, RequestConfig, VisitState, boolean)}
+ * <p>After construction, the {@link #fetch(URI, it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawlRequest, HttpClient, RequestConfig, VisitState, boolean)}
  * method is used to issue the request; after that, all data obtained as a {@linkplain #response() response} are available. All data is available until disposal, or until another
- * call to {@link #fetch(URI, HttpClient, RequestConfig, VisitState, boolean)}.
+ * call to {@link #fetch(URI, it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawlRequest, HttpClient, RequestConfig, VisitState, boolean)}.
  *
  * <p>Note that since this object will be populated by one thread and used by another all fields
  * <strong>must</strong> be either <code>final</code>final or <code>volatile</code>. */
@@ -137,6 +139,8 @@ public class FetchData implements URIResponse, Closeable {
 	/** The BUbiNG URL associated with this request. */
 	protected volatile URI url;
 
+	protected volatile FrontierProtobuf.CrawlRequest crawlRequest;
+
 	/** The visit state associated with this request. */
 	public volatile VisitState visitState;
 
@@ -189,6 +193,8 @@ public class FetchData implements URIResponse, Closeable {
 	/** The {@link RuntimeConfiguration}, cached. */
 	private final RuntimeConfiguration rc;
 
+	public volatile int lang;
+
 	public volatile Map<String,String> extraMap;
 
 	/** Creates a fetched response according to the given properties.
@@ -206,7 +212,6 @@ public class FetchData implements URIResponse, Closeable {
 		//cachingAsyncByteConsumer = new CachingAsyncByteConsumer(this);
 		//enqueueFetchedHttpResponseFutureCallback = new EnqueueFetchedHttpResponseFutureCallback(this);
 		extraMap = new HashMap<>();
-
 	}
 
 	/** Returns (an approximation of) the length of the response (headers and body).
@@ -268,6 +273,10 @@ public class FetchData implements URIResponse, Closeable {
 		return this.url;
 	}
 
+	public FrontierProtobuf.CrawlRequest getCrawlRequest() {
+		return crawlRequest;
+	}
+
 	// TODO: PORTING: document
 	/* (non-Javadoc)
 	 * @see it.unimi.di.law.bubing.util.URIResponse#response()
@@ -283,16 +292,18 @@ public class FetchData implements URIResponse, Closeable {
 	 * @param url the URL to be used to populate this response.
 	 * @param visitState the {@link VisitState} associated with {@code url}.
 	 */
-	public void fetch(final URI url, final HttpClient httpClient, final RequestConfig requestConfig, final VisitState visitState, final boolean robots) throws IOException {
+	public void fetch(final URI url, final FrontierProtobuf.CrawlRequest crawlRequest, final HttpClient httpClient, final RequestConfig requestConfig, final VisitState visitState, final boolean robots) throws IOException {
 		// ALERT: check that all fields are cleared.
 		this.visitState = visitState;
 		this.url = url;
+		this.crawlRequest = crawlRequest;
 		this.response = null;
 		this.exception = null;
 		this.truncated = false;
 		this.isDuplicate = false;
 		this.extraMap.clear();
 		this.robots = robots;
+		this.lang = 0;
 
 		assert url.getHost() != null : url;
 

@@ -16,7 +16,9 @@ package it.unimi.di.law.bubing.frontier.comm;
  * limitations under the License.
  */
 
+import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.Frontier;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import org.apache.pulsar.client.api.*;
@@ -92,17 +94,20 @@ public final class ToCrawlURLReceiver implements MessageListener {
 
 	@Override
 	public void received(Consumer consumer, Message message) {
-		byte[] messageData = message.getData();
-
+		FrontierProtobuf.PageInfo pageInfo = null;
 		try {
-			frontier.quickReceivedToCrawlURLs.put(new ByteArrayList(messageData)); // Will block until not full
+			pageInfo = FrontierProtobuf.PageInfo.parseFrom(message.getData());
+			frontier.quickReceivedToCrawlURLs.put(pageInfo); // Will block until not full
+		} catch (InvalidProtocolBufferException e) {
+			LOGGER.error("Error while parsing message from Pulsar",e);
 		} catch (InterruptedException e) {
 			LOGGER.error("Error while enqueueing message from Pulsar",e);
-		}
-		try {
-			consumer.acknowledge(message);
-		} catch (PulsarClientException e) {
-			LOGGER.error("Error while acknowledging message to Pulsar",e);
+		} finally {
+			try {
+				consumer.acknowledge(message);
+			} catch (PulsarClientException e) {
+				LOGGER.error("Error while acknowledging message to Pulsar", e);
+			}
 		}
 	}
 }

@@ -17,7 +17,6 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 
-import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
@@ -25,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf.*;
 
 //RELEASE-STATUS: DIST
 
@@ -93,26 +93,25 @@ public final class Distributor extends Thread {
 		statsThread = new StatsThread(frontier, this);
 	}
 
-	private boolean processURL(final ByteArrayList url, long now) {
+	private boolean processURL(final PageInfo pageInfo, long now) {
 		try {
 			VisitState visitState;
-			final byte[] urlBuffer = url.elements();
-			final int startOfpathAndQuery = BURL.startOfpathAndQuery(urlBuffer);
-
-			final int currentlyInStore = frontier.schemeAuthority2Count.get(urlBuffer, 0, startOfpathAndQuery);
+			byte[] schemeAuthority = pageInfo.getUrlSchemeAuthority().toByteArray();
+			final int currentlyInStore = frontier.schemeAuthority2Count.get(schemeAuthority, 0, schemeAuthority.length);
 			if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
-				visitState = schemeAuthority2VisitState.get(urlBuffer, 0, startOfpathAndQuery);
+				visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
 				if (visitState == null) {
 					// Test if we can add it to the newVisitState list or if we must hold it back !
 					// Todo : if maxVisitStates reached, send url to pulsar topic
 					// if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
-						final byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray(urlBuffer);
 						if (LOGGER.isTraceEnabled())
-							LOGGER.trace("New scheme+authority {} with path+query {}", it.unimi.di.law.bubing.util.Util.toString(schemeAuthority), it.unimi.di.law.bubing.util.Util.toString(BURL.pathAndQueryAsByteArray(url)));
+							LOGGER.trace("New scheme+authority {} with path+query {}",
+									it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
+									it.unimi.di.law.bubing.util.Util.toString(pageInfo.getRelativeInfo().getUrlPathQuery().toByteArray()));
 						visitState = new VisitState(schemeAuthority);
 						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
 						visitState.enqueueRobots();
-						visitState.enqueuePathQuery(BURL.pathAndQueryAsByteArray(url));
+						visitState.enqueueRelativePageInfo(pageInfo.getRelativeInfo().toByteArray());
 						synchronized (schemeAuthority2VisitState) {
 							schemeAuthority2VisitState.add(visitState);
 						}
@@ -123,16 +122,16 @@ public final class Distributor extends Thread {
 					if (frontier.virtualizer.count(visitState) > 0) {
 						// Safe: there are URLs on disk, and this fact cannot change concurrently.
 						movedFromSieveToVirtualizer++;
-						frontier.virtualizer.enqueueURL(visitState, url);
+						frontier.virtualizer.enqueueURL(visitState, new ByteArrayList(pageInfo.getRelativeInfo().toByteArray()));
 					} else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 						/* Safe: we are enqueueing to a sane (modulo race conditions)
 						 * visit state, which will be necessarily go through the DoneThread later. */
 						visitState.checkRobots(now);
-						visitState.enqueuePathQuery(BURL.pathAndQueryAsByteArray(url));
+						visitState.enqueueRelativePageInfo(pageInfo.getRelativeInfo().toByteArray());
 						movedFromSieveToWorkbench++;
 					} else { // visitState.urlsOnDisk == 0
 						movedFromSieveToVirtualizer++;
-						frontier.virtualizer.enqueueURL(visitState, url);
+						frontier.virtualizer.enqueueURL(visitState, new ByteArrayList(pageInfo.toByteArray()));
 					}
 				}
 			} else deletedFromSieve++;
@@ -183,8 +182,8 @@ public final class Distributor extends Thread {
 						// Note that this might make temporarily the workbench too big by a little bit.
 						for(int i = 100; i-- != 0 && ! frontier.quickReceivedToCrawlURLs.isEmpty();) {
 							round = -1;
-							ByteArrayList url = frontier.quickReceivedToCrawlURLs.take();
-							if (!processURL(url, now))
+							PageInfo urlInfo = frontier.quickReceivedToCrawlURLs.take();
+							if (!processURL(urlInfo, now))
 								i++;
 						}
 					}

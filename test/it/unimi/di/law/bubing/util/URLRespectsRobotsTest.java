@@ -63,7 +63,7 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, httpClient, null, null, true);
+		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		char[][] filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any");
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri1));
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri2));
@@ -90,7 +90,7 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, httpClient, null, null, true);
+		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 
 		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy"), url));
 		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo"), url));
@@ -116,7 +116,7 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, httpClient, null, null, true);
+		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy"), url));
 		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo"), url));
 		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy"), url));
@@ -140,7 +140,7 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, httpClient, null, null, true);
+		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		assertEquals(0, URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy").length);
 		assertEquals(0, URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo").length);
 	}
@@ -163,7 +163,7 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, httpClient, null, null, true);
+		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		final char[][] filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy");
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c")));
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/d")));
@@ -204,7 +204,7 @@ public class URLRespectsRobotsTest {
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 
-		fetchData.fetch(URI.create(BURL.schemeAndAuthority(url) + "/robots.txt"), httpClient, null, null, true);
+		fetchData.fetch(URI.create(BURL.schemeAndAuthority(url) + "/robots.txt"), null, httpClient, null, null, true);
 		char[][] filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy");
 		assertTrue(URLRespectsRobots.apply(filter, url));
 		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy");
@@ -216,7 +216,7 @@ public class URLRespectsRobotsTest {
 		assertFalse(URLRespectsRobots.apply(filter, url));
 
 		fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(URI.create("http://too.many/robots.txt"), httpClient, null, null, true);
+		fetchData.fetch(URI.create("http://too.many/robots.txt"), null, httpClient, null, null, true);
 		assertTrue(fetchData.exception instanceof RedirectException);
 
 		fetchData.close();
@@ -326,7 +326,7 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, httpClient, null, null, true);
+		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		char[][] filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any");
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri1));
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri2));

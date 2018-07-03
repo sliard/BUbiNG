@@ -18,6 +18,7 @@ package it.unimi.di.law.bubing.frontier.comm;
 //RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.frontier.Frontier;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.MurmurHash3;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
@@ -90,28 +91,16 @@ public final class DiscoveredURLSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ByteArrayList> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
+            final ArrayBlockingQueue<FrontierProtobuf.LinkInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
             while(! stop) {
-                final ByteArrayList url = quickToSendURLs.poll(1, TimeUnit.SECONDS);
+                final FrontierProtobuf.LinkInfo linkInfo = quickToSendURLs.poll(1, TimeUnit.SECONDS);
 
-                if (url != null) {
-                    final byte[] urlBuffer = url.elements();
-                    final int startOfHost = BURL.startOfHost(urlBuffer);
-                    final long hash = MurmurHash3.hash(urlBuffer, startOfHost, BURL.lengthOfHost(urlBuffer, startOfHost));
+                if (linkInfo != null) {
+                    byte[] schemeAuthority = linkInfo.getDestinationSchemeAuthority().toByteArray();
+                    final int startOfHost = BURL.startOfHost(schemeAuthority);
+                    final long hash = MurmurHash3.hash(schemeAuthority, startOfHost, BURL.lengthOfHost(schemeAuthority, startOfHost));
 
-                    /* BEGIN NON-PULSAR BLOCK
-                    final BubingJob job = new BubingJob(url);
-                    if (LOGGER.isDebugEnabled())
-                        LOGGER.debug("Passing job " + job.toString());
-                    try {
-                        frontier.agent.submit(job);
-                    } catch (Exception e) {
-                        // This just shouldn't happen.
-                        LOGGER.warn("Impossible to submit URL \"" + BURL.fromNormalizedByteArray(url.toByteArray())+"\"", e);
-                    }
-                    END NON-PULSAR BLOCK */
-
-                    pulsarProducers.get((int)((hash & 0x7fffffffffffffffl) % pulsarProducers.size())).sendAsync(urlBuffer);
+                    pulsarProducers.get((int)((hash & 0x7fffffffffffffffl) % pulsarProducers.size())).sendAsync(linkInfo.toByteArray());
                 }
             }
         }

@@ -4,10 +4,12 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Sets;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
+import com.google.protobuf.ByteString;
 import com.ibm.icu.text.CharsetDetector;
 import com.ibm.icu.text.CharsetMatch;
 import com.martiansoftware.jsap.*;
 import it.unimi.di.law.bubing.Agent;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.bubing.util.Util;
 import it.unimi.di.law.bubing.util.cld2.Cld2Result;
@@ -93,35 +95,35 @@ public class HTMLParser<T> implements Parser<T> {
 	/** An implementation of a {@link Parser.LinkReceiver} that accumulates the URLs in a public set. */
 	public final static class SetLinkReceiver implements LinkReceiver {
 		/** The set of URLs gathered so far. */
-		public final Set<URI> urls = new ObjectLinkedOpenHashSet<>();
+		public final Set<FrontierProtobuf.LinkInfo> urls = new ObjectLinkedOpenHashSet<>();
 
 		@Override
-		public void location(URI location) {
+		public void location(FrontierProtobuf.LinkInfo location) {
 			urls.add(location);
 		}
 
 		@Override
-		public void metaLocation(URI location) {
+		public void metaLocation(FrontierProtobuf.LinkInfo location) {
 			urls.add(location);
 		}
 
 		@Override
-		public void metaRefresh(URI refresh) {
+		public void metaRefresh(FrontierProtobuf.LinkInfo refresh) {
 			urls.add(refresh);
 		}
 
 		@Override
-		public void link(URI link) {
+		public void link(FrontierProtobuf.LinkInfo link) {
 			urls.add(link);
 		}
 
 		@Override
-		public void init(URI responseUrl) {
+		public void init(FrontierProtobuf.CrawlRequest responseUrl) {
 			urls.clear();
 		}
 
 		@Override
-		public Iterator<URI> iterator() {
+		public Iterator<FrontierProtobuf.LinkInfo> iterator() {
 			return urls.iterator();
 		}
 
@@ -522,6 +524,21 @@ public class HTMLParser<T> implements Parser<T> {
 		this(null, null, false, CHAR_BUFFER_SIZE);
 	}
 
+
+	private FrontierProtobuf.CrawlRequest.Builder makePageInfoFromURI(final URI origin) {
+		FrontierProtobuf.CrawlRequest.Builder newPageInfo = FrontierProtobuf.CrawlRequest.newBuilder();
+		newPageInfo.setSchemeAuthority(ByteString.copyFrom(BURL.schemeAndAuthority(origin).getBytes(Charsets.US_ASCII)));
+		return newPageInfo;
+	}
+	private FrontierProtobuf.LinkInfo.Builder makeLinkInfoFromBasicURI(final URI targetURI) {
+		FrontierProtobuf.LinkInfo.Builder newLinkInfo = FrontierProtobuf.LinkInfo.newBuilder();
+		newLinkInfo.setSchemeAuthority(
+				ByteString.copyFrom(BURL.schemeAndAuthority(targetURI).getBytes(Charsets.US_ASCII)));
+		newLinkInfo.setPathQuery(
+				ByteString.copyFrom(BURL.pathAndQuery(targetURI).getBytes(Charsets.US_ASCII)));
+		return newLinkInfo;
+	}
+
 	/** Pre-process a string that represents a raw link found in the page, trying to derelativize it. If it succeeds, the
 	 *  resulting URL is passed to the link receiver.
 	 *
@@ -529,11 +546,22 @@ public class HTMLParser<T> implements Parser<T> {
 	 * @param base the base URL to be used to derelativize the link.
 	 * @param s the raw link to be derelativized.
 	 */
-	protected void process(final LinkReceiver linkReceiver, final URI base, final String s) {
+
+	protected void process(final LinkReceiver linkReceiver, final URI base, final String s,
+						   final String anchorText,
+						   final boolean isNoFollow, final boolean isNoIndex, final boolean isCanonical) {
 		if (s == null) return;
 		final URI url = BURL.parse(s);
 		if (url == null) return;
-		linkReceiver.link(base.resolve(url));
+		URI targetURI = base.resolve(url);
+		FrontierProtobuf.LinkInfo.Builder newLinkInfo = makeLinkInfoFromBasicURI(url);
+		if (anchorText != null && anchorText.length() > 0)
+			newLinkInfo.setLinkContent(anchorText);
+
+		newLinkInfo.setWeight(1.0f);
+		// LinkInfo Origin will be set later
+
+		linkReceiver.link(newLinkInfo.buildPartial());
 	}
 
 	@Override
@@ -541,8 +569,12 @@ public class HTMLParser<T> implements Parser<T> {
 		guessedCharset = null;
 		boolean charsetValid = false;
 		guessedLanguage = null;
-		charsetDetectionInfo.icuCharset=charsetDetectionInfo.httpHeaderCharset=charsetDetectionInfo.htmlMetaCharset="-";
-		languageDetectionInfo.cld2Language=languageDetectionInfo.htmlLanguage=languageDetectionInfo.httpHeaderLanguage="-";
+		charsetDetectionInfo.icuCharset=
+				charsetDetectionInfo.httpHeaderCharset=
+						charsetDetectionInfo.htmlMetaCharset="-";
+		languageDetectionInfo.cld2Language=
+				languageDetectionInfo.htmlLanguage=
+						languageDetectionInfo.httpHeaderLanguage="-";
 		rewritten.setLength(0);
 		textContent.init();
 
@@ -679,7 +711,8 @@ public class HTMLParser<T> implements Parser<T> {
 		}
 		finalGuessedCharset = charset;
 
-		linkReceiver.init(uri);
+		FrontierProtobuf.CrawlRequest origin = makePageInfoFromURI(uri).buildPartial();
+		linkReceiver.init(origin);
 		if (textProcessor != null) textProcessor.init(uri);
 
 		// Get location if present
@@ -691,8 +724,12 @@ public class HTMLParser<T> implements Parser<T> {
 			final URI location = BURL.parse(locationHeader.getValue());
 			if (location != null) {
 				// This shouldn't happen by standard, but people unfortunately does it.
-				if (! location.isAbsolute() && LOGGER.isDebugEnabled()) LOGGER.debug("Found relative header location URL: \"{}\"", location);
-				linkReceiver.location(this.location = uri.resolve(location));
+				if (! location.isAbsolute() && LOGGER.isDebugEnabled())
+					LOGGER.debug("Found relative header location URL: \"{}\"", location);
+
+				this.location = uri.resolve(location);
+				linkReceiver.location(makeLinkInfoFromBasicURI(this.location).buildPartial());
+
 			}
 		}
 
@@ -743,10 +780,14 @@ public class HTMLParser<T> implements Parser<T> {
 
 					// IFRAME or FRAME + SRC
 
-					if (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED) process(linkReceiver, base, startTag.getAttributeValue("src"));
-					else if (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT) process(linkReceiver, base, startTag.getAttributeValue("src"));
-					else if (name == HTMLElementName.OBJECT) process(linkReceiver, base, startTag.getAttributeValue("data"));
-					else if (name == HTMLElementName.A || name == HTMLElementName.AREA || name == HTMLElementName.LINK) process(linkReceiver, base, startTag.getAttributeValue("href"));
+					if (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED)
+						process(linkReceiver, base, startTag.getAttributeValue("src"), null, false,false,false);
+					else if (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT)
+						process(linkReceiver, base, startTag.getAttributeValue("src"),null, false, false ,false);
+					else if (name == HTMLElementName.OBJECT)
+						process(linkReceiver, base, startTag.getAttributeValue("data"), null, false, false, false);
+					else if (name == HTMLElementName.A || name == HTMLElementName.AREA || name == HTMLElementName.LINK)
+						process(linkReceiver, base, startTag.getAttributeValue("href"), null, false, false, false);
 					else if (name == HTMLElementName.BASE) {
 						final String s = startTag.getAttributeValue("href");
 						if (s != null) {
@@ -775,7 +816,8 @@ public class HTMLParser<T> implements Parser<T> {
 									if (refresh != null) {
 										// This shouldn't happen by standard, but people unfortunately does it.
 										if (! refresh.isAbsolute() && LOGGER.isDebugEnabled()) LOGGER.debug("Found relative META refresh URL: \"{}\"", urlPattern);
-										linkReceiver.metaRefresh(base.resolve(refresh));
+
+										linkReceiver.metaRefresh(makeLinkInfoFromBasicURI(base.resolve(refresh)).buildPartial());
 									}
 								}
 							}
@@ -786,7 +828,8 @@ public class HTMLParser<T> implements Parser<T> {
 								if (metaLocation != null) {
 									// This shouldn't happen by standard, but people unfortunately does it.
 									if (! metaLocation.isAbsolute() && LOGGER.isDebugEnabled()) LOGGER.debug("Found relative META location URL: \"{}\"", content);
-									linkReceiver.metaLocation(this.metaLocation = base.resolve(metaLocation));
+									this.metaLocation = base.resolve(metaLocation);
+									linkReceiver.metaLocation(makeLinkInfoFromBasicURI(this.metaLocation).buildPartial());
 								}
 							}
 						}
@@ -1125,8 +1168,12 @@ public class HTMLParser<T> implements Parser<T> {
 		System.out.println("Links: " + linkReceiver.urls);
 
 		final Set<String> urlStrings = new ObjectOpenHashSet<>();
-		for (final URI link: linkReceiver.urls) urlStrings.add(link.toString());
-		if (urlStrings.size() != linkReceiver.urls.size()) System.out.println("There are " + linkReceiver.urls.size() + " URIs but " + urlStrings.size() + " strings");
+		for (final FrontierProtobuf.LinkInfo link: linkReceiver.urls) urlStrings.add(
+				BURL.fromNormalizedSchemeAuthorityAndPathQuery(
+					link.getSchemeAuthority().asReadOnlyByteBuffer().array(),
+					link.getPathQuery().asReadOnlyByteBuffer().array()).toASCIIString());
+		if (urlStrings.size() != linkReceiver.urls.size())
+			System.out.println("There are " + linkReceiver.urls.size() + " URIs but " + urlStrings.size() + " strings");
 
 	}
 

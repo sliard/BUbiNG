@@ -1,0 +1,69 @@
+syntax = "proto3";
+option java_outer_classname = "FrontierProtobuf";
+option java_package = "it.unimi.di.law.bubing.protobuf";
+
+message CrawlRequest {
+    bytes schemeAuthority = 1;
+    bytes urlPathQuery = 2;
+
+}
+
+message CrawlRequestOptions {
+    bool analyseLang = 1;
+    bool analyseDigest = 2;
+    bool analyseCategory = 3;
+    bool analyseTextQuality = 4;
+}
+
+message CrawledPageInfo {
+    uint32 depth = 2;
+    uint32 language = 3;
+    float textQuality = 4;
+    uint32 contentLength = 6;
+    uint32 httpStatus = 7;
+    string url = 8;
+    uint32 fetchDuration = 9;
+    uint64 fetchTime = 10;
+    uint32 nbExternalOutLinks = 11;
+    Categorization categorisation = 12;
+    repeated LinkInfo internalLinks = 13;
+    repeated LinkInfo externalLinks = 14;
+
+}
+
+message Categorization {
+
+}
+
+message LinkInfo {
+    bytes schemeAuthority = 2;
+    bytes pathQuery = 3;
+    float weight = 4;
+    uint32 position = 5;
+    uint32 size = 6;
+    unit32
+    string linkContent = 5;
+    LinkType linkType = 6;
+    LinkFlavor linkFlavor = 7;
+}
+
+message LinkFlavor {
+    bool noFollow = 1;
+    bool noArchive = 2;
+    bool noSnippet = 3;
+    bool noIndex = 4;
+}
+
+enum LinkType {
+    UNKOWN = 0;
+    FRAME = 1;
+    IFRAME = 2;
+    EMBED = 3;
+    IMG = 4;
+    OBJECT = 5;
+    A = 6;
+    AREA = 7;
+    LINK = 8;
+    CANONICAL = 9;
+}
+

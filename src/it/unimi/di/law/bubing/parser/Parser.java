@@ -6,6 +6,7 @@ import java.nio.charset.Charset;
 import java.util.Iterator;
 import java.util.Locale;
 
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
 import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import org.apache.http.HttpResponse;
@@ -49,44 +50,45 @@ public interface Parser<T> extends Filter<URIResponse> {
 	/**
 	 * A class that can receive URLs discovered during parsing. It may be used to iterate over the
 	 * URLs found in the current page, but what will be actually returned by the iterator is
-	 * implementation-dependent. It can be assumed that {@link #init(URI)} is called before every
+	 * implementation-dependent. It can be assumed that
+	 * {@link #init(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawlRequest)} is called before every
 	 * other method when parsing a page, exactly once per page.
 	 */
-	public static interface LinkReceiver extends Iterable<URI> {
+	public static interface LinkReceiver extends Iterable<FrontierProtobuf.LinkInfo> {
 		/**
 		 * Handles the location defined by headers.
 		 *
 		 * @param location the location defined by headers.
 		 */
-		public void location(URI location);
+		public void location(FrontierProtobuf.LinkInfo location);
 
 		/**
 		 * Handles the location defined by a <code>META</code> element.
 		 *
 		 * @param location the location defined by the <code>META</code> element.
 		 */
-		public void metaLocation(URI location);
+		public void metaLocation(FrontierProtobuf.LinkInfo location);
 
 		/**
 		 * Handles the refresh defined by a <code>META</code> element.
 		 *
 		 * @param refresh the URL defined by the <code>META</code> element.
 		 */
-		public void metaRefresh(URI refresh);
+		public void metaRefresh(FrontierProtobuf.LinkInfo refresh);
 
 		/**
 		 * Handles a link.
 		 *
 		 * @param uri a link discovered during the parsing phase.
 		 */
-		public void link(URI uri);
+		public void link(FrontierProtobuf.LinkInfo uri);
 
 		/**
 		 * Initializes this receiver for a new page.
 		 *
 		 * @param responseUrl the URL of the page to be parsed.
 		 */
-		public void init(URI responseUrl);
+		public void init(FrontierProtobuf.CrawlRequest responseUrl);
 
 		public int size();
 	}
@@ -113,22 +115,22 @@ public interface Parser<T> extends Filter<URIResponse> {
 	/** A no-op implementation of {@link LinkReceiver}. */
 	public final static LinkReceiver NULL_LINK_RECEIVER = new LinkReceiver() {
 		@Override
-		public void location(URI location) {}
+		public void location(FrontierProtobuf.LinkInfo location) {}
 
 		@Override
-		public void metaLocation(URI location) {}
+		public void metaLocation(FrontierProtobuf.LinkInfo location) {}
 
 		@Override
-		public void metaRefresh(URI refresh) {}
+		public void metaRefresh(FrontierProtobuf.LinkInfo refresh) {}
 
 		@Override
-		public void link(URI link) {}
+		public void link(FrontierProtobuf.LinkInfo link) {}
 
 		@Override
-		public void init(URI responseUrl) {}
+		public void init(FrontierProtobuf.CrawlRequest responseUrl) {}
 
 		@Override
-		public Iterator<URI> iterator() {
+		public Iterator<FrontierProtobuf.LinkInfo> iterator() {
 			return ObjectSets.EMPTY_SET.iterator();
 		}
 

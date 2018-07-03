@@ -66,7 +66,7 @@ public class HttpResponseWarcRecordTest {
 		final HttpClient httpClient = FetchDataTest.getHttpClient(null, false);
 		final FetchData fetchData = new FetchData(testConfiguration);
 
-		fetchData.fetch(uri, httpClient, null, null, false);
+		fetchData.fetch(uri, null, httpClient, null, null, false);
 		final HttpResponseWarcRecord record = new HttpResponseWarcRecord(uri, fetchData.response());
 		writer.write(record);
 		fetchData.close();

@@ -16,10 +16,12 @@ import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
+import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.*;
 import it.unimi.di.law.bubing.frontier.comm.DiscoveredURLSendThread;
 import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
 import it.unimi.di.law.bubing.frontier.comm.ToCrawlURLReceiver;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
@@ -152,8 +154,15 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		long seedPerMillisecond = 2;
 		while (rc.seed.hasNext() && !rc.stopping) {
 			final URI nextSeed = rc.seed.next();
-			if (nextSeed != null)
-				frontier.enqueue(BURL.toByteArrayList(nextSeed, list).clone());
+			if (nextSeed != null) {
+				byte[] burl = BURL.toByteArray(nextSeed);
+				FrontierProtobuf.LinkInfo linkInfo = FrontierProtobuf.LinkInfo.newBuilder()
+						.setDestinationSchemeAuthority(ByteString.copyFrom(BURL.schemeAndAuthorityAsByteArray(burl)))
+						.setDestinationPathQuery(ByteString.copyFrom(BURL.pathAndQueryAsByteArray(burl)))
+						.build();
+				frontier.enqueue(linkInfo);
+			}
+
 			seedCount ++;
 			long diff = startTime + seedCount/seedPerMillisecond - System.currentTimeMillis();
 			if (diff > 0)

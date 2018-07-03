@@ -1,25 +1,7 @@
 package it.unimi.di.law.bubing.store;
 
-/*		 
- * Copyright (C) 2012-2013 Paolo Boldi, Massimo Santini, and Sebastiano Vigna 
- *
- *  This program is free software; you can redistribute it and/or modify it
- *  under the terms of the GNU General Public License as published by the Free
- *  Software Foundation; either version 3 of the License, or (at your option)
- *  any later version.
- *
- *  This program is distributed in the hope that it will be useful, but
- *  WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- *  or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- *  for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, see <http://www.gnu.org/licenses/>.
- *
- */
-
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.protobuf.WebPageTextContentProto;
+import it.unimi.di.law.bubing.protobuf.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
@@ -39,10 +21,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-
 //RELEASE-STATUS: DIST
 
-/** A {@link Store} implementation using the {@link it.unimi.di.law.warc} package. */
+/** A {@link Store} implementation using Pulsar. */
 
 public class PulsarWarcStore implements Closeable, Store {
 	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );

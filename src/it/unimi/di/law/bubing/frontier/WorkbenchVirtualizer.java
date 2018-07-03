@@ -77,7 +77,7 @@ public class WorkbenchVirtualizer implements Closeable {
 	/** Dequeues at most the given number of path+queries into the given visit state.
 	 *
 	 * <p>Note that the path+queries are directly enqueued into the visit state using
-	 * {@link VisitState#enqueuePathQuery(byte[])}.
+	 * {@link VisitState#enqueueRelativePageInfo(byte[])}.
 	 *
 	 * @param visitState the visitState in which path+queries will be moved.
 	 * @param maxUrls the maximum number of path+queries to move.
@@ -87,7 +87,7 @@ public class WorkbenchVirtualizer implements Closeable {
 	public int dequeuePathQueries(final VisitState visitState, final int maxUrls) throws IOException {
 		if (maxUrls == 0) return 0;
 		final int dequeued = (int)Math.min(maxUrls, byteArrayDiskQueues.count(visitState));
-		for(int i = dequeued; i-- != 0;) visitState.enqueuePathQuery(byteArrayDiskQueues.dequeue(visitState));
+		for(int i = dequeued; i-- != 0;) visitState.enqueueRelativePageInfo(byteArrayDiskQueues.dequeue(visitState));
 		return dequeued;
 	}
 

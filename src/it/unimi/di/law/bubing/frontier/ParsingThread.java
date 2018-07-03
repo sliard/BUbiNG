@@ -11,8 +11,12 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.exensa.wdl.common.LanguageCodes;
+import com.exensa.wdl.protobuf.db.ProtoLink;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
+import com.google.protobuf.ByteString;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.apache.commons.io.IOUtils;
@@ -71,8 +75,9 @@ import java.util.Random;
  * a {@link FetchData} that has been previously enqueued by a {@link FetchingThread}.
  * The content of the response is analyzed and the body of the response is possibly parsed, and its
  * digest is computed.
- * Newly discovered (during parsing) URLs are {@linkplain Frontier#enqueue(ByteArrayList) enqueued to the frontier}. Then,
- * a signal is issued on the {@link FetchData}, so that the owner (a {@link FetchingThread}}
+ * Newly discovered (during parsing) URLs are
+ * {@linkplain Frontier#enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.LinkInfo) enqueued to the frontier}.
+ * Then, a signal is issued on the {@link FetchData}, so that the owner (a {@link FetchingThread}}
  * can work on a different URL or possibly {@link Workbench#release(VisitState) release the visit state}.
  *
  * <p>At each step (fetching, parsing, following the URLs of a page, scheduling new URLs, storing) a
@@ -129,9 +134,12 @@ public class ParsingThread extends Thread {
 		EXCEPTION_HOST_KILLER.add(org.apache.http.conn.ConnectTimeoutException.class);
 	}
 
-	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init(URI, byte[], char[][]) initialized}
+
+
+	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init initialized}
 	 *  specifying URI and scheme/authority of the page being visited and the robot filter to be
-	 *  applied. Then, one or more URLs can be {@linkplain #enqueue(URI) enqueued}: the actual
+	 *  applied. Then, one or more URLs can be
+	 *  {@linkplain #enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.LinkInfo) enqueued}: the actual
 	 *  enqueuing takes place only if the URL passes both the schedule and the robots filter.
 	 */
 	protected static final class FrontierEnqueuer {
@@ -140,11 +148,16 @@ public class ParsingThread extends Thread {
 		private final Filter<Link> scheduleFilter;
 		private byte[] schemeAuthority;
 		private URI uri;
+		private FrontierProtobuf.CrawlRequest crawlRequest;
+		private FetchData fetchData;
 		private char[][] robotsFilter;
 		private final ByteArrayList byteList;
-		private ObjectArrayList<ByteArrayList> urls;
+		private ObjectArrayList<FrontierProtobuf.LinkInfo> urls;
 		public int outlinks;
 		public int scheduledLinks;
+		public float totalWeight;
+
+		public FrontierProtobuf.CrawledPageInfo.Builder pageInfo;
 
 		/** Creates the enqueuer.
 		 *
@@ -154,6 +167,7 @@ public class ParsingThread extends Thread {
 		public FrontierEnqueuer(final Frontier frontier, final RuntimeConfiguration rc) {
 			this.frontier = frontier;
 			this.scheduleFilter = rc.scheduleFilter;
+
 			byteList = new ByteArrayList();
 		}
 
@@ -162,16 +176,33 @@ public class ParsingThread extends Thread {
 		 * @param schemeAuthority the scheme+authority of the page to be parsed.
 		 * @param robotsFilter the robots filter of the (authority of the) page to be parsed.
 		 */
-		public void init(URI uri, byte[] schemeAuthority, char[][] robotsFilter) {
+		public void init(byte[] schemeAuthority,
+										 FrontierProtobuf.CrawlRequest crawlRequest,
+										 FetchData fetchData,
+										 char[][] robotsFilter) {
 			scheduledLinks = outlinks = 0;
-			this.uri = uri;
+			this.uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, crawlRequest.getUrlPathQuery().toByteArray());
+			this.crawlRequest = crawlRequest;
 			this.schemeAuthority = schemeAuthority;
+			this.pageInfo = FrontierProtobuf.CrawledPageInfo.newBuilder().setUrl(BURL.schemeAndAuthority(schemeAuthority) + BURL.pathAndQuery(this.uri));
 			this.robotsFilter = robotsFilter;
-			urls = new ObjectArrayList<>(16);
+			this.totalWeight = 0.0f;
+			this.fetchData = fetchData;
+			this.urls = new ObjectArrayList<>(16);
 		}
 
 		public void close() {
-			frontier.enqueueUrlList(urls);
+			for (int i = 0; i < urls.size(); i++) {
+				FrontierProtobuf.LinkInfo li = urls.get(i);
+				urls.set(i, li.toBuilder().setWeight(li.getWeight() / totalWeight).build());
+			}
+			pageInfo.addAllExternalLinks(urls);
+			pageInfo.setContentLength((int)this.fetchData.response().getEntity().getContentLength())
+					.setFetchDuration((int)(this.fetchData.endTime - this.fetchData.startTime))
+					.setFetchTime(this.fetchData.startTime)
+					.setHttpStatus(this.fetchData.response().getStatusLine().getStatusCode())
+					.setLanguage(LanguageCodes.getByte(fetchData.))
+			frontier.enqueueUrlList(pageInfo.build());
 		}
 
 		private static boolean sameSchemeAuthority(final byte[] schemeAuthority, final URI url) {
@@ -192,9 +223,12 @@ public class ParsingThread extends Thread {
 		/** Enqueues the given URL, provided that it passes the schedule filter, its host is {@link RuntimeConfiguration#blackListedHostHashes blacklisted}.
 		 *  Moreover, if the scheme+authority is the same as the one of the page being parsed, we check that the URL respects the robots filter.
 		 *
-		 * @param url the URL to be enqueued.
+		 * @param linkInfo the LinkInfo to be enqueued.
 		 */
-		public void enqueue(final URI url) {
+		public void enqueue(final FrontierProtobuf.LinkInfo linkInfo) {
+			final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(
+					linkInfo.getSchemeAuthority().asReadOnlyByteBuffer().array(),
+					linkInfo.getPathQuery().asReadOnlyByteBuffer().array());
 			if (ASSERTS) assert url != null;
 			outlinks++;
 			if (! scheduleFilter.apply(new Link(uri, url))) {
@@ -205,7 +239,7 @@ public class ParsingThread extends Thread {
 				return;
 
 			final boolean sameSchemeAuthority = sameSchemeAuthority(schemeAuthority, url);
-			assert it.unimi.di.law.bubing.util.Util.toString(schemeAuthority).equals(BURL.schemeAndAuthority(url)) == sameSchemeAuthority : "(" + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority) + ").equals(" + BURL.schemeAndAuthority(url) + ") != " + sameSchemeAuthority;
+			if (ASSERTS) assert it.unimi.di.law.bubing.util.Util.toString(schemeAuthority).equals(BURL.schemeAndAuthority(url)) == sameSchemeAuthority : "(" + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority) + ").equals(" + BURL.schemeAndAuthority(url) + ") != " + sameSchemeAuthority;
 
 			if (RuntimeConfiguration.FETCH_ROBOTS) {
 				if (robotsFilter == null)
@@ -217,8 +251,8 @@ public class ParsingThread extends Thread {
 			}
 
 			try {
-				BURL.toByteArrayList(url, byteList);
-				urls.add(byteList.clone());
+				totalWeight += 1.0f;
+				urls.add(linkInfo);
 				scheduledLinks++;
 			}
 			catch (final Exception e) {
@@ -380,7 +414,10 @@ public class ParsingThread extends Thread {
 					String guessedLanguage = null;
 					final LinkReceiver linkReceiver = new HTMLParser.SetLinkReceiver();
 
-					frontierLinkReceiver.init(fetchData.uri(), visitState.schemeAuthority, visitState.robotsFilter);
+					frontierLinkReceiver.init(visitState.schemeAuthority,
+							fetchData.getCrawlRequest(),
+							visitState.robotsFilter,
+							fetchData);
 					final long streamLength = fetchData.response().getEntity().getContentLength();
 					Map<String, String> extraMap = ImmutableMap.of("","");
 					StringBuilder textContent = null;
@@ -441,8 +478,10 @@ public class ParsingThread extends Thread {
 												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset));
 										if (guessedCharset != null)
 											fetchData.extraMap.put("BUbiNG-Guessed-Charset",guessedCharset.name());
-										if (guessedLanguage != null)
+										if (guessedLanguage != null) {
 											fetchData.extraMap.put("BUbiNG-Guessed-Language", guessedLanguage);
+											fetchData.lang = LanguageCodes.getByte(guessedLanguage);
+										}
 										break;
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
@@ -450,7 +489,11 @@ public class ParsingThread extends Thread {
 								frontier.outdegree.add(linkReceiver.size());
 								final String currentHost = url.getHost();
 								int currentOutHostDegree = 0;
-								for(final URI u: linkReceiver) if(! currentHost.equals(u.getHost())) currentOutHostDegree++;
+								for(final FrontierProtobuf.LinkInfo u: linkReceiver)
+									if(! currentHost.equals(
+											BURL.hostFromSchemeAndAuthority(
+													u.getSchemeAuthority().asReadOnlyByteBuffer().array())))
+										currentOutHostDegree++;
 								frontier.externalOutdegree.add(currentOutHostDegree);
 							}
 							else if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not parsing page " + url);
@@ -474,7 +517,7 @@ public class ParsingThread extends Thread {
 					if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, Boolean.valueOf(isNotDuplicate));
 					fetchData.isDuplicate(!isNotDuplicate);
 					if (isNotDuplicate && (rc.followFilter.apply(fetchData))) {
-						for (final URI u : linkReceiver) frontierLinkReceiver.enqueue(u);
+						for (final FrontierProtobuf.LinkInfo u : linkReceiver) frontierLinkReceiver.enqueue(u);
 						frontierLinkReceiver.close();
 					} else {
 						LOGGER.debug("NOT Following {}", fetchData.uri());
