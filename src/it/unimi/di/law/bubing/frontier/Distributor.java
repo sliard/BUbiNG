@@ -93,10 +93,10 @@ public final class Distributor extends Thread {
 		statsThread = new StatsThread(frontier, this);
 	}
 
-	private boolean processURL(final PageInfo pageInfo, long now) {
+	private boolean processURL(final CrawlRequest pageInfo, long now) {
 		try {
 			VisitState visitState;
-			byte[] schemeAuthority = pageInfo.getUrlSchemeAuthority().toByteArray();
+			byte[] schemeAuthority = pageInfo.getSchemeAuthority().toByteArray();
 			final int currentlyInStore = frontier.schemeAuthority2Count.get(schemeAuthority, 0, schemeAuthority.length);
 			if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
 				visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
@@ -107,11 +107,11 @@ public final class Distributor extends Thread {
 						if (LOGGER.isTraceEnabled())
 							LOGGER.trace("New scheme+authority {} with path+query {}",
 									it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
-									it.unimi.di.law.bubing.util.Util.toString(pageInfo.getRelativeInfo().getUrlPathQuery().toByteArray()));
+									it.unimi.di.law.bubing.util.Util.toString(pageInfo.getUrlPathQuery().toByteArray()));
 						visitState = new VisitState(schemeAuthority);
 						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
 						visitState.enqueueRobots();
-						visitState.enqueueRelativePageInfo(pageInfo.getRelativeInfo().toByteArray());
+						visitState.enqueueCrawlRequest(CrawlRequest.newBuilder(pageInfo).clearSchemeAuthority().build().toByteArray());
 						synchronized (schemeAuthority2VisitState) {
 							schemeAuthority2VisitState.add(visitState);
 						}
@@ -122,12 +122,12 @@ public final class Distributor extends Thread {
 					if (frontier.virtualizer.count(visitState) > 0) {
 						// Safe: there are URLs on disk, and this fact cannot change concurrently.
 						movedFromSieveToVirtualizer++;
-						frontier.virtualizer.enqueueURL(visitState, new ByteArrayList(pageInfo.getRelativeInfo().toByteArray()));
+						frontier.virtualizer.enqueueURL(visitState, new ByteArrayList(pageInfo.toByteArray()));
 					} else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 						/* Safe: we are enqueueing to a sane (modulo race conditions)
 						 * visit state, which will be necessarily go through the DoneThread later. */
 						visitState.checkRobots(now);
-						visitState.enqueueRelativePageInfo(pageInfo.getRelativeInfo().toByteArray());
+						visitState.enqueueCrawlRequest(pageInfo.toByteArray());
 						movedFromSieveToWorkbench++;
 					} else { // visitState.urlsOnDisk == 0
 						movedFromSieveToVirtualizer++;
@@ -182,7 +182,7 @@ public final class Distributor extends Thread {
 						// Note that this might make temporarily the workbench too big by a little bit.
 						for(int i = 100; i-- != 0 && ! frontier.quickReceivedToCrawlURLs.isEmpty();) {
 							round = -1;
-							PageInfo urlInfo = frontier.quickReceivedToCrawlURLs.take();
+							CrawlRequest urlInfo = frontier.quickReceivedToCrawlURLs.take();
 							if (!processURL(urlInfo, now))
 								i++;
 						}

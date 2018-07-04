@@ -91,12 +91,12 @@ public final class DiscoveredURLSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<FrontierProtobuf.LinkInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
+            final ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
             while(! stop) {
-                final FrontierProtobuf.LinkInfo linkInfo = quickToSendURLs.poll(1, TimeUnit.SECONDS);
+                final FrontierProtobuf.CrawledPageInfo linkInfo = quickToSendURLs.poll(1, TimeUnit.SECONDS);
 
                 if (linkInfo != null) {
-                    byte[] schemeAuthority = linkInfo.getDestinationSchemeAuthority().toByteArray();
+                    byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray(BURL.toByteArray(BURL.parse(linkInfo.getUrl())));
                     final int startOfHost = BURL.startOfHost(schemeAuthority);
                     final long hash = MurmurHash3.hash(schemeAuthority, startOfHost, BURL.lengthOfHost(schemeAuthority, startOfHost));
 

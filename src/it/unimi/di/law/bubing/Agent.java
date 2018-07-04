@@ -147,28 +147,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	public void run() throws Exception {
 		// We wait for the notification of a stop event, usually caused by a call to stop().
 		frontier.rc.ensureNotPaused();
-		final ByteArrayList list = new ByteArrayList();
-		// Limit seed rate to seedPerMillisecond url/ms
-		long seedCount = 0;
-		long startTime = System.currentTimeMillis();
-		long seedPerMillisecond = 2;
-		while (rc.seed.hasNext() && !rc.stopping) {
-			final URI nextSeed = rc.seed.next();
-			if (nextSeed != null) {
-				byte[] burl = BURL.toByteArray(nextSeed);
-				FrontierProtobuf.LinkInfo linkInfo = FrontierProtobuf.LinkInfo.newBuilder()
-						.setDestinationSchemeAuthority(ByteString.copyFrom(BURL.schemeAndAuthorityAsByteArray(burl)))
-						.setDestinationPathQuery(ByteString.copyFrom(BURL.pathAndQueryAsByteArray(burl)))
-						.build();
-				frontier.enqueue(linkInfo);
-			}
 
-			seedCount ++;
-			long diff = startTime + seedCount/seedPerMillisecond - System.currentTimeMillis();
-			if (diff > 0)
-				Thread.sleep(diff);
-		}
-		LOGGER.info("Finished reading seeds");
 		synchronized (rc) {
 			if (!rc.stopping)
 				rc.wait();

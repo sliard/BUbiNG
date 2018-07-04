@@ -12,6 +12,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.commons.lang.RandomStringUtils;
 import org.apache.commons.lang.StringEscapeUtils;
 
 import com.google.common.base.Charsets;
@@ -104,15 +105,17 @@ public class NamedGraphServerHttpProxy extends Thread {
 	}
 
 	public static void generate(final long hashCode, final StringBuilder content, final CharSequence[] successors, boolean notescurl) {
+		content.append("<!DOCTYPE html>");
 		content.append("<html>\n<head>");
 		content.append("<!-- a very important comment -->");
-		content.append("<title>My page </title>");
+		ThreadLocalRandom trng = ThreadLocalRandom.current();
+		content.append("<title>My page " + RandomStringUtils.randomAlphabetic(trng.nextInt(10)+4) + "</title>");
 
 		content.append("<script type=\"text/javascript\">\n");
 		content.append("if(self!==top)window.document.write(\"\\u003Cstyle>body * {display:none !important;}\\u003C\\/style>\\u003Ca href=\\\"#\\\" onclick=\"+\n" +
 				"\"\\\"top.location.href=window.location.href\\\" style=\\\"display:block !important;padding:10px\\\">Go to Slack.com\\u003C\\/a>\");\n");
 		content.append("</script>");
-		ThreadLocalRandom trng = ThreadLocalRandom.current();
+
 		if (trng.nextDouble() > 0.05) { // 95% of the time
 			if (trng.nextDouble() > 0.8) // 30% of the time
 				content.append("<meta charset=\"UTF-8\">\n");
@@ -124,6 +127,8 @@ public class NamedGraphServerHttpProxy extends Thread {
 				content.append("<meta \nhttp-equiv=\"content-type\" \ncontent=\"text/html; charset=utf-8\">\n");
 			else
 				content.append("<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n");
+            if (trng.nextDouble() > 0.8) // 30% of the time
+                content.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
 		}
 
 		content.append("</head>\n<body>\n");

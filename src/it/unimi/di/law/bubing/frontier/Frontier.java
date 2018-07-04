@@ -17,7 +17,6 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 import com.google.common.io.Files;
-import com.google.common.primitives.Bytes;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
@@ -212,14 +211,15 @@ public class Frontier {
 	/** The runtime configuration. */
 	public final RuntimeConfiguration rc;
 
-	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
-	public ArrayBlockingQueue<FrontierProtobuf.LinkInfo> quickToSendDiscoveredURLs;
-
-	/** A queue to quickly buffer to be crawled URLs (as {@link it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo} serialized. */
-	public ArrayBlockingQueue<FrontierProtobuf.CrawlRequest> quickReceivedToCrawlURLs;
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
 	public ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToQueueURLLists[];
+
+	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
+	public ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToSendDiscoveredURLs;
+
+	/** A queue to quickly buffer to be crawled URLs (as {@link it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo} serialized. */
+	public ArrayBlockingQueue<FrontierProtobuf.CrawlRequest> quickReceivedToCrawlURLs;
 
 	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
 	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
@@ -274,7 +274,7 @@ public class Frontier {
 	protected final Distributor distributor;
 
 	/** The URL cache. This cache stores the most recent URLs that have been
-	 * {@linkplain Frontier#enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.LinkInfo) enqueued}. */
+	 * {@linkplain Frontier#enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo) enqueued}. */
 	public final FastApproximateByteArrayCache urlCache;
 
 	/** The workbench virtualizer used by this frontier. */
@@ -603,24 +603,17 @@ public class Frontier {
 	 *
 	 * </ul>
 	 *
-	 * @param linkInfo a {@linkplain BURL BUbiNG URL} to be enqueued to the BUbiNG crawl. */
-	public void enqueue(final FrontierProtobuf.LinkInfo linkInfo)  {
-
-		final int inStore = schemeAuthority2Count.get(linkInfo.getSchemeAuthority().toByteArray());
-		if (inStore >= rc.maxUrlsPerSchemeAuthority) return;
-
-		/*if (!urlCache.add(Bytes.concat(linkInfo.getDestinationSchemeAuthority().toByteArray(),
-				linkInfo.getDestinationPath().toByteArray())))
-			return;*/
+	 * @param crawledPageInfo a {@linkplain it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo Message} to be enqueued to the BUbiNG crawl. */
+	public void enqueue(final FrontierProtobuf.CrawledPageInfo crawledPageInfo)  {
 
 		try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out {}",
-					linkInfo.toString());
-			quickToSendDiscoveredURLs.offer(linkInfo);
+					crawledPageInfo.toString());
+			quickToSendDiscoveredURLs.offer(crawledPageInfo);
 		}
 		catch (IllegalStateException e) {
 			// This just shouldn't happen.
-			LOGGER.warn("Impossible to submit URL " + BURL.fromNormalizedByteArray(linkInfo.toByteArray()), e);
+			LOGGER.warn("Impossible to submit URL " + crawledPageInfo.toString(), e);
 		}
 
 		return;
@@ -876,12 +869,12 @@ public class Frontier {
 						stringWriter.write(uri.toASCIIString());
 						stringWriter.write("\n");
 					}
-					copyVisitState.enqueueRelativePageInfo(url);
+					copyVisitState.enqueueCrawlRequest(url);
 				}
 				//Copy back to original
 				while (!copyVisitState.isEmpty()) {
 					byte[] url = copyVisitState.dequeue();
-					visitState.enqueueRelativePageInfo(url);
+					visitState.enqueueCrawlRequest(url);
 				}
 			}
 		}

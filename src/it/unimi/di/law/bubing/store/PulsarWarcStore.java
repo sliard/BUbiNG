@@ -49,7 +49,6 @@ public class PulsarWarcStore implements Closeable, Store {
 		pulsarPlainTextProducer = pulsarClient.createProducer(rc.pulsarPlainTextTopic,  producerConfig);
 		outputStream = new ByteArrayOutputStream();
 		warcWriter = new UncompressedWarcWriter(outputStream);
-
 	}
 
 	@Override
@@ -81,6 +80,10 @@ public class PulsarWarcStore implements Closeable, Store {
 		pulsarPlainTextProducer.sendAsync(WebPageTextContentProto.WebPage.newBuilder()
 				.setUrl(uri.toString())
 				.setContent(textContent.toString())
+                .setHtml5(extraHeaders.get("BUbiNG-Guessed-Html5").equals("true"))
+                .setViewport(extraHeaders.get("BUbiNG-Guessed-responsive").equals("true"))
+                .setCharset(guessedCharset == null ? "" : guessedCharset)
+                .setLang(guessedLanguage == null ? "" : guessedLanguage)
 				.build()
 				.toByteArray());
 	}

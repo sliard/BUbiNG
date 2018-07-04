@@ -94,10 +94,10 @@ public final class ToCrawlURLReceiver implements MessageListener {
 
 	@Override
 	public void received(Consumer consumer, Message message) {
-		FrontierProtobuf.PageInfo pageInfo = null;
+		FrontierProtobuf.CrawlRequest crawlRequest = null;
 		try {
-			pageInfo = FrontierProtobuf.PageInfo.parseFrom(message.getData());
-			frontier.quickReceivedToCrawlURLs.put(pageInfo); // Will block until not full
+			crawlRequest = FrontierProtobuf.CrawlRequest.parseFrom(message.getData());
+			frontier.quickReceivedToCrawlURLs.put(crawlRequest); // Will block until not full
 		} catch (InvalidProtocolBufferException e) {
 			LOGGER.error("Error while parsing message from Pulsar",e);
 		} catch (InterruptedException e) {

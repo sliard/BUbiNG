@@ -38,60 +38,16 @@ import it.unimi.dsi.lang.FlyweightPrototype;
  *  <ul>
  *  	<li>it acts as a {@link Filter} that is able to decide whether it can parse a certain {@link URIResponse} or not (e.g.,
  *  	based on the declared <code>content-type</code> header etc.);
- *  	<li>while {@linkplain #parse(URI, HttpResponse, LinkReceiver) parsing}, it will send the links found in the document to the
- *  	specified {@link LinkReceiver}, that will typically accumulate them or send them to the appropriate class for processing;
- *  	<li>the {@link #parse(URI, HttpResponse, LinkReceiver) parsing} method will return a digest computed on a
+ *  	<li>while {@linkplain #parse(URI, HttpResponse, it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo.Builder) parsing},
+ *  	it will send the links found in the document to the
+ *  	specified {@link it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo.Builder)}, that will typically accumulate them or send them to the appropriate class for processing;
+ *  	<li>the {@link #parse(URI, HttpResponse, it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo.Builder)) parsing} method will return a digest computed on a
  *  	(possibly) suitably modified version of the document (the way in which the document it is actually modified and
  *		the way in which the hash is computed is implementation-dependent and should be commented by the implementing classes);
  *  	<li>after parsing, a {@linkplain #guessedCharset() guess of the charset used for the document} will be made available.
  *  </ul>
  */
 public interface Parser<T> extends Filter<URIResponse> {
-	/**
-	 * A class that can receive URLs discovered during parsing. It may be used to iterate over the
-	 * URLs found in the current page, but what will be actually returned by the iterator is
-	 * implementation-dependent. It can be assumed that
-	 * {@link #init(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawlRequest)} is called before every
-	 * other method when parsing a page, exactly once per page.
-	 */
-	public static interface LinkReceiver extends Iterable<FrontierProtobuf.LinkInfo> {
-		/**
-		 * Handles the location defined by headers.
-		 *
-		 * @param location the location defined by headers.
-		 */
-		public void location(FrontierProtobuf.LinkInfo location);
-
-		/**
-		 * Handles the location defined by a <code>META</code> element.
-		 *
-		 * @param location the location defined by the <code>META</code> element.
-		 */
-		public void metaLocation(FrontierProtobuf.LinkInfo location);
-
-		/**
-		 * Handles the refresh defined by a <code>META</code> element.
-		 *
-		 * @param refresh the URL defined by the <code>META</code> element.
-		 */
-		public void metaRefresh(FrontierProtobuf.LinkInfo refresh);
-
-		/**
-		 * Handles a link.
-		 *
-		 * @param uri a link discovered during the parsing phase.
-		 */
-		public void link(FrontierProtobuf.LinkInfo uri);
-
-		/**
-		 * Initializes this receiver for a new page.
-		 *
-		 * @param responseUrl the URL of the page to be parsed.
-		 */
-		public void init(FrontierProtobuf.CrawlRequest responseUrl);
-
-		public int size();
-	}
 
 	/**
 	 * A class that can receive piece of text discovered during parsing.
@@ -112,34 +68,6 @@ public interface Parser<T> extends Filter<URIResponse> {
 	}
 
 
-	/** A no-op implementation of {@link LinkReceiver}. */
-	public final static LinkReceiver NULL_LINK_RECEIVER = new LinkReceiver() {
-		@Override
-		public void location(FrontierProtobuf.LinkInfo location) {}
-
-		@Override
-		public void metaLocation(FrontierProtobuf.LinkInfo location) {}
-
-		@Override
-		public void metaRefresh(FrontierProtobuf.LinkInfo refresh) {}
-
-		@Override
-		public void link(FrontierProtobuf.LinkInfo link) {}
-
-		@Override
-		public void init(FrontierProtobuf.CrawlRequest responseUrl) {}
-
-		@Override
-		public Iterator<FrontierProtobuf.LinkInfo> iterator() {
-			return ObjectSets.EMPTY_SET.iterator();
-		}
-
-		@Override
-		public int size() {
-			return 0;
-		}
-	};
-
 	/**
 	 * Parses a response.
 	 *
@@ -148,7 +76,7 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 * @return a digest of the page content, or {@code null} if no digest has been
 	 * computed.
 	 */
-	public byte[] parse(final URI uri, final HttpResponse response, final LinkReceiver linkReceiver) throws IOException;
+	public byte[] parse(final URI uri, final HttpResponse response, final FrontierProtobuf.CrawledPageInfo.Builder linkReceiver) throws IOException;
 
 	/**
 	 * Returns a guessed charset for the document, or {@code null} if the charset could not be
@@ -176,8 +104,22 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 *
 	 * @return the cleaned page content or {@code null}.
 	 */
-
 	public StringBuilder getTextContent();
+
+	/**
+	 *
+	 *
+	 * @return a boolean which indicate if the html contains a rendering mode for narrow screen
+	 */
+	public Boolean responsiveDesign();
+
+	/**
+	 *
+	 *
+	 * @return a boolean which indicates if the html version is at least 5. Return false if the page can't be parse.
+	 */
+	public Boolean html5();
+
 
 	/**
 	 * Returns the result of the processing.

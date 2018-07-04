@@ -5,7 +5,6 @@ option java_package = "it.unimi.di.law.bubing.protobuf";
 message CrawlRequest {
     bytes schemeAuthority = 1;
     bytes urlPathQuery = 2;
-
 }
 
 message CrawlRequestOptions {
@@ -16,23 +15,34 @@ message CrawlRequestOptions {
 }
 
 message CrawledPageInfo {
+    PageRobot pageRobot = 1;
     uint32 depth = 2;
     uint32 language = 3;
     float textQuality = 4;
     uint32 contentLength = 6;
     uint32 httpStatus = 7;
     string url = 8;
-    uint32 fetchDuration = 9;
-    uint64 fetchTime = 10;
-    uint32 nbExternalOutLinks = 11;
-    Categorization categorisation = 12;
-    repeated LinkInfo internalLinks = 13;
-    repeated LinkInfo externalLinks = 14;
-
+    string title = 9;
+    uint32 fetchDuration = 10;
+    uint32 fetchTime = 11;
+    Categorization categorisation = 13;
+    repeated LinkInfo internalLinks = 14;
+    repeated LinkInfo externalLinks = 15;
 }
 
 message Categorization {
 
+}
+
+enum HTMLElement {
+    UNKNOWN_HTML_ELEMENT = 0;
+    H1 = 1;
+    H2 = 2;
+    H3 = 3;
+    H4 = 4;
+    H5 = 5;
+    H6 = 6;
+    LI = 7;
 }
 
 message LinkInfo {
@@ -41,21 +51,20 @@ message LinkInfo {
     float weight = 4;
     uint32 position = 5;
     uint32 size = 6;
-    unit32
-    string linkContent = 5;
-    LinkType linkType = 6;
-    LinkFlavor linkFlavor = 7;
+    HTMLElement htmlElement = 7;
+    string linkContent = 8;
+    LinkType linkType = 9;
+    LinkRel linkRel = 10;
+    CrawlerInfo crawlerInfo = 11;
 }
 
-message LinkFlavor {
-    bool noFollow = 1;
-    bool noArchive = 2;
-    bool noSnippet = 3;
-    bool noIndex = 4;
+message CrawlerInfo {
+    bool isBlackListed = 1;
+    bool doesRespectRobots = 2;
+    bool matchesScheduleRule = 3;
 }
-
 enum LinkType {
-    UNKOWN = 0;
+    UNKOWN_LINK_TYPE = 0;
     FRAME = 1;
     IFRAME = 2;
     EMBED = 3;
@@ -64,6 +73,20 @@ enum LinkType {
     A = 6;
     AREA = 7;
     LINK = 8;
-    CANONICAL = 9;
+}
+
+enum LinkRel {
+    UNKOWN_LINK_REL = 0;
+    CANONICAL = 1;
+    NOFOLLOW_LINK = 2;
+    REFRESH = 3;
+    LOCATION = 4;
+}
+
+message PageRobot {
+    bool NOINDEX = 1;
+    bool NOFOLLOW = 2;
+    bool NOARCHIVE = 3;
+    bool NOSNIPPET = 4;
 }
 

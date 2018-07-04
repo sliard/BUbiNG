@@ -49,15 +49,15 @@ public final class QuickToQueueThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ObjectArrayList<FrontierProtobuf.LinkInfo>> quickToQueueURLLists[] = frontier.quickToQueueURLLists;
+            final ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToQueueURLLists[] =
+                frontier.quickToQueueURLLists;
             while(! stop) {
                 boolean found = false;
                 for (int i=0; i<quickToQueueURLLists.length;i++) {
-                    final ObjectArrayList<FrontierProtobuf.LinkInfo> linkInfos = quickToQueueURLLists[i].poll();
+                    final FrontierProtobuf.CrawledPageInfo linkInfos = quickToQueueURLLists[i].poll();
                     if (linkInfos != null) {
                         found = true;
-                        for (FrontierProtobuf.LinkInfo linkInfo : linkInfos)
-                            frontier.enqueue(linkInfo);
+                        frontier.enqueue(linkInfos);
                     }
                 }
                 if (!found)

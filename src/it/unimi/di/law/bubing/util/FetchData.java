@@ -193,7 +193,7 @@ public class FetchData implements URIResponse, Closeable {
 	/** The {@link RuntimeConfiguration}, cached. */
 	private final RuntimeConfiguration rc;
 
-	public volatile int lang;
+	public volatile byte lang;
 
 	public volatile Map<String,String> extraMap;
 
