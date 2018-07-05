@@ -18,7 +18,7 @@ package it.unimi.di.law.bubing.frontier.comm;
 //RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,15 +49,15 @@ public final class QuickToQueueThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<ObjectArrayList<ByteArrayList>> quickToQueueURLLists[] = frontier.quickToQueueURLLists;
+            final ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToQueueURLLists[] =
+                frontier.quickToQueueURLLists;
             while(! stop) {
                 boolean found = false;
                 for (int i=0; i<quickToQueueURLLists.length;i++) {
-                    final ObjectArrayList<ByteArrayList> urls = quickToQueueURLLists[i].poll();
-                    if (urls != null) {
+                    final FrontierProtobuf.CrawledPageInfo linkInfos = quickToQueueURLLists[i].poll();
+                    if (linkInfos != null) {
                         found = true;
-                        for (ByteArrayList url : urls)
-                            frontier.enqueue(url);
+                        frontier.enqueue(linkInfos);
                     }
                 }
                 if (!found)

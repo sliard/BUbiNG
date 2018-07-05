@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.config.ConnectionConfig;
@@ -268,8 +269,10 @@ public final class FetchingThread extends Thread implements Closeable {
 							Thread.sleep(newSleep);
 						}
 
-					final byte[] path = visitState.firstPath();
-					final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, path);
+
+					final FrontierProtobuf.CrawlRequest crawlRequest = FrontierProtobuf.CrawlRequest.parseFrom(visitState.firstPath());
+					final byte[] path = crawlRequest.getUrlPathQuery().toByteArray();
+				final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, path);
 
 					if (LOGGER.isDebugEnabled()) LOGGER.debug("Next URL: {}", url);
 
@@ -283,7 +286,7 @@ public final class FetchingThread extends Thread implements Closeable {
                     	fetchData.inUse = true;
 						cookieStore.clear();
 						try {
-							fetchData.fetch(url, httpClient, frontier.robotsRequestConfig, visitState, true);
+							fetchData.fetch(url, crawlRequest, httpClient, frontier.robotsRequestConfig, visitState, true);
 						}
 						catch (Exception shouldntHappen) {
 							/* This shouldn't really happen--it's a bug that must be reported to the
@@ -330,7 +333,7 @@ public final class FetchingThread extends Thread implements Closeable {
 
 						if (visitState.cookies != null) for(Cookie cookie: visitState.cookies) cookieStore.addCookie(cookie);
 						try {
-							fetchData.fetch(url, httpClient, frontier.defaultRequestConfig, visitState, false);
+							fetchData.fetch(url, crawlRequest, httpClient, frontier.defaultRequestConfig, visitState, false);
 						}
 						catch (Exception shouldntHappen) {
 							/* This shouldn't really happen--it's a bug that must be reported to the ASF team.

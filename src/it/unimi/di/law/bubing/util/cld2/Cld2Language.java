@@ -21,6 +21,7 @@ package it.unimi.di.law.bubing.util.cld2;
 /**
  * Enum with the values of the different languages accepted by the CLD2 library.
  */
+
 public interface Cld2Language {
     int ENGLISH = 0;
     int DANISH = 1;

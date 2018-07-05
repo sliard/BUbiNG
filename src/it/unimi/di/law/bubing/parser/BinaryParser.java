@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.parser;
  * limitations under the License.
  */
 
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
 import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import it.unimi.di.law.warc.filters.URIResponse;
@@ -87,7 +88,7 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
-	public byte[] parse(final URI uri, final HttpResponse httpResponse, final LinkReceiver linkReceiver) throws IOException {
+	public byte[] parse(final URI uri, final HttpResponse httpResponse, final FrontierProtobuf.CrawledPageInfo.Builder linkReceiver) throws IOException {
 		if (hashFunction == null) return null;
 		final InputStream is = httpResponse.getEntity().getContent();
 		final Hasher hasher = init(crossAuthorityDuplicates? null : uri);
@@ -107,6 +108,11 @@ public class BinaryParser implements Parser<Void> {
 
 	@Override
 	public Charset guessedCharset() {
+		return null;
+	}
+
+	@Override
+	public Boolean responsiveDesign() {
 		return null;
 	}
 
@@ -132,6 +138,11 @@ public class BinaryParser implements Parser<Void> {
 
 	@Override
 	public StringBuilder getTextContent() {
+		return null;
+	}
+
+	@Override
+	public Boolean html5() {
 		return null;
 	}
 

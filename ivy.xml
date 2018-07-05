@@ -45,11 +45,14 @@
 		<dependency org="dnsjava" name="dnsjava" rev="latest.release"/>
 
 		<dependency org="org.apache.commons" name="commons-math3" rev="latest.release"/>
+
 		<dependency org="org.apache.httpcomponents"  name="httpcore" rev="latest.release"/>
 		<dependency org="org.apache.httpcomponents" name="httpclient" rev="latest.release"/>
 		<!-- <dependency org="org.apache.httpcomponents" name="httpasyncclient" rev="latest.release"/>-->
-                <dependency org="org.apache.hadoop" name="hadoop-common" rev="2.7.5"/>
-		
+		<dependency org="org.apache.hadoop" name="hadoop-common" rev="2.7.5"/>
+		<dependency org="com.exensa" name="wdl-proto" rev="0.3-SNAPSHOT"/>
+		<dependency org="com.exensa" name="wdl-common" rev="0.3-SNAPSHOT"/>
+
 		<dependency org="org.cyclopsgroup" name="jmxterm" rev="1.0-alpha-4"/>
 
 		<dependency org="com.martiansoftware" name="jsap" rev="latest.release"/>

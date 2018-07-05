@@ -107,12 +107,12 @@ public class FetchDataTest {
 		// Test normal operations
 		FetchData fetchData = new FetchData(testConfiguration);
 
-		fetchData.fetch(url0, httpClient, null, null, false);
+		fetchData.fetch(url0, null, httpClient, null, null, false);
 		assertNull(fetchData.exception);
 		assertEquals(content0, IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1));
 		assertEquals(content0, IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1));
 
-		fetchData.fetch(url1, httpClient, null, null, false);
+		fetchData.fetch(url1, null, httpClient, null, null, false);
 		assertNull(fetchData.exception);
 		assertEquals(url0.toString(), fetchData.response().getFirstHeader(HttpHeaders.LOCATION).getValue());
 		assertEquals(content1, IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1));
@@ -126,7 +126,7 @@ public class FetchDataTest {
 			baseConfiguration.setProperty("responseBodyMaxByteSize", Integer.toString(l));
 			fetchData = new FetchData(Helpers.getTestConfiguration(this, baseConfiguration, true));
 
-			fetchData.fetch(url1, httpClient, null, null, false);
+			fetchData.fetch(url1, null, httpClient, null, null, false);
 			assertNull(fetchData.exception);
 			assertEquals(content1.substring(0, Math.min(l, content1.length())), IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1));
 			fetchData.close();
@@ -154,28 +154,28 @@ public class FetchDataTest {
 		HttpClient httpClient = getHttpClient(new HttpHost("localhost", proxy.port()), false, cookieStore);
 
 		// This shows we do receive cookies
-		fetchData.fetch(url0, httpClient, null, null, false);
+		fetchData.fetch(url0, null, httpClient, null, null, false);
 		Cookie[] cookie = FetchingThread.getCookies(url0, cookieStore, testConfiguration.cookieMaxByteSize);
 		assertEquals("cookie", cookie[0].getName());
 		assertEquals("hello", cookie[0].getValue());
 
 		// This shows we do send cookies
 		// First attempt: sending back the same cookies just received
-		fetchData.fetch(url1, httpClient, null, null, false);
+		fetchData.fetch(url1, null, httpClient, null, null, false);
 		assertTrue(IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1).contains("hello"));
 		// Second attempt: sending new cookies
 		cookieStore.clear();
 		BasicClientCookie clientCookie = new BasicClientCookie("returned", "cookie");
 		clientCookie.setDomain("foo.bar");
 		cookieStore.addCookie(clientCookie);
-		fetchData.fetch(url1, httpClient, null, null, false);
+		fetchData.fetch(url1, null, httpClient, null, null, false);
 		assertTrue(IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1).contains("returned"));
 
 		// This shows we do not send undue cookies
 		cookieStore.clear();
 		clientCookie.setDomain("another.domain");
 		cookieStore.addCookie(clientCookie);
-		fetchData.fetch(url1, httpClient, null, null, false);
+		fetchData.fetch(url1, null,httpClient, null, null, false);
 		assertFalse(IOUtils.toString(fetchData.response().getEntity().getContent(), Charsets.ISO_8859_1).contains("returned"));
 
 		System.out.println(Arrays.toString(FetchingThread.getCookies(url1, cookieStore, testConfiguration.cookieMaxByteSize)));

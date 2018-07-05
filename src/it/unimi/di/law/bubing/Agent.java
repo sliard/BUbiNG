@@ -16,10 +16,12 @@ import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
+import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.*;
 import it.unimi.di.law.bubing.frontier.comm.DiscoveredURLSendThread;
 import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
 import it.unimi.di.law.bubing.frontier.comm.ToCrawlURLReceiver;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
@@ -145,21 +147,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	public void run() throws Exception {
 		// We wait for the notification of a stop event, usually caused by a call to stop().
 		frontier.rc.ensureNotPaused();
-		final ByteArrayList list = new ByteArrayList();
-		// Limit seed rate to seedPerMillisecond url/ms
-		long seedCount = 0;
-		long startTime = System.currentTimeMillis();
-		long seedPerMillisecond = 2;
-		while (rc.seed.hasNext() && !rc.stopping) {
-			final URI nextSeed = rc.seed.next();
-			if (nextSeed != null)
-				frontier.enqueue(BURL.toByteArrayList(nextSeed, list).clone());
-			seedCount ++;
-			long diff = startTime + seedCount/seedPerMillisecond - System.currentTimeMillis();
-			if (diff > 0)
-				Thread.sleep(diff);
-		}
-		LOGGER.info("Finished reading seeds");
+
 		synchronized (rc) {
 			if (!rc.stopping)
 				rc.wait();

@@ -16,8 +16,10 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.bubing.util.Util;
@@ -52,7 +54,7 @@ import org.slf4j.LoggerFactory;
  * <p>Instances of this class are synchronized, and enqueue/dequeue operations can happen concurrently: this is
  * necessary because {@link #firstPath()} is called by a {@link FetchingThread},
  * {@linkplain #dequeue() dequeuing} is performed by a {@link ParsingThread},
- * whereas {@linkplain #enqueuePathQuery(byte[]) enqueing} is performed by the {@link Distributor}.
+ * whereas {@linkplain #enqueueCrawlRequest(byte[]) enqueing} is performed by the {@link Distributor}.
  *
  * <h2>Broken visit states</h2>
  *
@@ -81,7 +83,12 @@ public class VisitState implements Delayed, Serializable {
 	private static final long serialVersionUID = 1L;
 
 	/** A special path marking a <code>robots.txt</code> refresh request. */
-	public final static byte[] ROBOTS_PATH = { '/', 'r', 'o', 'b', 'o', 't', 's', '.', 't', 'x', 't' };
+	public final static byte[] ROBOTS_PATH;
+	static {
+		byte[] robotsString = { '/', 'r', 'o', 'b', 'o', 't', 's', '.', 't', 'x', 't' };
+		ROBOTS_PATH = FrontierProtobuf.CrawlRequest.newBuilder().setUrlPathQuery(ByteString.copyFrom(robotsString)).build().toByteArray();
+	}
+
 	/** A singleton empty cookie array. */
 	public final static Cookie[] EMPTY_COOKIE_ARRAY = {};
 
@@ -115,7 +122,7 @@ public class VisitState implements Delayed, Serializable {
 	/** Whether this visit state is currently {@linkplain Workbench#acquire() scheduled for purge}. */
 	protected volatile transient boolean purgeRequired;
 	/** The path+queries that must be visited for this visit state. */
-	private final transient ObjectArrayFIFOQueue<byte[]> pathQueries;
+	private final transient ObjectArrayFIFOQueue<byte[]> crawlRequests;
 	/** A map from term indices to counts for the pages of this host. This map is instantiated only if {@link RuntimeConfiguration#spamDetector} is not {@code null}. */
 	public final Short2ShortOpenHashMap termCount;
 	/** The number of calls performed to {@link #updateTermCount(Short2ShortMap)}. */
@@ -131,7 +138,7 @@ public class VisitState implements Delayed, Serializable {
 
 		this.schemeAuthority = schemeAuthority;
 		cookies = EMPTY_COOKIE_ARRAY;
-		pathQueries = new ObjectArrayFIFOQueue<>();
+		crawlRequests = new ObjectArrayFIFOQueue<>();
 		Frontier frontier = Agent.getFrontier();
 		termCount = frontier != null && frontier.rc.spamDetector == null ? null : new Short2ShortOpenHashMap();
 		spammicity = -1;
@@ -196,14 +203,14 @@ public class VisitState implements Delayed, Serializable {
 		if (! RuntimeConfiguration.FETCH_ROBOTS) return;
 		if (nextFetch == Long.MAX_VALUE) return;
 		synchronized(this) {
-			if (pathQueries.isEmpty()) {
-				pathQueries.enqueueFirst(ROBOTS_PATH);
+			if (crawlRequests.isEmpty()) {
+				crawlRequests.enqueueFirst(ROBOTS_PATH);
 				putInEntryIfNotAcquired();
 			}
 			else {
-				final byte[] first = pathQueries.dequeue();
-				pathQueries.enqueueFirst(ROBOTS_PATH);
-				pathQueries.enqueueFirst(first);
+				final byte[] first = crawlRequests.dequeue();
+				crawlRequests.enqueueFirst(ROBOTS_PATH);
+				crawlRequests.enqueueFirst(first);
 			}
 		}
 	}
@@ -214,7 +221,7 @@ public class VisitState implements Delayed, Serializable {
 	 */
 	public synchronized void forciblyEnqueueRobotsFirst() {
 		if (! RuntimeConfiguration.FETCH_ROBOTS) return;
-		pathQueries.enqueueFirst(ROBOTS_PATH);
+		crawlRequests.enqueueFirst(ROBOTS_PATH);
 	}
 
 	/** Remove the <code>/robots.txt</code> path, if present, and in this case sets the last robots fetch
@@ -222,10 +229,10 @@ public class VisitState implements Delayed, Serializable {
 	 * should be called only after having stopped all threads accessing this visit state. */
 	void removeRobots() {
 		// Nothing to remove
-		if (pathQueries.isEmpty()) return;
+		if (crawlRequests.isEmpty()) return;
 
 		// We test the first path
-		final byte[] firstPath = pathQueries.dequeue();
+		final byte[] firstPath = crawlRequests.dequeue();
 		if (firstPath == VisitState.ROBOTS_PATH) {
 			// It's robots.txt: we set the last robots fetch time and don't put it back
 			lastRobotsFetch = Long.MAX_VALUE;
@@ -235,22 +242,22 @@ public class VisitState implements Delayed, Serializable {
 		// It's not robots.txt
 		if (isEmpty()) {
 			// If there are no more paths, we put it back and return
-			pathQueries.enqueueFirst(firstPath);
+			crawlRequests.enqueueFirst(firstPath);
 			return;
 		}
 
 		// We test the second path
-		final byte[] secondPath = pathQueries.dequeue();
+		final byte[] secondPath = crawlRequests.dequeue();
 		if (secondPath == VisitState.ROBOTS_PATH) {
 			// It's robots.txt: we put back the first path and set the last robots fetch time (and don't put back the second path)
-			pathQueries.enqueueFirst(firstPath);
+			crawlRequests.enqueueFirst(firstPath);
 			lastRobotsFetch = Long.MAX_VALUE;
 			return;
 		}
 
 		// No robots.txt found: we put back everything
-		pathQueries.enqueueFirst(secondPath);
-		pathQueries.enqueueFirst(firstPath);
+		crawlRequests.enqueueFirst(secondPath);
+		crawlRequests.enqueueFirst(firstPath);
 	}
 
 	/** Enqueues a path+query in byte-array representation, possibly putting this visit state in its
@@ -261,18 +268,18 @@ public class VisitState implements Delayed, Serializable {
 	 *
 	 * <p>Note that the scheme+authority of <code>url</code> must be {@link #schemeAuthority}.
 	 *
-	 * @param pathQuery a path+query in byte-array representation.
+	 * @param crawlRequestBytes a path+query in byte-array representation.
 	 */
-	public void enqueuePathQuery(final byte[] pathQuery) {
+	public void enqueueCrawlRequest(final byte[] crawlRequestBytes) {
 		synchronized (this) {
 			if (nextFetch == Long.MAX_VALUE) return;
-			final boolean wasEmpty = pathQueries.isEmpty();
-			pathQueries.enqueue(pathQuery);
+			final boolean wasEmpty = this.crawlRequests.isEmpty();
+			this.crawlRequests.enqueue(crawlRequestBytes);
 			if (wasEmpty) putInEntryIfNotAcquired();
 		}
 		Frontier frontier = Agent.getFrontier();
 		frontier.pathQueriesInQueues.incrementAndGet();
-		frontier.weightOfpathQueriesInQueues.addAndGet(BURL.memoryUsageOf(pathQuery));
+		frontier.weightOfpathQueriesInQueues.addAndGet(BURL.memoryUsageOf(crawlRequestBytes));
 	}
 
 	/** Peeks at the first path in the queue.
@@ -284,7 +291,7 @@ public class VisitState implements Delayed, Serializable {
 	 * @throws NoSuchElementException if the queue of path+queries is empty.
 	 */
 	public synchronized byte[] firstPath() {
-		return pathQueries.first();
+		return crawlRequests.first();
 	}
 
 	/** Removes the first path in the queue.
@@ -295,7 +302,7 @@ public class VisitState implements Delayed, Serializable {
 	public byte[] dequeue() {
 		final byte[] array;
 		synchronized (this) {
-			array = pathQueries.dequeue();
+			array = crawlRequests.dequeue();
 		}
 		Frontier frontier = Agent.getFrontier();
 		if (array != ROBOTS_PATH) {
@@ -308,9 +315,9 @@ public class VisitState implements Delayed, Serializable {
 
 	/** Empties this visit state of all the URLs that it contains. */
 	public synchronized void clear() {
-		while(! isEmpty()) dequeue(); // We cannot invoke pathQueries.clear(), as counters would not be updated.
+		while(! isEmpty()) dequeue(); // We cannot invoke crawlRequests.clear(), as counters would not be updated.
 		// TODO: we should find a way to release more resources.
-		pathQueries.trim();
+		crawlRequests.trim();
 	}
 
 	/** Computes the size (i.e., number of URLs) in this visit state.
@@ -318,7 +325,7 @@ public class VisitState implements Delayed, Serializable {
 	 * @return the size.
 	 */
 	public synchronized int size() {
-		return pathQueries.size();
+		return crawlRequests.size();
 	}
 
 	/** Returns whether this visit state is empty.
@@ -326,7 +333,7 @@ public class VisitState implements Delayed, Serializable {
 	 * @return <code>true</code> iff this visit state does not contain any URL.
 	 */
 	public synchronized boolean isEmpty() {
-		return pathQueries.isEmpty();
+		return crawlRequests.isEmpty();
 	}
 
 	/** Return whether this visit state is fetchable (i.e., if there is at leas one URL and it is allowed by politeness to fetch it).
@@ -425,21 +432,21 @@ public class VisitState implements Delayed, Serializable {
 
 	private void writeObject(java.io.ObjectOutputStream s) throws java.io.IOException {
 		s.defaultWriteObject();
-		int size = pathQueries.size();
+		int size = crawlRequests.size();
 		s.writeInt(size);
 
-		while(size-- != 0) Util.writeByteArray(pathQueries.dequeue(), s);
+		while(size-- != 0) Util.writeByteArray(crawlRequests.dequeue(), s);
 	}
 
 	private void readObject(java.io.ObjectInputStream s) throws java.io.IOException, ClassNotFoundException, NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException {
 		s.defaultReadObject();
 		int size = s.readInt();
 
-		Field field = getClass().getDeclaredField("pathQueries");
+		Field field = getClass().getDeclaredField("crawlRequests");
 		field.setAccessible(true);
 		field.set(this, new ObjectArrayFIFOQueue<byte[]>(size));
 
-		while(size-- != 0) pathQueries.enqueue(Util.readByteArray(s));
+		while(size-- != 0) crawlRequests.enqueue(Util.readByteArray(s));
 	}
 
 	private void updateTermCountEntry(Short2ShortMap.Entry e) {
