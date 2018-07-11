@@ -21,7 +21,6 @@ import it.unimi.di.law.bubing.frontier.*;
 import it.unimi.di.law.bubing.frontier.comm.DiscoveredURLSendThread;
 import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
 import it.unimi.di.law.bubing.frontier.comm.ToCrawlURLReceiver;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
@@ -40,6 +39,8 @@ import com.martiansoftware.jsap.Parameter;
 import com.martiansoftware.jsap.SimpleJSAP;
 import com.martiansoftware.jsap.Switch;
 import com.martiansoftware.jsap.UnflaggedOption;
+
+
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna

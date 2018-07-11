@@ -20,7 +20,6 @@ import com.google.common.io.Files;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
@@ -62,6 +61,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xbill.DNS.DClass;
 import org.xbill.DNS.Lookup;
+
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 //RELEASE-STATUS: DIST
 
@@ -106,7 +108,7 @@ import org.xbill.DNS.Lookup;
  *
  * <h2>The lifecycle of a URL</h2>
  *
- * <p>URLs are {@linkplain Frontier#enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo) enqueued to the frontier} either because
+ * <p>URLs are {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued to the frontier} either because
  * they are part of the visit seed, or because a {@link ParsingThread} has found them, or because
  * they have been {@linkplain JobManager#submit(Job) submitted using JAI4J} (this includes both
  * manual submission and URLs sent by other agents). The method {@link #enqueue(ByteArrayList)} will
@@ -213,13 +215,13 @@ public class Frontier {
 
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
-	public ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToQueueURLLists[];
+	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[];
 
 	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
-	public ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToSendDiscoveredURLs;
+	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
 
-	/** A queue to quickly buffer to be crawled URLs (as {@link it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo} serialized. */
-	public ArrayBlockingQueue<FrontierProtobuf.CrawlRequest> quickReceivedToCrawlURLs;
+	/** A queue to quickly buffer to be crawled URLs (as {@link MsgCrawler.FetchInfo} serialized. */
+	public ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedToCrawlURLs;
 
 	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
 	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
@@ -274,7 +276,7 @@ public class Frontier {
 	protected final Distributor distributor;
 
 	/** The URL cache. This cache stores the most recent URLs that have been
-	 * {@linkplain Frontier#enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo) enqueued}. */
+	 * {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued}. */
 	public final FastApproximateByteArrayCache urlCache;
 
 	/** The workbench virtualizer used by this frontier. */
@@ -584,7 +586,7 @@ public class Frontier {
 		LOGGER.info("Number of Parsing Threads set to " + newParsingThreads);
 	}
 
-	public void enqueueUrlList(final FrontierProtobuf.CrawledPageInfo urls) {
+	public void enqueueUrlList(final MsgCrawler.FetchInfo urls) {
 		int currentIndex = localThreadIndexInToQueueList.get();
 		quickToQueueURLLists[currentIndex].offer(urls);
 		localThreadIndexInToQueueList.set((currentIndex + 1) % NUM_TO_QUEUE_URL_LISTS);
@@ -603,8 +605,8 @@ public class Frontier {
 	 *
 	 * </ul>
 	 *
-	 * @param crawledPageInfo a {@linkplain it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo Message} to be enqueued to the BUbiNG crawl. */
-	public void enqueue(final FrontierProtobuf.CrawledPageInfo crawledPageInfo)  {
+	 * @param crawledPageInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
+	public void enqueue(final MsgCrawler.FetchInfo crawledPageInfo)  {
 
 		try {
 			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out {}",

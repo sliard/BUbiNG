@@ -18,10 +18,9 @@ package it.unimi.di.law.bubing.frontier.comm;
 //RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 
 import java.util.concurrent.ArrayBlockingQueue;
 
@@ -49,15 +48,14 @@ public final class QuickToQueueThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToQueueURLLists[] =
-                frontier.quickToQueueURLLists;
-            while(! stop) {
+            final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[] = frontier.quickToQueueURLLists;
+            while ( !stop ) {
                 boolean found = false;
-                for (int i=0; i<quickToQueueURLLists.length;i++) {
-                    final FrontierProtobuf.CrawledPageInfo linkInfos = quickToQueueURLLists[i].poll();
-                    if (linkInfos != null) {
+                for (int i=0; i<quickToQueueURLLists.length; i++) {
+                    final MsgCrawler.FetchInfo fetchInfo = quickToQueueURLLists[i].poll();
+                    if (fetchInfo != null) {
                         found = true;
-                        frontier.enqueue(linkInfos);
+                        frontier.enqueue(fetchInfo);
                     }
                 }
                 if (!found)

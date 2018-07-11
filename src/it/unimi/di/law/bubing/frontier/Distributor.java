@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf.*;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 //RELEASE-STATUS: DIST
 
@@ -93,7 +93,7 @@ public final class Distributor extends Thread {
 		statsThread = new StatsThread(frontier, this);
 	}
 
-	private boolean processURL(final CrawlRequest pageInfo, long now) {
+	private boolean processURL(final MsgFrontier.CrawlRequest pageInfo, long now) {
 		try {
 			VisitState visitState;
 			byte[] schemeAuthority = pageInfo.getSchemeAuthority().toByteArray();
@@ -111,7 +111,7 @@ public final class Distributor extends Thread {
 						visitState = new VisitState(schemeAuthority);
 						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
 						visitState.enqueueRobots();
-						visitState.enqueueCrawlRequest(CrawlRequest.newBuilder(pageInfo).clearSchemeAuthority().build().toByteArray());
+						visitState.enqueueCrawlRequest(MsgFrontier.CrawlRequest.newBuilder(pageInfo).clearSchemeAuthority().build().toByteArray());
 						synchronized (schemeAuthority2VisitState) {
 							schemeAuthority2VisitState.add(visitState);
 						}
@@ -182,7 +182,7 @@ public final class Distributor extends Thread {
 						// Note that this might make temporarily the workbench too big by a little bit.
 						for(int i = 100; i-- != 0 && ! frontier.quickReceivedToCrawlURLs.isEmpty();) {
 							round = -1;
-							CrawlRequest urlInfo = frontier.quickReceivedToCrawlURLs.take();
+							MsgFrontier.CrawlRequest urlInfo = frontier.quickReceivedToCrawlURLs.take();
 							if (!processURL(urlInfo, now))
 								i++;
 						}

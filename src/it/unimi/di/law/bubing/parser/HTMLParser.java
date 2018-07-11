@@ -10,7 +10,7 @@ import com.ibm.icu.text.CharsetMatch;
 import com.martiansoftware.jsap.*;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.frontier.ParsingThread;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
+import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.bubing.util.Util;
 import it.unimi.di.law.bubing.util.cld2.Cld2Result;
@@ -39,7 +39,12 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.link.MsgLink;
+import com.exensa.wdl.protobuf.link.EnumRel;
+import com.exensa.wdl.protobuf.link.EnumType;
+import com.exensa.wdl.protobuf.crawler.MsgRobotsTag;
 
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
@@ -285,18 +290,15 @@ public class HTMLParser<T> implements Parser<T> {
   }
 
 
-  private FrontierProtobuf.CrawlRequest.Builder makePageInfoFromURI(final URI origin) {
-    FrontierProtobuf.CrawlRequest.Builder newPageInfo = FrontierProtobuf.CrawlRequest.newBuilder();
+  private MsgFrontier.CrawlRequest.Builder makePageInfoFromURI(final URI origin) {
+    MsgFrontier.CrawlRequest.Builder newPageInfo = MsgFrontier.CrawlRequest.newBuilder();
     newPageInfo.setSchemeAuthority(ByteString.copyFrom(BURL.schemeAndAuthority(origin).getBytes(Charsets.US_ASCII)));
     return newPageInfo;
   }
 
-  private FrontierProtobuf.LinkInfo.Builder makeLinkInfoFromBasicURI(final URI targetURI) {
-    FrontierProtobuf.LinkInfo.Builder newLinkInfo = FrontierProtobuf.LinkInfo.newBuilder();
-    newLinkInfo.setSchemeAuthority(
-        ByteString.copyFrom(BURL.schemeAndAuthority(targetURI).getBytes(Charsets.US_ASCII)));
-    newLinkInfo.setPathQuery(
-        ByteString.copyFrom(BURL.pathAndQuery(targetURI).getBytes(Charsets.US_ASCII)));
+  private MsgCrawler.LinkInfo.Builder makeLinkInfoFromBasicURI(final URI targetURI) {
+    MsgCrawler.LinkInfo.Builder newLinkInfo = MsgCrawler.LinkInfo.newBuilder();
+    newLinkInfo.setTarget( PulsarHelper.fromURI(targetURI) );
     return newLinkInfo;
   }
 
@@ -309,7 +311,7 @@ public class HTMLParser<T> implements Parser<T> {
    * @param s            the raw link to be derelativized.
    */
 
-  protected void process(final FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder,
+  protected void process(final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
                          final byte[] schemeAuthority,
                          final URI base,
                          final String s,
@@ -321,28 +323,30 @@ public class HTMLParser<T> implements Parser<T> {
     boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,url);
     if (url == null) return;
     URI targetURI = base.resolve(url);
-    FrontierProtobuf.LinkInfo.Builder newLinkInfo = makeLinkInfoFromBasicURI(targetURI);
+    MsgCrawler.LinkInfo.Builder newLinkInfo = makeLinkInfoFromBasicURI(targetURI);
+    MsgLink.LinkInfo.Builder newLinkDetailInfo = MsgLink.LinkInfo.newBuilder();
     if (linkName == HTMLElementName.A)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.A);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.A);
     else if (linkName == HTMLElementName.AREA)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.AREA);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.AREA);
     else if (linkName == HTMLElementName.EMBED)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.EMBED);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.EMBED);
     else if (linkName == HTMLElementName.FRAME)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.FRAME);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.FRAME);
     else if (linkName == HTMLElementName.IFRAME)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.IFRAME);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.IFRAME);
     else if (linkName == HTMLElementName.IMG)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.IMG);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.IMG);
     else if (linkName == HTMLElementName.LINK)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.LINK);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.LINK);
     else if (linkName == HTMLElementName.OBJECT)
-      newLinkInfo.setLinkType(FrontierProtobuf.LinkType.OBJECT);
+      newLinkDetailInfo.setLinkType(EnumType.Enum.OBJECT);
     if (isNoFollow)
-      newLinkInfo.setLinkRel(FrontierProtobuf.LinkRel.NOFOLLOW_LINK);
+      newLinkDetailInfo.setLinkRel(EnumRel.Enum.NOFOLLOW);
     if (anchorText != null && anchorText.length() > 0)
-      newLinkInfo.setLinkContent(anchorText);
-    newLinkInfo.setWeight(1.0f);
+      newLinkDetailInfo.setText(anchorText);
+    newLinkDetailInfo.setLinkQuality(1.0f);
+    newLinkInfo.setLinkInfo( newLinkDetailInfo );
     if (hasSameSchemeAuthority)
       crawledPageInfoBuilder.addInternalLinks(newLinkInfo.buildPartial());
     else
@@ -350,7 +354,7 @@ public class HTMLParser<T> implements Parser<T> {
   }
 
   @Override
-  public byte[] parse(final URI uri, final HttpResponse httpResponse, final FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder) throws IOException {
+  public byte[] parse(final URI uri, final HttpResponse httpResponse, final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder) throws IOException {
     guessedCharset = null;
     boolean charsetValid = false;
     guessedLanguage = null;
@@ -513,8 +517,8 @@ public class HTMLParser<T> implements Parser<T> {
     }
     finalGuessedCharset = charset;
 
-    FrontierProtobuf.CrawlRequest origin = makePageInfoFromURI(uri).buildPartial();
-    crawledPageInfoBuilder.setUrl(origin.getSchemeAuthority().concat(origin.getUrlPathQuery()).toString());
+    //MsgFrontier.CrawlRequest origin = makePageInfoFromURI(uri).buildPartial();
+    crawledPageInfoBuilder.setUrl( PulsarHelper.fromURI(uri) );
     if (textProcessor != null) textProcessor.init(uri);
 
     // Get location if present
@@ -530,7 +534,11 @@ public class HTMLParser<T> implements Parser<T> {
           LOGGER.debug("Found relative header location URL: \"{}\"", location);
 
         this.location = uri.resolve(location);
-        crawledPageInfoBuilder.addExternalLinks(makeLinkInfoFromBasicURI(this.location).setLinkType(FrontierProtobuf.LinkType.LINK).setLinkRel(FrontierProtobuf.LinkRel.LOCATION));
+        final MsgCrawler.LinkInfo.Builder linkInfo = makeLinkInfoFromBasicURI(this.location);
+        linkInfo.getLinkInfoBuilder()
+          .setLinkType(EnumType.Enum.LINK)
+          .setLinkRel(EnumRel.Enum.LOCATION);
+        crawledPageInfoBuilder.addExternalLinks( linkInfo );
       }
     }
 
@@ -625,8 +633,12 @@ public class HTMLParser<T> implements Parser<T> {
                       // This shouldn't happen by standard, but people unfortunately does it.
                       if (!refresh.isAbsolute() && LOGGER.isDebugEnabled())
                         LOGGER.debug("Found relative META refresh URL: \"{}\"", urlPattern);
-
-                      crawledPageInfoBuilder.addExternalLinks(makeLinkInfoFromBasicURI(base.resolve(refresh)).setLinkRel(FrontierProtobuf.LinkRel.REFRESH));
+                      crawledPageInfoBuilder.addExternalLinks(
+                        makeLinkInfoFromBasicURI( base.resolve(refresh) )
+                          .setLinkInfo( MsgLink.LinkInfo.newBuilder()
+                            .setLinkRel( EnumRel.Enum.REFRESH )
+                          )
+                      );
                     }
                   }
                 }
@@ -639,7 +651,12 @@ public class HTMLParser<T> implements Parser<T> {
                     if (!metaLocation.isAbsolute() && LOGGER.isDebugEnabled())
                       LOGGER.debug("Found relative META location URL: \"{}\"", content);
                     this.metaLocation = base.resolve(metaLocation);
-                    crawledPageInfoBuilder.addExternalLinks(makeLinkInfoFromBasicURI(this.metaLocation).setLinkRel(FrontierProtobuf.LinkRel.LOCATION));
+                    crawledPageInfoBuilder.addExternalLinks(
+                      makeLinkInfoFromBasicURI( this.metaLocation )
+                        .setLinkInfo( MsgLink.LinkInfo.newBuilder()
+                          .setLinkRel( EnumRel.Enum.LOCATION )
+                        )
+                    );
                   }
                 }
               } else {
@@ -651,13 +668,13 @@ public class HTMLParser<T> implements Parser<T> {
                 if (metaContent != null) {
                   String metaContentLC = metaContent.toLowerCase();
                   if (metaContentLC.contains("noindex"))
-                    crawledPageInfoBuilder.setPageRobot(FrontierProtobuf.PageRobot.newBuilder().setNOINDEX(true));
+                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOINDEX(true));
                   if (metaContentLC.contains("nofollow"))
-                    crawledPageInfoBuilder.setPageRobot(FrontierProtobuf.PageRobot.newBuilder().setNOFOLLOW(true));
+                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOFOLLOW(true));
                   if (metaContentLC.contains("noarchive"))
-                    crawledPageInfoBuilder.setPageRobot(FrontierProtobuf.PageRobot.newBuilder().setNOARCHIVE(true));
+                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOARCHIVE(true));
                   if (metaContentLC.contains("nosnippet"))
-                    crawledPageInfoBuilder.setPageRobot(FrontierProtobuf.PageRobot.newBuilder().setNOSNIPPET(true));
+                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOSNIPPET(true));
                 }
 
               }
@@ -1104,7 +1121,7 @@ public class HTMLParser<T> implements Parser<T> {
     final int charBufferSize = jsapResult.getInt("charBufferSize");
 
     final HTMLParser<Void> htmlParser = new HTMLParser<>(BinaryParser.forName(digester), (TextProcessor<Void>) null, crossAuthorityDuplicates, charBufferSize);
-    final FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder = FrontierProtobuf.CrawledPageInfo.newBuilder();
+    final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
     final byte[] digest;
 
     if (!jsapResult.userSpecified("file")) {
@@ -1122,11 +1139,8 @@ public class HTMLParser<T> implements Parser<T> {
     System.out.println("Links: " + crawledPageInfoBuilder.getExternalLinksList());
 
     final Set<String> urlStrings = new ObjectOpenHashSet<>();
-    for (final FrontierProtobuf.LinkInfo link : crawledPageInfoBuilder.getExternalLinksList())
-      urlStrings.add(
-          BURL.fromNormalizedSchemeAuthorityAndPathQuery(
-              link.getSchemeAuthority().asReadOnlyByteBuffer().array(),
-              link.getPathQuery().asReadOnlyByteBuffer().array()).toASCIIString());
+    for (final MsgCrawler.LinkInfo link : crawledPageInfoBuilder.getExternalLinksList())
+      urlStrings.add( PulsarHelper.toString(link.getTarget()) );
     if (urlStrings.size() != crawledPageInfoBuilder.getExternalLinksList().size())
       System.out.println("There are " + crawledPageInfoBuilder.getExternalLinksList().size() + " URIs but " + urlStrings.size() + " strings");
 

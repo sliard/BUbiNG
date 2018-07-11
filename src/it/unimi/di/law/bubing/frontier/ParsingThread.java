@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.exensa.wdl.common.LanguageCodes;
 import com.google.common.collect.ImmutableMap;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
+import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.apache.commons.io.IOUtils;
@@ -23,6 +23,8 @@ import org.apache.http.HttpEntity;
 import org.apache.http.entity.BasicHttpEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -69,7 +71,7 @@ import java.util.Random;
  * The content of the response is analyzed and the body of the response is possibly parsed, and its
  * digest is computed.
  * Newly discovered (during parsing) URLs are
- * {@linkplain Frontier#enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.LinkInfo) enqueued to the frontier}.
+ * {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued to the frontier}.
  * Then, a signal is issued on the {@link FetchData}, so that the owner (a {@link FetchingThread}}
  * can work on a different URL or possibly {@link Workbench#release(VisitState) release the visit state}.
  *
@@ -132,7 +134,7 @@ public class ParsingThread extends Thread {
 	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init initialized}
 	 *  specifying URI and scheme/authority of the page being visited and the robot filter to be
 	 *  applied. Then, one or more URLs can be
-	 *  {@linkplain #enqueue(it.unimi.di.law.bubing.protobuf.FrontierProtobuf.LinkInfo) enqueued}: the actual
+	 *  {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued}: the actual
 	 *  enqueuing takes place only if the URL passes both the schedule and the robots filter.
 	 */
 	public static final class FrontierEnqueuer {
@@ -148,8 +150,8 @@ public class ParsingThread extends Thread {
 		public int scheduledLinks;
 		public float totalWeight;
 
-		public FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder;
-		public FrontierProtobuf.CrawlRequest crawlRequest;
+		public MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder;
+		public MsgFrontier.CrawlRequest crawlRequest;
 
 		/** Creates the enqueuer.
 		 *
@@ -169,15 +171,15 @@ public class ParsingThread extends Thread {
 		 * @param robotsFilter the robots filter of the (authority of the) page to be parsed.
 		 */
 		public void init(byte[] schemeAuthority,
-										 FrontierProtobuf.CrawlRequest crawlRequest,
-										 FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder,
+										 MsgFrontier.CrawlRequest crawlRequest,
+										 MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
 										 FetchData fetchData,
 										 char[][] robotsFilter) {
 			scheduledLinks = outlinks = 0;
 			this.uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, crawlRequest.getUrlPathQuery().toByteArray());
 			this.crawlRequest = crawlRequest;
 			this.schemeAuthority = schemeAuthority;
-			this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrl(BURL.schemeAndAuthority(schemeAuthority) + BURL.pathAndQuery(this.uri));
+			this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrl( PulsarHelper.fromURI(uri) );
 			this.robotsFilter = robotsFilter;
 			this.totalWeight = 0.0f;
 			this.fetchData = fetchData;
@@ -185,12 +187,13 @@ public class ParsingThread extends Thread {
 		}
 
 		public void close() {
-			crawledPageInfoBuilder.setContentLength((int)this.fetchData.response().getEntity().getContentLength())
-					.setFetchDuration((int)(this.fetchData.endTime - this.fetchData.startTime))
-					.setFetchTime((int)(this.fetchData.startTime / (24*60*60*1000)))
-					.setHttpStatus(this.fetchData.response().getStatusLine().getStatusCode())
-					.setLanguage(fetchData.lang);
-			frontier.enqueueUrlList(crawledPageInfoBuilder.build());
+			crawledPageInfoBuilder
+				.setContentLength( (int)fetchData.response().getEntity().getContentLength() )
+				.setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
+				.setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
+				.setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
+				.setLanguage( fetchData.lang );
+			frontier.enqueueUrlList( crawledPageInfoBuilder.build() );
 		}
 
 		public static boolean sameSchemeAuthority(final byte[] schemeAuthority, final URI url) {
@@ -208,12 +211,11 @@ public class ParsingThread extends Thread {
 			return true;
 		}
 
-		private void process(final FrontierProtobuf.LinkInfo.Builder linkInfo, boolean isInternal) {
-			final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(
-					linkInfo.getSchemeAuthority().asReadOnlyByteBuffer().array(),
-					linkInfo.getPathQuery().asReadOnlyByteBuffer().array());
+		private void process( final MsgCrawler.LinkInfo.Builder linkInfo, boolean isInternal ) {
+			final URI url = PulsarHelper.toURI( linkInfo.getTarget() );
 			outlinks++;
-			FrontierProtobuf.CrawlerInfo.Builder crawlerInfoBuilder = FrontierProtobuf.CrawlerInfo.newBuilder();
+
+			final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
 			if (!scheduleFilter.apply(new Link(uri, url))) {
 				crawlerInfoBuilder.setMatchesScheduleRule(false);
 			} else
@@ -239,11 +241,11 @@ public class ParsingThread extends Thread {
 		 *
 		 * @param crawledPageInfoBuilder the CrawledPageInfo to be enqueued.
 		 */
-		public void process(final FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder) {
-			for (FrontierProtobuf.LinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
+		public void process(final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder) {
+			for (MsgCrawler.LinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
 				process(linkInfo, false);
 			}
-			for (FrontierProtobuf.LinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
+			for (MsgCrawler.LinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
 				process(linkInfo, true);
 			}
 		}
@@ -401,7 +403,7 @@ public class ParsingThread extends Thread {
 					Charset guessedCharset = null;
 					String guessedLanguage = null;
 
-					final FrontierProtobuf.CrawledPageInfo.Builder crawledPageInfoBuilder = FrontierProtobuf.CrawledPageInfo.newBuilder();
+					final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
 
 					frontierLinkReceiver.init(visitState.schemeAuthority,
 							fetchData.getCrawlRequest(),
@@ -481,10 +483,8 @@ public class ParsingThread extends Thread {
 								frontier.outdegree.add(crawledPageInfoBuilder.getExternalLinksCount());
 								final String currentHost = url.getHost();
 								int currentOutHostDegree = 0;
-								for(final FrontierProtobuf.LinkInfo u: crawledPageInfoBuilder.getExternalLinksList())
-									if(! currentHost.equals(
-											BURL.hostFromSchemeAndAuthority(
-													u.getSchemeAuthority().asReadOnlyByteBuffer().array())))
+								for(final MsgCrawler.LinkInfo u: crawledPageInfoBuilder.getExternalLinksList())
+									if( !currentHost.equals(u.getTarget().getHost()) )
 										currentOutHostDegree++;
 								frontier.externalOutdegree.add(currentOutHostDegree);
 							}
