@@ -65,7 +65,6 @@
 		<dependency org="net.java.dev.javacc" name="javacc" rev="5.0" conf="compile"/>
 
 		<dependency org="com.google.protobuf" name="protobuf-java" rev="3.5.1"/>
-		<dependency org="org.apache.ignite" name="ignite-core" rev="2.4.0"/>
 		<dependency org="org.apache.pulsar" name="pulsar-client" rev="1.22.0-incubating"/>
 
 		<dependency org="org.apache.commons" name="commons-math" rev="latest.release" conf="test"/>
