@@ -19,7 +19,6 @@ package it.unimi.di.law.bubing.frontier;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.bubing.util.Util;
@@ -38,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.http.cookie.Cookie;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 //RELEASE-STATUS: DIST
 
@@ -86,7 +86,7 @@ public class VisitState implements Delayed, Serializable {
 	public final static byte[] ROBOTS_PATH;
 	static {
 		byte[] robotsString = { '/', 'r', 'o', 'b', 'o', 't', 's', '.', 't', 'x', 't' };
-		ROBOTS_PATH = FrontierProtobuf.CrawlRequest.newBuilder().setUrlPathQuery(ByteString.copyFrom(robotsString)).build().toByteArray();
+		ROBOTS_PATH = MsgFrontier.CrawlRequest.newBuilder().setUrlPathQuery(ByteString.copyFrom(robotsString)).build().toByteArray();
 	}
 
 	/** A singleton empty cookie array. */

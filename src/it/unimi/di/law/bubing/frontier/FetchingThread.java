@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.config.ConnectionConfig;
@@ -33,6 +32,7 @@ import org.apache.http.ssl.SSLContexts;
 import org.apache.http.ssl.TrustStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -270,7 +270,7 @@ public final class FetchingThread extends Thread implements Closeable {
 						}
 
 
-					final FrontierProtobuf.CrawlRequest crawlRequest = FrontierProtobuf.CrawlRequest.parseFrom(visitState.firstPath());
+					final MsgFrontier.CrawlRequest crawlRequest = MsgFrontier.CrawlRequest.parseFrom(visitState.firstPath());
 					final byte[] path = crawlRequest.getUrlPathQuery().toByteArray();
 				final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, path);
 

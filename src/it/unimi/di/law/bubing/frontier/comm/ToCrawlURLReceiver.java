@@ -18,12 +18,12 @@ package it.unimi.di.law.bubing.frontier.comm;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import org.apache.pulsar.client.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -94,9 +94,9 @@ public final class ToCrawlURLReceiver implements MessageListener {
 
 	@Override
 	public void received(Consumer consumer, Message message) {
-		FrontierProtobuf.CrawlRequest crawlRequest = null;
+		final MsgFrontier.CrawlRequest crawlRequest;
 		try {
-			crawlRequest = FrontierProtobuf.CrawlRequest.parseFrom(message.getData());
+			crawlRequest = MsgFrontier.CrawlRequest.parseFrom(message.getData());
 			frontier.quickReceivedToCrawlURLs.put(crawlRequest); // Will block until not full
 		} catch (InvalidProtocolBufferException e) {
 			LOGGER.error("Error while parsing message from Pulsar",e);

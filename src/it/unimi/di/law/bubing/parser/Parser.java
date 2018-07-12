@@ -6,10 +6,10 @@ import java.nio.charset.Charset;
 import java.util.Iterator;
 import java.util.Locale;
 
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
 import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import org.apache.http.HttpResponse;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 
 /*
  * Copyright (C) 2004-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -38,10 +38,10 @@ import it.unimi.dsi.lang.FlyweightPrototype;
  *  <ul>
  *  	<li>it acts as a {@link Filter} that is able to decide whether it can parse a certain {@link URIResponse} or not (e.g.,
  *  	based on the declared <code>content-type</code> header etc.);
- *  	<li>while {@linkplain #parse(URI, HttpResponse, it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo.Builder) parsing},
+ *  	<li>while {@linkplain #parse(URI, HttpResponse, MsgCrawler.FetchInfo.Builder) parsing},
  *  	it will send the links found in the document to the
- *  	specified {@link it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo.Builder)}, that will typically accumulate them or send them to the appropriate class for processing;
- *  	<li>the {@link #parse(URI, HttpResponse, it.unimi.di.law.bubing.protobuf.FrontierProtobuf.CrawledPageInfo.Builder)) parsing} method will return a digest computed on a
+ *  	specified {@link MsgCrawler.FetchInfo.Builder)}, that will typically accumulate them or send them to the appropriate class for processing;
+ *  	<li>the {@link #parse(URI, HttpResponse, MsgCrawler.FetchInfo.Builder)) parsing} method will return a digest computed on a
  *  	(possibly) suitably modified version of the document (the way in which the document it is actually modified and
  *		the way in which the hash is computed is implementation-dependent and should be commented by the implementing classes);
  *  	<li>after parsing, a {@linkplain #guessedCharset() guess of the charset used for the document} will be made available.
@@ -76,7 +76,7 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 * @return a digest of the page content, or {@code null} if no digest has been
 	 * computed.
 	 */
-	public byte[] parse(final URI uri, final HttpResponse response, final FrontierProtobuf.CrawledPageInfo.Builder linkReceiver) throws IOException;
+	public byte[] parse(final URI uri, final HttpResponse response, final MsgCrawler.FetchInfo.Builder linkReceiver) throws IOException;
 
 	/**
 	 * Returns a guessed charset for the document, or {@code null} if the charset could not be

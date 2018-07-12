@@ -5,6 +5,7 @@
 .idea
 *.iml
 bubing-*
+out/
 build/
 dist/
 docs/
@@ -18,6 +19,7 @@ src/it/unimi/di/law/warc/filters/parser/ParseException.java
 src/it/unimi/di/law/warc/filters/parser/SimpleCharStream.java
 src/it/unimi/di/law/warc/filters/parser/Token.java
 src/it/unimi/di/law/warc/filters/parser/TokenMgrError.java
+src/it/unimi/di/law/bubing/protobuf/*.java
 .settings/
 priv/
 bin/

@@ -16,7 +16,6 @@ package it.unimi.di.law.bubing.parser;
  * limitations under the License.
  */
 
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
 import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import it.unimi.di.law.warc.filters.URIResponse;
@@ -33,6 +32,7 @@ import org.apache.http.HttpResponse;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 
 // RELEASE-STATUS: DIST
 
@@ -88,7 +88,7 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
-	public byte[] parse(final URI uri, final HttpResponse httpResponse, final FrontierProtobuf.CrawledPageInfo.Builder linkReceiver) throws IOException {
+	public byte[] parse(final URI uri, final HttpResponse httpResponse, final MsgCrawler.FetchInfo.Builder linkReceiver) throws IOException {
 		if (hashFunction == null) return null;
 		final InputStream is = httpResponse.getEntity().getContent();
 		final Hasher hasher = init(crossAuthorityDuplicates? null : uri);

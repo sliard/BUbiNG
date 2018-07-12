@@ -18,7 +18,6 @@ package it.unimi.di.law.bubing.frontier.comm;
 //RELEASE-STATUS: DIST
 
 import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.di.law.bubing.protobuf.FrontierProtobuf;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.MurmurHash3;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
@@ -34,8 +33,9 @@ import org.apache.pulsar.client.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
- * The {@link #run()} method waits on the {@link Frontier#quickReceivedDiscoveredURLs} queue, checking that {@link #stop} becomes true every second. */
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+
+/** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit(). */
 
 public final class DiscoveredURLSendThread extends Thread {
     private static final Logger LOGGER = LoggerFactory.getLogger(DiscoveredURLSendThread.class);
@@ -91,16 +91,12 @@ public final class DiscoveredURLSendThread extends Thread {
     @Override
     public void run() {
         try {
-            final ArrayBlockingQueue<FrontierProtobuf.CrawledPageInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
-            while(! stop) {
-                final FrontierProtobuf.CrawledPageInfo linkInfo = quickToSendURLs.poll(1, TimeUnit.SECONDS);
-
-                if (linkInfo != null) {
-                    byte[] schemeAuthority = BURL.schemeAndAuthorityAsByteArray(BURL.toByteArray(BURL.parse(linkInfo.getUrl())));
-                    final int startOfHost = BURL.startOfHost(schemeAuthority);
-                    final long hash = MurmurHash3.hash(schemeAuthority, startOfHost, BURL.lengthOfHost(schemeAuthority, startOfHost));
-
-                    pulsarProducers.get((int)((hash & 0x7fffffffffffffffl) % pulsarProducers.size())).sendAsync(linkInfo.toByteArray());
+            final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
+            while( !stop ) {
+                final MsgCrawler.FetchInfo fetchInfo = quickToSendURLs.poll(1, TimeUnit.SECONDS);
+                if ( fetchInfo != null ) {
+                    final int topic = PulsarHelper.getTopic( fetchInfo.getUrl(), pulsarProducers.size() );
+                    pulsarProducers.get( topic ).sendAsync( fetchInfo.toByteArray() );
                 }
             }
         }
