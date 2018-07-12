@@ -296,8 +296,8 @@ public class HTMLParser<T> implements Parser<T> {
     return newPageInfo;
   }
 
-  private MsgCrawler.LinkInfo.Builder makeLinkInfoFromBasicURI(final URI targetURI) {
-    MsgCrawler.LinkInfo.Builder newLinkInfo = MsgCrawler.LinkInfo.newBuilder();
+  private MsgCrawler.FetchLinkInfo.Builder makeLinkInfoFromBasicURI(final URI targetURI) {
+    MsgCrawler.FetchLinkInfo.Builder newLinkInfo = MsgCrawler.FetchLinkInfo.newBuilder();
     newLinkInfo.setTarget( PulsarHelper.fromURI(targetURI) );
     return newLinkInfo;
   }
@@ -323,34 +323,34 @@ public class HTMLParser<T> implements Parser<T> {
     boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,url);
     if (url == null) return;
     URI targetURI = base.resolve(url);
-    MsgCrawler.LinkInfo.Builder newLinkInfo = makeLinkInfoFromBasicURI(targetURI);
-    MsgLink.LinkInfo.Builder newLinkDetailInfo = MsgLink.LinkInfo.newBuilder();
+    MsgCrawler.FetchLinkInfo.Builder fetchLinkInfo = makeLinkInfoFromBasicURI(targetURI);
+    MsgLink.LinkInfo.Builder linkInfo = MsgLink.LinkInfo.newBuilder();
     if (linkName == HTMLElementName.A)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.A);
+      linkInfo.setLinkType(EnumType.Enum.A);
     else if (linkName == HTMLElementName.AREA)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.AREA);
+      linkInfo.setLinkType(EnumType.Enum.AREA);
     else if (linkName == HTMLElementName.EMBED)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.EMBED);
+      linkInfo.setLinkType(EnumType.Enum.EMBED);
     else if (linkName == HTMLElementName.FRAME)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.FRAME);
+      linkInfo.setLinkType(EnumType.Enum.FRAME);
     else if (linkName == HTMLElementName.IFRAME)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.IFRAME);
+      linkInfo.setLinkType(EnumType.Enum.IFRAME);
     else if (linkName == HTMLElementName.IMG)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.IMG);
+      linkInfo.setLinkType(EnumType.Enum.IMG);
     else if (linkName == HTMLElementName.LINK)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.LINK);
+      linkInfo.setLinkType(EnumType.Enum.LINK);
     else if (linkName == HTMLElementName.OBJECT)
-      newLinkDetailInfo.setLinkType(EnumType.Enum.OBJECT);
+      linkInfo.setLinkType(EnumType.Enum.OBJECT);
     if (isNoFollow)
-      newLinkDetailInfo.setLinkRel(EnumRel.Enum.NOFOLLOW);
+      linkInfo.setLinkRel(EnumRel.Enum.NOFOLLOW);
     if (anchorText != null && anchorText.length() > 0)
-      newLinkDetailInfo.setText(anchorText);
-    newLinkDetailInfo.setLinkQuality(1.0f);
-    newLinkInfo.setLinkInfo( newLinkDetailInfo );
+      linkInfo.setText(anchorText);
+    linkInfo.setLinkQuality(1.0f);
+    fetchLinkInfo.setLinkInfo( linkInfo );
     if (hasSameSchemeAuthority)
-      crawledPageInfoBuilder.addInternalLinks(newLinkInfo.buildPartial());
+      crawledPageInfoBuilder.addInternalLinks(fetchLinkInfo.buildPartial());
     else
-      crawledPageInfoBuilder.addExternalLinks(newLinkInfo.buildPartial());
+      crawledPageInfoBuilder.addExternalLinks(fetchLinkInfo.buildPartial());
   }
 
   @Override
@@ -534,7 +534,7 @@ public class HTMLParser<T> implements Parser<T> {
           LOGGER.debug("Found relative header location URL: \"{}\"", location);
 
         this.location = uri.resolve(location);
-        final MsgCrawler.LinkInfo.Builder linkInfo = makeLinkInfoFromBasicURI(this.location);
+        final MsgCrawler.FetchLinkInfo.Builder linkInfo = makeLinkInfoFromBasicURI(this.location);
         linkInfo.getLinkInfoBuilder()
           .setLinkType(EnumType.Enum.LINK)
           .setLinkRel(EnumRel.Enum.LOCATION);
@@ -1139,7 +1139,7 @@ public class HTMLParser<T> implements Parser<T> {
     System.out.println("Links: " + crawledPageInfoBuilder.getExternalLinksList());
 
     final Set<String> urlStrings = new ObjectOpenHashSet<>();
-    for (final MsgCrawler.LinkInfo link : crawledPageInfoBuilder.getExternalLinksList())
+    for (final MsgCrawler.FetchLinkInfo link : crawledPageInfoBuilder.getExternalLinksList())
       urlStrings.add( PulsarHelper.toString(link.getTarget()) );
     if (urlStrings.size() != crawledPageInfoBuilder.getExternalLinksList().size())
       System.out.println("There are " + crawledPageInfoBuilder.getExternalLinksList().size() + " URIs but " + urlStrings.size() + " strings");

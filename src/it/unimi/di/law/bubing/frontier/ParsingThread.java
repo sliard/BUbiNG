@@ -211,7 +211,7 @@ public class ParsingThread extends Thread {
 			return true;
 		}
 
-		private void process( final MsgCrawler.LinkInfo.Builder linkInfo, boolean isInternal ) {
+		private void process( final MsgCrawler.FetchLinkInfo.Builder linkInfo, boolean isInternal ) {
 			final URI url = PulsarHelper.toURI( linkInfo.getTarget() );
 			outlinks++;
 
@@ -242,10 +242,10 @@ public class ParsingThread extends Thread {
 		 * @param crawledPageInfoBuilder the CrawledPageInfo to be enqueued.
 		 */
 		public void process(final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder) {
-			for (MsgCrawler.LinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
+			for (MsgCrawler.FetchLinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
 				process(linkInfo, false);
 			}
-			for (MsgCrawler.LinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
+			for (MsgCrawler.FetchLinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
 				process(linkInfo, true);
 			}
 		}
@@ -483,7 +483,7 @@ public class ParsingThread extends Thread {
 								frontier.outdegree.add(crawledPageInfoBuilder.getExternalLinksCount());
 								final String currentHost = url.getHost();
 								int currentOutHostDegree = 0;
-								for(final MsgCrawler.LinkInfo u: crawledPageInfoBuilder.getExternalLinksList())
+								for(final MsgCrawler.FetchLinkInfo u: crawledPageInfoBuilder.getExternalLinksList())
 									if( !currentHost.equals(u.getTarget().getHost()) )
 										currentOutHostDegree++;
 								frontier.externalOutdegree.add(currentOutHostDegree);
