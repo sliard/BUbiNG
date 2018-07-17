@@ -38,13 +38,14 @@ import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClients;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.link.MsgLink;
 import com.exensa.wdl.protobuf.link.EnumRel;
 import com.exensa.wdl.protobuf.link.EnumType;
 import com.exensa.wdl.protobuf.crawler.MsgRobotsTag;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
