@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
@@ -30,6 +31,7 @@ import it.unimi.dsi.fastutil.shorts.Short2ShortOpenHashMap;
 import java.io.Reader;
 import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
@@ -86,7 +88,8 @@ public class VisitState implements Delayed, Serializable {
 	public final static byte[] ROBOTS_PATH;
 	static {
 		byte[] robotsString = { '/', 'r', 'o', 'b', 'o', 't', 's', '.', 't', 'x', 't' };
-		ROBOTS_PATH = MsgFrontier.CrawlRequest.newBuilder().setUrlPathQuery(ByteString.copyFrom(robotsString)).build().toByteArray();
+		MsgURL.URL.Builder robotsURL = MsgURL.URL.newBuilder().setPathQuery(new String(robotsString, StandardCharsets.US_ASCII));
+		ROBOTS_PATH = MsgFrontier.CrawlRequest.newBuilder().setUrl(robotsURL).build().toByteArray();
 	}
 
 	/** A singleton empty cookie array. */

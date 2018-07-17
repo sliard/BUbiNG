@@ -7,7 +7,7 @@
 		<!-- <ibiblio name="oracle" m2compatible="true" root="https://download.oracle.com/maven"/> -->
 		<ibiblio name="law-snapshots" m2compatible="true" root="http://jars.law.di.unimi.it/content/repositories/snapshots" checkmodified="true" changingPattern=".*-SNAPSHOT"/>
 		<ibiblio name="law-public" m2compatible="true" root="http://jars.law.di.unimi.it/content/repositories/public/"/>
-		<ibiblio name="exensa" m2compatible="true" root="http://maven.exensa.loc/releases/"/>
+		<ibiblio name="exensa" m2compatible="true" root="http://maven.exensa.loc/releases/" checkmodified="true" changingPattern=".*-SNAPSHOT"/>
 		<chain name="default" returnFirst="true">
 			<resolver ref="local"/>
 			<resolver ref="exensa"/>

@@ -98,7 +98,7 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  * <p>Note that waiting URLs that happen to be ready or visited will never come out of the sieve: it
  * is the logic of the sieve itself that inhibits the same object to be emitted twice.
  *
- * <p>All ready URLs are initially stored in a {@link ByteArrayDiskQueue} called {@link #quickReceivedToCrawlURLs},
+ * <p>All ready URLs are initially stored in a {@link ByteArrayDiskQueue} called {@link #quickReceivedCrawlRequests},
  * from which they are moved to the FIFO queue of their {@link VisitState} by the
  * {@link Distributor}. Inside a {@link VisitState}, we only store a byte-array represention of the
  * path+query of ready URLs. Some of them may be stored outside of the visit state, through
@@ -111,7 +111,7 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  * <p>URLs are {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued to the frontier} either because
  * they are part of the visit seed, or because a {@link ParsingThread} has found them, or because
  * they have been {@linkplain JobManager#submit(Job) submitted using JAI4J} (this includes both
- * manual submission and URLs sent by other agents). The method {@link #enqueue(ByteArrayList)} will
+ * manual submission and URLs sent by other agents). The method {@link #enqueue(com.exensa.wdl.protobuf.crawler.MsgCrawler.FetchInfo)} will
  * first check whether we have stored already too many URLs for the URL scheme+authority, in which
  * case the URL is discarded; then, it will check whether the URL already appears in the URL cache
  * (also in this case, the URL is discarded); finally it will check whether there is another agent
@@ -221,7 +221,7 @@ public class Frontier {
 	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
 
 	/** A queue to quickly buffer to be crawled URLs (as {@link MsgCrawler.FetchInfo} serialized. */
-	public ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedToCrawlURLs;
+	public ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
 
 	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
 	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
@@ -392,7 +392,7 @@ public class Frontier {
 			@Override
 			protected WarcWriter initialValue() {
 				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID() + ".zstm");
-				LOGGER.info("Opening file " + robotsFile + " to write robots.txt");
+				LOGGER.trace("Opening file " + robotsFile + " to write robots.txt");
 				Configuration conf = new Configuration(true);
 				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
 				CompressionCodec codec = ccf.getCodecByClassName(ZstdCodec.class.getName());
@@ -474,7 +474,7 @@ public class Frontier {
 		Config.LoggerProvider = LoggerProvider.SLF4J;
 
 		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
-		quickReceivedToCrawlURLs = new ArrayBlockingQueue<>(64 * 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>(64 * 1024);
 		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
 		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
 			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
@@ -725,7 +725,7 @@ public class Frontier {
 		// Fix all visit states in the refill queue
 		for (VisitState visitState; (visitState = refill.poll()) != null;) {
 			// Note that this might make temporarily the workbench too big by a little bit.
-			final int dequeuedURLs = virtualizer.dequeuePathQueries(visitState, visitState.pathQueryLimit());
+			final int dequeuedURLs = virtualizer.dequeueCrawlRequests(visitState, visitState.pathQueryLimit());
 			if (dequeuedURLs == 0) LOGGER.info("No URLs on disk during last refill: " + visitState);
 			if (visitState.acquired) LOGGER.warn("Visit state in the poll queue is acquired: " + visitState);
 		}

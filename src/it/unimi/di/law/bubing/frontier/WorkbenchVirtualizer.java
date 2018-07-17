@@ -48,7 +48,7 @@ import it.unimi.dsi.fastutil.objects.Reference2ObjectMap;
  * each visit state, stored in a {@link Database}. Each queue is associated with a scheme+authority (the key).
  * Values are given by an increasing timestamp (written as a vByte-encoded integer) followed by a path+query.
  *
- * <p>Path+queries are enqueued using the {@link #enqueueURL(VisitState, ByteArrayList)} method. They can be {@linkplain #dequeuePathQueries(VisitState, int) dequeued in batches}
+ * <p>Path+queries are enqueued using the {@link #enqueueURL(VisitState, ByteArrayList)} method. They can be {@linkplain #dequeueCrawlRequests(VisitState, int) dequeued in batches}
  * (the method uses {@linkplain Cursor cursors}). When a queue is no longer needed, it can be {@linkplain #remove(VisitState) removed}.
  *
  * @author Sebastiano Vigna
@@ -84,7 +84,7 @@ public class WorkbenchVirtualizer implements Closeable {
 	 * @return the number of actually dequeued path+queries.
 	 * @throws IOException
 	 */
-	public int dequeuePathQueries(final VisitState visitState, final int maxUrls) throws IOException {
+	public int dequeueCrawlRequests(final VisitState visitState, final int maxUrls) throws IOException {
 		if (maxUrls == 0) return 0;
 		final int dequeued = (int)Math.min(maxUrls, byteArrayDiskQueues.count(visitState));
 		for(int i = dequeued; i-- != 0;) visitState.enqueueCrawlRequest(byteArrayDiskQueues.dequeue(visitState));
@@ -125,10 +125,8 @@ public class WorkbenchVirtualizer implements Closeable {
 	 * @param url a {@link BURL BUbiNG URL}.
 	 * @throws IOException
 	 */
-	public void enqueueURL(VisitState visitState, final ByteArrayList url) throws IOException {
-		final byte[] urlBuffer = url.elements();
-		final int pathQueryStart = BURL.startOfpathAndQuery(urlBuffer);
-		byteArrayDiskQueues.enqueue(visitState,  urlBuffer, pathQueryStart, url.size() - pathQueryStart);
+	public void enqueueCrawlRequest(VisitState visitState, final byte[] crawlRequest) throws IOException {
+		byteArrayDiskQueues.enqueue(visitState,  crawlRequest, 0, crawlRequest.length);
 	}
 
 	/** Performs a garbage collection if the space used is below a given threshold, reaching a given target ratio.

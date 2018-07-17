@@ -1,5 +1,6 @@
 package it.unimi.di.law.bubing.parser;
 
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.common.base.Charsets;
 import com.google.common.collect.Sets;
 import com.google.common.hash.HashFunction;
@@ -293,7 +294,9 @@ public class HTMLParser<T> implements Parser<T> {
 
   private MsgFrontier.CrawlRequest.Builder makePageInfoFromURI(final URI origin) {
     MsgFrontier.CrawlRequest.Builder newPageInfo = MsgFrontier.CrawlRequest.newBuilder();
-    newPageInfo.setSchemeAuthority(ByteString.copyFrom(BURL.schemeAndAuthority(origin).getBytes(Charsets.US_ASCII)));
+    newPageInfo.setUrl(PulsarHelper.fromURI(origin))
+        .setCrawlOptions(MsgFrontier.CrawlRequestOptions.getDefaultInstance())
+        .build();
     return newPageInfo;
   }
 

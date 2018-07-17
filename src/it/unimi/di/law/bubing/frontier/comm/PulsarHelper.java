@@ -2,9 +2,11 @@ package it.unimi.di.law.bubing.frontier.comm;
 
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.url.EnumScheme;
+import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.MurmurHash3_128;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 
 public class PulsarHelper
@@ -24,10 +26,12 @@ public class PulsarHelper
   }
 
   public static MsgURL.URL fromURI( final URI uri ) {
+    String rawPath = uri.getRawPath();
+    String rawQuery = uri.getRawQuery();
     return MsgURL.URL.newBuilder()
       .setScheme( getScheme(uri.getScheme()) )
       .setHost( uri.getHost() )
-      .setPathQuery( uri.getRawPath() + uri.getRawQuery() )
+      .setPathQuery( ((rawPath == null) ? "":rawPath) + ((rawQuery == null) ? "" : rawQuery) )
       .build();
   }
 
@@ -36,7 +40,24 @@ public class PulsarHelper
   }
 
   public static String toString( final MsgURL.URL url ) {
-    return getScheme(url.getScheme()) + url.getHost() + url.getPathQuery();
+    return getScheme(url.getScheme()) + "://" + url.getHost() + url.getPathQuery();
+  }
+
+  public static byte[] schemeAuthority( final MsgURL.URL url ) {
+    return (getScheme(url.getScheme()) + "://" + url.getHost()).getBytes(StandardCharsets.US_ASCII);
+  }
+  public static MsgURL.URL.Builder schemeAuthority(final byte[] schemeAuthority) {
+    MsgURL.URL.Builder urlBuilder = MsgURL.URL.newBuilder();
+    urlBuilder.setHost(BURL.hostFromSchemeAndAuthority(schemeAuthority));
+    String sa = new String(schemeAuthority, StandardCharsets.US_ASCII);
+    if (sa.startsWith("https://"))
+      urlBuilder.setScheme(EnumScheme.Enum.HTTPS);
+    else
+    if (sa.startsWith("http://"))
+      urlBuilder.setScheme(EnumScheme.Enum.HTTP);
+    else
+      urlBuilder.setScheme(EnumScheme.Enum.UNKNOWN);
+    return urlBuilder;
   }
 
   private static EnumScheme.Enum getScheme( final String scheme ) {

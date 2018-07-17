@@ -19,7 +19,6 @@ package it.unimi.di.law.bubing.frontier.comm;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.util.*;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import org.apache.pulsar.client.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +49,8 @@ public final class ToCrawlURLReceiver implements MessageListener {
 	 */
 	public ToCrawlURLReceiver(final Frontier frontier) throws PulsarClientException {
 		ClientConfiguration conf = new ClientConfiguration();
+		conf.setIoThreads(8);
+		conf.setListenerThreads(8);
 		this.frontier = frontier;
 		this.topicNumber = frontier.rc.pulsarFrontierTopicNumber;
 		pulsarClient = PulsarClient.create(frontier.rc.pulsarClientConnection, conf);
@@ -61,13 +62,12 @@ public final class ToCrawlURLReceiver implements MessageListener {
 			consumerConfig.setSubscriptionType(SubscriptionType.Failover);
 			consumerConfig.setConsumerName(Integer.toString(MurmurHash3_128.murmurhash3_x86_32(frontier.rc.name, 0, frontier.rc.name.length(), i)));
 			consumerConfig.setMessageListener(this);
-			asyncConsumers.add(pulsarClient.subscribeAsync(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-" + Integer.toString(i), "urlReceiveSubscription", consumerConfig));
+			asyncConsumers.add(pulsarClient.subscribeAsync(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-" + Integer.toString(i), "toCrawlSubscription", consumerConfig));
 		}
 		for (int i = 0; i < topicNumber; i++) {
 			try {
-				Consumer c = asyncConsumers.get(i).get();
-
-				pulsarConsumers.add(c);
+        Consumer c = asyncConsumers.get(i).get();
+        pulsarConsumers.add(c);
 			} catch (InterruptedException e) {
 				LOGGER.error("Error while getting Pulsar consumer", e);
 			} catch (ExecutionException e) {
@@ -94,10 +94,12 @@ public final class ToCrawlURLReceiver implements MessageListener {
 
 	@Override
 	public void received(Consumer consumer, Message message) {
-		final MsgFrontier.CrawlRequest crawlRequest;
 		try {
+			final MsgFrontier.CrawlRequest crawlRequest;
 			crawlRequest = MsgFrontier.CrawlRequest.parseFrom(message.getData());
-			frontier.quickReceivedToCrawlURLs.put(crawlRequest); // Will block until not full
+			if (LOGGER.isTraceEnabled())
+				LOGGER.trace("Received url {} to crawl", crawlRequest.toString());
+			frontier.quickReceivedCrawlRequests.put(crawlRequest); // Will block until not full
 		} catch (InvalidProtocolBufferException e) {
 			LOGGER.error("Error while parsing message from Pulsar",e);
 		} catch (InterruptedException e) {
