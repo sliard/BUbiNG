@@ -176,7 +176,7 @@ public class ParsingThread extends Thread {
 										 FetchData fetchData,
 										 char[][] robotsFilter) {
 			scheduledLinks = outlinks = 0;
-			this.uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, crawlRequest.getUrlPathQuery().toByteArray());
+			this.uri = PulsarHelper.toURI(crawlRequest.getUrl());
 			this.crawlRequest = crawlRequest;
 			this.schemeAuthority = schemeAuthority;
 			this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrl( PulsarHelper.fromURI(uri) );
@@ -261,7 +261,7 @@ public class ParsingThread extends Thread {
 	/** A reference to the store. */
 	private final Store store;
 	/** The parsers used by this thread. */
-	public final ArrayList<Parser<?>> parsers;
+	private final ArrayList<Parser<?>> parsers;
 	/** A random number generator for the thread */
 	private final Random rng;
 
@@ -273,7 +273,7 @@ public class ParsingThread extends Thread {
 	public ParsingThread(final Frontier frontier, final int index) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, IOException, NoSuchAlgorithmException {
 		setName(this.getClass().getSimpleName() + '-' + index);
 		this.frontier = frontier;
-		this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);;
+		this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
 		this.rng = new Random(index);
 		this.parsers = new ArrayList<>(frontier.rc.parsers.size());
 		frontier.availableFetchData.add(new FetchData(frontier.rc)); // Add extra available Fetch Data

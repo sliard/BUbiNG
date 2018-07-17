@@ -17,6 +17,8 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 
+import com.exensa.wdl.protobuf.url.MsgURL;
+import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
@@ -28,7 +30,7 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 //RELEASE-STATUS: DIST
 
-/** A thread that distributes {@linkplain Frontier#quickReceivedToCrawlURLs ready URLs} into
+/** A thread that distributes {@linkplain Frontier#quickReceivedCrawlRequests ready URLs} into
  *  the {@link Workbench} queues with the help of a {@link WorkbenchVirtualizer}.
  *  We invite the reader to consult the documentation of {@link WorkbenchVirtualizer} first.
  *
@@ -50,7 +52,7 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  *		in which case it performs a refill.
  *  	<li>Otherwise, if there are no ready URLs and it is too early to force a flush of the sieve, this thread is put
  *      to sleep with an exponential backoff.
- *      <li>Otherwise, (possibly after a flush) a ready URL is loaded from {@link Frontier#quickReceivedToCrawlURLs} and either deleted
+ *      <li>Otherwise, (possibly after a flush) a ready URL is loaded from {@link Frontier#quickReceivedCrawlRequests} and either deleted
  *      (if we already have too many URLs for its scheme+authority),
  *      or enqueued to the workbench (if its visit state has no virtualized URLs and has not reached {@link VisitState#pathQueryLimit()}),
  *      or otherwise enqueued to the {@link WorkbenchVirtualizer}.
@@ -93,10 +95,10 @@ public final class Distributor extends Thread {
 		statsThread = new StatsThread(frontier, this);
 	}
 
-	private boolean processURL(final MsgFrontier.CrawlRequest pageInfo, long now) {
+	private boolean processURL(final MsgFrontier.CrawlRequest crawlRequest, long now) {
 		try {
 			VisitState visitState;
-			byte[] schemeAuthority = pageInfo.getSchemeAuthority().toByteArray();
+			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrl());
 			final int currentlyInStore = frontier.schemeAuthority2Count.get(schemeAuthority, 0, schemeAuthority.length);
 			if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
 				visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
@@ -107,11 +109,14 @@ public final class Distributor extends Thread {
 						if (LOGGER.isTraceEnabled())
 							LOGGER.trace("New scheme+authority {} with path+query {}",
 									it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
-									it.unimi.di.law.bubing.util.Util.toString(pageInfo.getUrlPathQuery().toByteArray()));
+									crawlRequest.getUrl().getPathQuery());
 						visitState = new VisitState(schemeAuthority);
 						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
 						visitState.enqueueRobots();
-						visitState.enqueueCrawlRequest(MsgFrontier.CrawlRequest.newBuilder(pageInfo).clearSchemeAuthority().build().toByteArray());
+						MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
+						MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
+						crBuilder.setUrl(cleanedURL);
+						visitState.enqueueCrawlRequest(crBuilder.build().toByteArray());
 						synchronized (schemeAuthority2VisitState) {
 							schemeAuthority2VisitState.add(visitState);
 						}
@@ -122,16 +127,25 @@ public final class Distributor extends Thread {
 					if (frontier.virtualizer.count(visitState) > 0) {
 						// Safe: there are URLs on disk, and this fact cannot change concurrently.
 						movedFromSieveToVirtualizer++;
-						frontier.virtualizer.enqueueURL(visitState, new ByteArrayList(pageInfo.toByteArray()));
+            MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
+            MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
+            crBuilder.setUrl(cleanedURL);
+            frontier.virtualizer.enqueueCrawlRequest(visitState, crBuilder.build().toByteArray());
 					} else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 						/* Safe: we are enqueueing to a sane (modulo race conditions)
 						 * visit state, which will be necessarily go through the DoneThread later. */
 						visitState.checkRobots(now);
-						visitState.enqueueCrawlRequest(pageInfo.toByteArray());
+            MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
+            MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
+            crBuilder.setUrl(cleanedURL);
+            visitState.enqueueCrawlRequest(crBuilder.build().toByteArray());
 						movedFromSieveToWorkbench++;
 					} else { // visitState.urlsOnDisk == 0
 						movedFromSieveToVirtualizer++;
-						frontier.virtualizer.enqueueURL(visitState, new ByteArrayList(pageInfo.toByteArray()));
+            MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
+            MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
+            crBuilder.setUrl(cleanedURL);
+            frontier.virtualizer.enqueueCrawlRequest(visitState, crBuilder.build().toByteArray());
 					}
 				}
 			} else deletedFromSieve++;
@@ -172,7 +186,7 @@ public final class Distributor extends Thread {
 							final int pathQueryLimit = visitState.pathQueryLimit();
 							if (LOGGER.isDebugEnabled()) LOGGER.debug("Refilling {} with {} URLs", visitState, Integer.valueOf(pathQueryLimit));
 							visitState.checkRobots(now);
-							final int dequeuedURLs = frontier.virtualizer.dequeuePathQueries(visitState, pathQueryLimit);
+							final int dequeuedURLs = frontier.virtualizer.dequeueCrawlRequests(visitState, pathQueryLimit);
 							movedFromQueues += dequeuedURLs;
 						}
 					}
@@ -180,10 +194,10 @@ public final class Distributor extends Thread {
 						// It is necessary to enrich the workbench picking up URLs from the sieve
 
 						// Note that this might make temporarily the workbench too big by a little bit.
-						for(int i = 100; i-- != 0 && ! frontier.quickReceivedToCrawlURLs.isEmpty();) {
+						for(int i = 100; i-- != 0 && ! frontier.quickReceivedCrawlRequests.isEmpty();) {
 							round = -1;
-							MsgFrontier.CrawlRequest urlInfo = frontier.quickReceivedToCrawlURLs.take();
-							if (!processURL(urlInfo, now))
+							MsgFrontier.CrawlRequest crawlRequest = frontier.quickReceivedCrawlRequests.take();
+							if (!processURL(crawlRequest, now))
 								i++;
 						}
 					}

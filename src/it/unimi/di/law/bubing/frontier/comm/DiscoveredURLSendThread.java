@@ -57,7 +57,8 @@ public final class DiscoveredURLSendThread extends Thread {
         // START PULSAR BLOCK
         ClientConfiguration conf = new ClientConfiguration();
         this.frontier = frontier;
-
+        conf.setIoThreads(8);
+        conf.setListenerThreads(8);
         pulsarClient = PulsarClient.create(frontier.rc.pulsarClientConnection,conf);
         pulsarProducers = new ArrayList<>(frontier.rc.pulsarFrontierTopicNumber);
         List<CompletableFuture<Producer>> asyncProducers = new ArrayList<CompletableFuture<Producer>>(frontier.rc.pulsarFrontierTopicNumber);

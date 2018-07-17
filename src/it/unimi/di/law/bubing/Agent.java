@@ -16,7 +16,6 @@ import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
-import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.*;
 import it.unimi.di.law.bubing.frontier.comm.DiscoveredURLSendThread;
 import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
@@ -619,7 +618,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute @Description("Number of ready URLs")
 	public long getReadyURLs() {
-		return frontier.quickReceivedToCrawlURLs.size();
+		return frontier.quickReceivedCrawlRequests.size();
 	}
 
 	@ManagedAttribute @Description("Number of FetchingThread waits")
