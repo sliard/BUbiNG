@@ -271,6 +271,7 @@ public final class StatsThread implements Runnable {
 				+ "; on workbench (S+A): " + (long)entrySummaryStats.sum()
 				+ "; to do: " + frontier.todo.size()
 				+ "; active: " + (frontier.rc.fetchingThreads - frontier.results.size())
+				+ "; fetchData available " + (frontier.availableFetchData.size())
 				+ "; ready to parse: " + frontier.results.size()
 				+ "; unknown hosts: " + frontier.unknownHosts.size()
 				+ "; broken: " + frontier.brokenVisitStates.get() + " (" + brokenVisitStatesOnWorkbench + " on workbench)"

@@ -324,9 +324,9 @@ public class HTMLParser<T> implements Parser<T> {
                          final boolean isNoFollow, final boolean isNoIndex, final boolean isCanonical) {
     if (s == null) return;
     final URI url = BURL.parse(s);
-    boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,url);
     if (url == null) return;
     URI targetURI = base.resolve(url);
+    boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,targetURI);
     MsgCrawler.FetchLinkInfo.Builder fetchLinkInfo = makeLinkInfoFromBasicURI(targetURI);
     MsgLink.LinkInfo.Builder linkInfo = MsgLink.LinkInfo.newBuilder();
     if (linkName == HTMLElementName.A)
@@ -665,10 +665,10 @@ public class HTMLParser<T> implements Parser<T> {
                 }
               } else {
                 final String metaName = startTag.getAttributeValue("name");
-                final String metaContent = startTag.getAttributeValue("content");
-                if (!metaName.equalsIgnoreCase("robots"))
+                String metaContent = startTag.getAttributeValue("content");
+                if (metaContent == null || metaName == null || !metaName.equalsIgnoreCase("robots"))
                   continue;
-                metaContent.toLowerCase();
+                metaContent = metaContent.toLowerCase();
                 if (metaContent != null) {
                   String metaContentLC = metaContent.toLowerCase();
                   if (metaContentLC.contains("noindex"))

@@ -287,15 +287,15 @@ public final class FetchingThread extends Thread implements Closeable {
         final long startTime = System.currentTimeMillis();
 
 //				while(! visitState.isEmpty()) {
-        if (fetchData == null)
-          for (int i = 0; (fetchData = availableFetchData.poll()) == null; i++) {
-            rc.ensureNotPaused();
-            if (stop) return;
-            long newSleep = 1 << Math.min(i, 10);
-            Thread.sleep(newSleep);
-          }
 
         final byte[] path = visitState.firstPath(); // Contains a crawlRequest with only path+query and crawl options
+
+        for (int i = 0; (fetchData = availableFetchData.poll()) == null; i++) {
+          rc.ensureNotPaused();
+          if (stop) return;
+          long newSleep = 1 << Math.min(i, 10);
+          Thread.sleep(newSleep);
+        }
 
         try {
           final MsgFrontier.CrawlRequest.Builder crawlRequest = MsgFrontier.CrawlRequest.newBuilder(MsgFrontier.CrawlRequest.parseFrom(path));
@@ -312,9 +312,15 @@ public final class FetchingThread extends Thread implements Closeable {
           if (BlackListing.checkBlacklistedHost(frontier, url)) { // Check for blacklisted Host
             visitState.dequeue();
             visitState.schedulePurge();
+            fetchData.inUse = false;
+            frontier.availableFetchData.add(fetchData);
+            fetchData = null;
           } else if (BlackListing.checkBlacklistedIP(frontier, url, visitState.workbenchEntry.ipAddress)) { // Check for blacklisted IP
             visitState.dequeue();
             visitState.schedulePurge();
+            fetchData.inUse = false;
+            frontier.availableFetchData.add(fetchData);
+            fetchData = null;
           } else if (path == VisitState.ROBOTS_PATH) {
             fetchData.inUse = true;
             cookieStore.clear();
@@ -351,10 +357,16 @@ public final class FetchingThread extends Thread implements Closeable {
             if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not fetching URL {}", url);
             visitState.dequeue();
             frontier.done.add(visitState);
+            fetchData.inUse = false;
+            frontier.availableFetchData.add(fetchData);
+            fetchData = null;
           } else if (visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter, url)) {
             if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
             visitState.dequeue();
             frontier.done.add(visitState);
+            fetchData.inUse = false;
+            frontier.availableFetchData.add(fetchData);
+            fetchData = null;
           } else {
             if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null)
               LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
@@ -374,6 +386,9 @@ public final class FetchingThread extends Thread implements Closeable {
               final long endTime = System.currentTimeMillis();
               visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
               visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
+              fetchData.inUse = false;
+              frontier.availableFetchData.add(fetchData);
+              fetchData = null;
               visitState.dequeue();
               continue;
               //							break;
@@ -397,8 +412,8 @@ public final class FetchingThread extends Thread implements Closeable {
           }
         } catch (InvalidProtocolBufferException e) {
           LOGGER.error("Error while parsing path {}", new String(path), e);
-          continue;
-        } finally {
+          fetchData.inUse = false;
+          frontier.availableFetchData.add(fetchData);
           fetchData = null;
         }
       }
