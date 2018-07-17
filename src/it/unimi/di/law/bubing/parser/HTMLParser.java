@@ -345,8 +345,12 @@ public class HTMLParser<T> implements Parser<T> {
       linkInfo.setLinkType(EnumType.Enum.LINK);
     else if (linkName == HTMLElementName.OBJECT)
       linkInfo.setLinkType(EnumType.Enum.OBJECT);
-    if (isNoFollow)
-      linkInfo.setLinkRel(EnumRel.Enum.NOFOLLOW);
+
+    linkInfo.setLinkRel(
+      (isNoFollow ? EnumRel.Enum.NOFOLLOW_VALUE : 0) |
+      (isCanonical ? EnumRel.Enum.CANONICAL_VALUE : 0)
+    );
+
     if (anchorText != null && anchorText.length() > 0)
       linkInfo.setText(anchorText);
     linkInfo.setLinkQuality(1.0f);
@@ -540,8 +544,8 @@ public class HTMLParser<T> implements Parser<T> {
         this.location = uri.resolve(location);
         final MsgCrawler.FetchLinkInfo.Builder linkInfo = makeLinkInfoFromBasicURI(this.location);
         linkInfo.getLinkInfoBuilder()
-          .setLinkType(EnumType.Enum.LINK)
-          .setLinkRel(EnumRel.Enum.LOCATION);
+          .setLinkType(EnumType.Enum.LINK);
+          //.setLinkRel(EnumRel.Enum.LOCATION); // TODO: probably a link type (redirect), not a rel
         crawledPageInfoBuilder.addExternalLinks( linkInfo );
       }
     }
@@ -628,7 +632,6 @@ public class HTMLParser<T> implements Parser<T> {
 
                 // http-equiv="refresh" content="0;URL=http://foo.bar/..."
                 if (equiv.equals("refresh")) {
-
                   final int pos = URLEQUAL_PATTERN.search(content);
                   if (pos != -1) {
                     final String urlPattern = content.substring(pos + URLEQUAL_PATTERN.length());
@@ -640,7 +643,7 @@ public class HTMLParser<T> implements Parser<T> {
                       crawledPageInfoBuilder.addExternalLinks(
                         makeLinkInfoFromBasicURI( base.resolve(refresh) )
                           .setLinkInfo( MsgLink.LinkInfo.newBuilder()
-                            .setLinkRel( EnumRel.Enum.REFRESH )
+                            //.setLinkRel( EnumRel.Enum.REFRESH ) // TODO: probably a link type (kind of redirect), not a rel
                           )
                       );
                     }
@@ -658,7 +661,7 @@ public class HTMLParser<T> implements Parser<T> {
                     crawledPageInfoBuilder.addExternalLinks(
                       makeLinkInfoFromBasicURI( this.metaLocation )
                         .setLinkInfo( MsgLink.LinkInfo.newBuilder()
-                          .setLinkRel( EnumRel.Enum.LOCATION )
+                          //.setLinkRel( EnumRel.Enum.LOCATION ) // TODO: probably a link type (redirect), not a rel
                         )
                     );
                   }
