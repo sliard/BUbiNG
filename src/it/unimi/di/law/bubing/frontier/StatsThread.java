@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.exensa.util.FakeLoggerStringBuilder;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.bits.Fast;
@@ -50,6 +51,8 @@ public final class StatsThread implements Runnable {
 	public final ProgressLogger transferredBytesLogger;
 	/** A global progress logger, counting the URLs received from other agents. */
 	public final ProgressLogger receivedURLsLogger;
+  public final ProgressLogger sentURLsLogger;
+	public final FakeLoggerStringBuilder fakeLogger;
 
 	public final Random rng;
 
@@ -74,25 +77,29 @@ public final class StatsThread implements Runnable {
 	public StatsThread(final Frontier frontier, final Distributor distributor) {
 		this.frontier = frontier;
 		this.distributor = distributor;
-
-		requestLogger = new ProgressLogger(LOGGER, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "requests");
+    fakeLogger = new FakeLoggerStringBuilder(LOGGER, "STATS : ");
+		requestLogger = new ProgressLogger(fakeLogger, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "req");
 		requestLogger.displayFreeMemory = requestLogger.displayLocalSpeed = true;
 		requestLogger.speedTimeUnit = TimeUnit.SECONDS;
 		requestLogger.itemTimeUnit = TimeUnit.MILLISECONDS;
 
-		resourceLogger = new ProgressLogger(LOGGER, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "resources");
+		resourceLogger = new ProgressLogger(fakeLogger, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "res");
 		resourceLogger.displayLocalSpeed = true;
 		resourceLogger.speedTimeUnit = TimeUnit.SECONDS;
 		resourceLogger.itemTimeUnit = TimeUnit.MILLISECONDS;
 
-		transferredBytesLogger = new ProgressLogger(LOGGER, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "bytes");
+		transferredBytesLogger = new ProgressLogger(fakeLogger, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "B");
 		transferredBytesLogger.displayLocalSpeed = true;
 		transferredBytesLogger.speedTimeUnit = TimeUnit.SECONDS;
 		transferredBytesLogger.itemTimeUnit = TimeUnit.NANOSECONDS;
 
-		receivedURLsLogger = new ProgressLogger(LOGGER, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "receivedURLs");
+		receivedURLsLogger = new ProgressLogger(fakeLogger, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "receivedURLs");
 		receivedURLsLogger.displayLocalSpeed = true;
 		receivedURLsLogger.speedTimeUnit = TimeUnit.SECONDS;
+
+    sentURLsLogger = new ProgressLogger(fakeLogger, Long.MAX_VALUE, TimeUnit.MILLISECONDS, "sentURLs");
+    sentURLsLogger.displayLocalSpeed = true;
+    sentURLsLogger.speedTimeUnit = TimeUnit.SECONDS;
 
 		rng = new Random();
 	}
@@ -134,7 +141,8 @@ public final class StatsThread implements Runnable {
 
 	/** Emits the statistics. */
 	public void emit() {
-		LOGGER.info("=----------- START OF LOW COST STATS ------------=");
+		StringBuilder statInfo = new StringBuilder();
+		statInfo.append("STATS : =----------- START OF LOW COST STATS ------------=\n");
 
 		requestLogger.setAndDisplay(frontier.fetchedResources.get() + frontier.fetchedRobots.get());
 		final long duplicates = frontier.duplicates.get();
@@ -142,28 +150,42 @@ public final class StatsThread implements Runnable {
 		resourceLogger.setAndDisplay(archetypes + duplicates);
 		transferredBytesLogger.setAndDisplay(frontier.transferredBytes.get());
 		receivedURLsLogger.setAndDisplay(frontier.numberOfReceivedURLs.get());
-
-		LOGGER.info("Duplicates: " + Util.format(duplicates) + " (" + Util.format(100.0 * duplicates / (duplicates + archetypes)) + "%)");
-		LOGGER.info("Archetypes 1XX/2XX/3XX/4XX/5XX/Other: "
+    sentURLsLogger.setAndDisplay(frontier.numberOfSentURLs.get());
+		statInfo.append(fakeLogger.toString());
+		fakeLogger.reset();
+		statInfo.append("STATS : Duplicates: " + Util.format(duplicates) + " (" + Util.format(100.0 * duplicates / (duplicates + archetypes)) + "%)\n");
+		statInfo.append("STATS : Archetypes 1XX/2XX/3XX/4XX/5XX/Other: "
 				+ Util.format(frontier.archetypesStatus[1].get()) + "/"
 				+ Util.format(frontier.archetypesStatus[2].get()) + "/"
 				+ Util.format(frontier.archetypesStatus[3].get()) + "/"
 				+ Util.format(frontier.archetypesStatus[4].get()) + "/"
 				+ Util.format(frontier.archetypesStatus[5].get()) + "/"
-				+ Util.format(frontier.archetypesStatus[0].get()));
+				+ Util.format(frontier.archetypesStatus[0].get()) + "\n");
 
-		LOGGER.info("Outdegree stats: " + frontier.outdegree.toString());
-		LOGGER.info("External outdegree stats: " + frontier.externalOutdegree.toString());
-		LOGGER.info("Archetype content-length stats: " + frontier.contentLength.toString());
-		LOGGER.info("Archetypes text/image/application/other: "
+		statInfo.append("STATS : Outdegree stats: " + frontier.outdegree.toString() + "\n");
+		statInfo.append("STATS : External outdegree stats: " + frontier.externalOutdegree.toString() + "\n");
+		statInfo.append("STATS : Archetype content-length stats: " + frontier.contentLength.toString() + "\n");
+		statInfo.append("STATS : Archetypes text/image/application/other: "
 				+ Util.format(frontier.contentTypeText.get()) + "/"
 				+ Util.format(frontier.contentTypeImage.get()) + "/"
 				+ Util.format(frontier.contentTypeApplication.get()) + "/"
-				+ Util.format(frontier.contentTypeOthers.get()));
+				+ Util.format(frontier.contentTypeOthers.get()) + "\n");
 
-		LOGGER.info("Ready URLs: " + Util.format(frontier.quickReceivedCrawlRequests.size()));
+		statInfo.append("STATS : Ready URLs: " + Util.format(frontier.quickReceivedCrawlRequests.size()) + "\n");
 
-		LOGGER.info("FetchingThread waits: " + frontier.fetchingThreadWaits.get() + "; total wait time: " + frontier.fetchingThreadWaitingTimeSum.get());
+		statInfo.append("STATS : FetchingThread waits: " + frontier.fetchingThreadWaits.get() + "; total wait time: " + frontier.fetchingThreadWaitingTimeSum.get() + "\n");
+		statInfo.append("STATS : Visit states: " + distributor.schemeAuthority2VisitState.size()
+						+ "; on workbench (IP): " + frontier.workbench.approximatedSize()
+						+ "; broken on workbench (IP): " + frontier.workbench.broken.get()
+						+ "; to do: " + frontier.todo.size()
+						+ "; active: " + (frontier.rc.fetchingThreads - frontier.results.size())
+						+ "; fetchData available " + (frontier.availableFetchData.size())
+						+ "; ready to parse: " + frontier.results.size()
+						+ "; unknown hosts: " + frontier.unknownHosts.size()
+						+ "; broken: " + frontier.brokenVisitStates.get()
+						+ "; waiting: " + frontier.newVisitStates.size());
+
+		LOGGER.info(statInfo.toString());
 		frontier.resetFetchingThreadsWaitingStats();
 	}
 
@@ -192,9 +214,10 @@ public final class StatsThread implements Runnable {
 	@Override
 	public void run() {
 		frontier.workbenchSizeInPathQueries = frontier.rc.workbenchMaxByteSize / Math.max(1, frontier.weightOfpathQueriesInQueues.get() / (1 + frontier.pathQueriesInQueues.get()));
+		StringBuilder statInfo = new StringBuilder();
 
-		LOGGER.info("=========== START OF HIGH COST STATS ============");
-		LOGGER.info("There are now " + frontier.pathQueriesInQueues.get() + " URLs in queues (" + Util.formatSize(frontier.weightOfpathQueriesInQueues.get()) + "B, " + Util.format(100.0 * frontier.weightOfpathQueriesInQueues.get() / frontier.rc.workbenchMaxByteSize) + "%)");
+		statInfo.append("STATS : =========== START OF HIGH COST STATS ============\n");
+		statInfo.append("STATS : There are now " + frontier.pathQueriesInQueues.get() + " URLs in queues (" + Util.formatSize(frontier.weightOfpathQueriesInQueues.get()) + "B, " + Util.format(100.0 * frontier.weightOfpathQueriesInQueues.get() / frontier.rc.workbenchMaxByteSize) + "%)\n");
 
 		double totalSpeed = 0;
 		long nonEmptyResolvedVisitStates = 0;
@@ -229,9 +252,9 @@ public final class StatsThread implements Runnable {
 		this.unresolved = unresolved;
 		this.brokenPathQueryCount = brokenPathQueryCount;
 
-		LOGGER.info("Queue dist: " + toString(dist) + " (unresolved: " + unresolved + ", broken: " + brokenPathQueryCount + ")");
-		LOGGER.info("BrokenQueue dist: " + toString(distBroken));
-		LOGGER.info("UnresolvedQueue dist: " + toString(distUnresolved));
+		statInfo.append("STATS : Queue dist: " + toString(dist) + " (unresolved: " + unresolved + ", broken: " + brokenPathQueryCount + ")\n");
+		statInfo.append("STATS : BrokenQueue dist: " + toString(distBroken) + "\n");
+		statInfo.append("STATS : UnresolvedQueue dist: " + toString(distUnresolved) + "\n");
 
 		if (nonEmptyResolvedVisitStates != 0) frontier.averageSpeed = totalSpeed / nonEmptyResolvedVisitStates;
 
@@ -250,11 +273,11 @@ public final class StatsThread implements Runnable {
 			if (numVisitStates != 0) entrySummaryStats.add(numVisitStates); // Might be zero by asynchronous modifications.
 		}
 
-		LOGGER.info("Entry with " + maxVisitStates + " visitStates first hosts : ");
+		statInfo.append("STATS : Entry with " + maxVisitStates + " visitStates first hosts : \n");
 		try {
 			VisitState[] statesOfBiggestEntry = entryWithMaxStates.visitStates();
 			for (int i = 0; i < Math.min(statesOfBiggestEntry.length, 10); i++)
-				LOGGER.info(BURL.hostFromSchemeAndAuthority(statesOfBiggestEntry[i].schemeAuthority));
+				statInfo.append(BURL.hostFromSchemeAndAuthority(statesOfBiggestEntry[i].schemeAuthority) + "\n");
 		} catch (Exception e) {
 			// Silently ignore this, not important.
 		}
@@ -262,9 +285,9 @@ public final class StatsThread implements Runnable {
 		this.resolvedVisitStates = resolvedVisitStates;
 		this.brokenVisitStatesOnWorkbench = brokenVisitStatesOnWorkbench;
 
-		LOGGER.info("Entry stats: " + entrySummaryStats);
-		LOGGER.info("Virtualizer stats: " + frontier.virtualizer);
-		LOGGER.info("Visit states: " + distributor.schemeAuthority2VisitState.size()
+		statInfo.append("STATS : Entry stats: " + entrySummaryStats + "\n");
+		statInfo.append("STATS : Virtualizer stats: " + frontier.virtualizer + "\n");
+		statInfo.append("STATS : Visit states: " + distributor.schemeAuthority2VisitState.size()
 				+ "; resolved: " + resolvedVisitStates
 				+ "; on workbench (IP): " + frontier.workbench.approximatedSize()
 				+ "; broken on workbench (IP): " + frontier.workbench.broken.get()
@@ -276,11 +299,11 @@ public final class StatsThread implements Runnable {
 				+ "; unknown hosts: " + frontier.unknownHosts.size()
 				+ "; broken: " + frontier.brokenVisitStates.get() + " (" + brokenVisitStatesOnWorkbench + " on workbench)"
 				+ "; waiting: " + frontier.newVisitStates.size()
-				+ "; on disk: " + frontier.virtualizer.onDisk());
-		LOGGER.info("Speed dist: " + toString(frontier.speedDist));
+				+ "; on disk: " + frontier.virtualizer.onDisk() + "\n");
+		statInfo.append("STATS : Speed dist: " + toString(frontier.speedDist) + "\n");
 		for(int i = frontier.speedDist.length(); i-- != 0;) frontier.speedDist.set(i, 0); // Cleanup
-		LOGGER.info("Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses());
-
+		statInfo.append("STATS : Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses() + "\n");
+		LOGGER.info(statInfo.toString());
 		distributor.lastHighCostStat = System.currentTimeMillis();
 	}
 
