@@ -249,6 +249,7 @@ public class Frontier {
 
 	/** The overall number of URLs sent by other agents. */
 	public final AtomicLong numberOfReceivedURLs;
+	public final AtomicLong numberOfSentURLs;
 
 	/** The time at which the next flush can happen. */
 	protected volatile long nextFlush;
@@ -433,6 +434,7 @@ public class Frontier {
 		contentTypeOthers = new AtomicLong();
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
+		numberOfSentURLs = new AtomicLong();
 		requiredFrontSize = new AtomicLong(1000);
 		fetchingThreadWaits = new AtomicLong();
 		fetchingThreadWaitingTimeSum = new AtomicLong();
