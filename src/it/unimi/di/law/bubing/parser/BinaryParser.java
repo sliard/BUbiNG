@@ -137,6 +137,11 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
+	public String getTitle() {
+		return null;
+	}
+
+	@Override
 	public StringBuilder getTextContent() {
 		return null;
 	}
