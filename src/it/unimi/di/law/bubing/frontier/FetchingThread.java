@@ -263,7 +263,7 @@ public final class FetchingThread extends Thread implements Closeable {
       final LockFreeQueue<FetchData> availableFetchData = frontier.availableFetchData; // Cached
 
       while (!stop) {
-        // Read
+        // Take a new VisitState
         VisitState visitState;
         long waitTime = 0;
 
@@ -283,39 +283,56 @@ public final class FetchingThread extends Thread implements Closeable {
 
         if (LOGGER.isTraceEnabled()) LOGGER.trace("Acquired visit state {}", visitState);
 
-        // Try to find a fetchable URL (i.e., that does not violate the fetch filter or robots.txt).
         final long startTime = System.currentTimeMillis();
 
-//				while(! visitState.isEmpty()) {
-        if (fetchData == null)
-          for (int i = 0; (fetchData = availableFetchData.poll()) == null; i++) {
-            rc.ensureNotPaused();
-            if (stop) return;
-            long newSleep = 1 << Math.min(i, 10);
-            Thread.sleep(newSleep);
+        if (LOGGER.isTraceEnabled())
+          LOGGER.trace("Processing visitstate for {}", PulsarHelper.toString(PulsarHelper.schemeAuthority(visitState.schemeAuthority).build()));
+        final MsgURL.URL schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
+
+        while (!visitState.isEmpty()) {
+          final byte[] path = visitState.firstPath(); // Contains a crawlRequest with only path+query and crawl options
+
+          if (fetchData == null) {
+            for (int i = 0; ((fetchData = availableFetchData.poll()) == null) || fetchData.inUse; i++) {
+              rc.ensureNotPaused();
+              if (stop) return;
+              long newSleep = 1 << Math.min(i, 10);
+              Thread.sleep(newSleep);
+            }
+            if (fetchData.inUse == true)
+              LOGGER.error("Received a FetchData being used");
           }
 
-        final byte[] path = visitState.firstPath(); // Contains a crawlRequest with only path+query and crawl options
+          MsgFrontier.CrawlRequest.Builder crawlRequest;
+          try {
+            crawlRequest = MsgFrontier.CrawlRequest.newBuilder(MsgFrontier.CrawlRequest.parseFrom(path));
+          } catch (InvalidProtocolBufferException e) {
+            LOGGER.error("Error while parsing path {}", new String(path), e);
+            fetchData.inUse = false;
+            visitState.dequeue();
+            continue; // skip to next element in visitState
+          }
 
-        try {
-          final MsgFrontier.CrawlRequest.Builder crawlRequest = MsgFrontier.CrawlRequest.newBuilder(MsgFrontier.CrawlRequest.parseFrom(path));
-          final MsgURL.URL schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
           final MsgURL.URL.Builder urlBuilder = crawlRequest.getUrlBuilder().setScheme(schemeAuthorityProto.getScheme()).setHost(schemeAuthorityProto.getHost());
           crawlRequest.setUrl(urlBuilder);
-
-          if (LOGGER.isTraceEnabled())
-            LOGGER.trace("Processing crawl request with path+query : {}", crawlRequest);
           final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority,
               crawlRequest.getUrl().getPathQuery().getBytes(StandardCharsets.US_ASCII));
 
-          if (LOGGER.isDebugEnabled()) LOGGER.debug("Next URL: {}", url);
+          LOGGER.trace("Next URL to fetch : {}", url);
+
           if (BlackListing.checkBlacklistedHost(frontier, url)) { // Check for blacklisted Host
             visitState.dequeue();
             visitState.schedulePurge();
+            fetchData.inUse = false;
+            break; // Skip to next VisitState
           } else if (BlackListing.checkBlacklistedIP(frontier, url, visitState.workbenchEntry.ipAddress)) { // Check for blacklisted IP
             visitState.dequeue();
             visitState.schedulePurge();
+            fetchData.inUse = false;
+            break; // Skip to next VisitState
           } else if (path == VisitState.ROBOTS_PATH) {
+            if (LOGGER.isTraceEnabled())
+              LOGGER.trace("Processing ROBOTS.TXT");
             fetchData.inUse = true;
             cookieStore.clear();
             try {
@@ -334,30 +351,25 @@ public final class FetchingThread extends Thread implements Closeable {
               visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
               visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
               visitState.dequeue();
-              continue;//break;
+              break; // Skip to next visitState
             }
 
             frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
             frontier.transferredBytes.addAndGet(fetchData.length());
-
             results.add(fetchData);
-            try {
-              if (fetchData.exception != null || frontier.rc.keepAliveTime == 0 || System.currentTimeMillis() - startTime >= frontier.rc.keepAliveTime)
-                continue;//break;
-            } finally {
-              fetchData = null;
-            }
+            fetchData = null;
+            break;
           } else if (!frontier.rc.fetchFilter.apply(url)) {
             if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not fetching URL {}", url);
             visitState.dequeue();
-            frontier.done.add(visitState);
+            continue;
           } else if (visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter, url)) {
             if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
             visitState.dequeue();
-            frontier.done.add(visitState);
+            continue;
           } else {
             if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null)
-              LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
+              LOGGER.warn("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
             fetchData.inUse = true;
             cookieStore.clear();
 
@@ -375,10 +387,10 @@ public final class FetchingThread extends Thread implements Closeable {
               visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
               visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
               visitState.dequeue();
-              continue;
-              //							break;
+              break;
             }
-
+            if (LOGGER.isTraceEnabled())
+              LOGGER.trace("Fetched {} in {} ms", url.toString(), fetchData.endTime - fetchData.startTime);
             frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
             frontier.transferredBytes.addAndGet(fetchData.length());
 
@@ -387,23 +399,11 @@ public final class FetchingThread extends Thread implements Closeable {
             if (fetchData.exception == null) {
               visitState.cookies = getCookies(fetchData.uri(), cookieStore, cookieMaxByteSize);
             }
-            try {
-              if (fetchData.exception != null || frontier.rc.keepAliveTime == 0 || System.currentTimeMillis() - startTime >= frontier.rc.keepAliveTime)
-                continue;
-//								break;
-            } finally {
-              fetchData = null;
-            }
+            fetchData = null;
+            break; // Skip to next visitState
           }
-        } catch (InvalidProtocolBufferException e) {
-          LOGGER.error("Error while parsing path {}", new String(path), e);
-          continue;
-        } finally {
-          fetchData = null;
         }
       }
-
-//			}
     } catch (Throwable e) {
       LOGGER.error("Unexpected exception", e);
     }

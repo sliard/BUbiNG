@@ -211,15 +211,19 @@ public class ParsingThread extends Thread {
 			return true;
 		}
 
-		private void process( final MsgCrawler.FetchLinkInfo.Builder linkInfo, boolean isInternal ) {
+		private boolean process( final MsgCrawler.FetchLinkInfo.Builder linkInfo, boolean isInternal ) {
 			final URI url = PulsarHelper.toURI( linkInfo.getTarget() );
 			outlinks++;
 
 			final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
-			if (!scheduleFilter.apply(new Link(uri, url))) {
+
+			if (!scheduleFilter.apply(new Link(uri, url)))
+				return false;
+			/*if (!scheduleFilter.apply(new Link(uri, url))) {
 				crawlerInfoBuilder.setMatchesScheduleRule(false);
 			} else
 				crawlerInfoBuilder.setMatchesScheduleRule(true);
+				*/
 			crawlerInfoBuilder.setIsBlackListed(BlackListing.checkBlacklistedHost(frontier, url));
 
 			final boolean sameSchemeAuthority = isInternal;
@@ -234,19 +238,28 @@ public class ParsingThread extends Thread {
 				}
 			}
 			linkInfo.setCrawlerInfo(crawlerInfoBuilder);
+			return true;
 		}
 
 		/** Enqueues the given URL, provided that it passes the schedule filter, its host is {@link RuntimeConfiguration#blackListedHostHashes blacklisted}.
 		 *  Moreover, if the scheme+authority is the same as the one of the page being parsed, we check that the URL respects the robots filter.
 		 *
-		 * @param crawledPageInfoBuilder the CrawledPageInfo to be enqueued.
+		 * @param fetchedPageInfoBuilder the CrawledPageInfo to be enqueued.
 		 */
-		public void process(final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder) {
-			for (MsgCrawler.FetchLinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
-				process(linkInfo, false);
+		public void process(final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder) {
+			for (int index = 0; index < fetchedPageInfoBuilder.getExternalLinksCount(); ) {
+				MsgCrawler.FetchLinkInfo.Builder linkInfo = fetchedPageInfoBuilder.getExternalLinksBuilder(index);
+				if (process(linkInfo, false))
+					index ++;
+				else
+					fetchedPageInfoBuilder.removeExternalLinks(index);
 			}
-			for (MsgCrawler.FetchLinkInfo.Builder linkInfo : crawledPageInfoBuilder.getExternalLinksBuilderList()) {
-				process(linkInfo, true);
+			for (int index = 0; index < fetchedPageInfoBuilder.getInternalLinksCount(); ) {
+				MsgCrawler.FetchLinkInfo.Builder linkInfo = fetchedPageInfoBuilder.getInternalLinksBuilder(index);
+				if (process(linkInfo, true))
+					index ++;
+				else
+					fetchedPageInfoBuilder.removeInternalLinks(index);
 			}
 		}
 	}
@@ -365,7 +378,7 @@ public class ParsingThread extends Thread {
 								visitState.lastExceptionClass = null;
 								// Regular delay
 								visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay;
-								if (LOGGER.isInfoEnabled()) LOGGER.info("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
+								if (LOGGER.isInfoEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
 							}
 						}
 
@@ -403,11 +416,11 @@ public class ParsingThread extends Thread {
 					Charset guessedCharset = null;
 					String guessedLanguage = null;
 
-					final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
+					final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
 
 					frontierLinkReceiver.init(visitState.schemeAuthority,
 							fetchData.getCrawlRequest(),
-							crawledPageInfoBuilder,
+							fetchedPageInfoBuilder,
 							fetchData,
 							visitState.robotsFilter);
 					final long streamLength = fetchData.response().getEntity().getContentLength();
@@ -421,7 +434,7 @@ public class ParsingThread extends Thread {
 									if (parser.apply(fetchData)) {
 										parserFound = true;
 										try {
-											digest = parser.parse(fetchData.uri(), fetchData.response(), crawledPageInfoBuilder);
+											digest = parser.parse(fetchData.uri(), fetchData.response(), fetchedPageInfoBuilder);
 											// Spam detection (NOTE: skipped if the parse() method throws an exception)
 											if (rc.spamDetector != null && (visitState.termCountUpdates < rc.spamDetectionThreshold || rc.spamDetectionPeriodicity != Integer.MAX_VALUE)) {
 												final Object result = parser.result();
@@ -436,6 +449,9 @@ public class ParsingThread extends Thread {
 										} catch(final IOException e) {
 											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
 										}
+										String title = null;
+										if ((title = parser.getTitle()) != null)
+										  fetchedPageInfoBuilder.setTitle(title);
 										guessedCharset = parser.guessedCharset();
 										if (parser.guessedLanguage() != null)
 											guessedLanguage = parser.guessedLanguage().getLanguage();
@@ -480,10 +496,10 @@ public class ParsingThread extends Thread {
 									}
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
 
-								frontier.outdegree.add(crawledPageInfoBuilder.getExternalLinksCount());
+								frontier.outdegree.add(fetchedPageInfoBuilder.getExternalLinksCount());
 								final String currentHost = url.getHost();
 								int currentOutHostDegree = 0;
-								for(final MsgCrawler.FetchLinkInfo u: crawledPageInfoBuilder.getExternalLinksList())
+								for(final MsgCrawler.FetchLinkInfo u: fetchedPageInfoBuilder.getExternalLinksList())
 									if( !currentHost.equals(u.getTarget().getHost()) )
 										currentOutHostDegree++;
 								frontier.externalOutdegree.add(currentOutHostDegree);
@@ -509,7 +525,7 @@ public class ParsingThread extends Thread {
 					if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, Boolean.valueOf(isNotDuplicate));
 					fetchData.isDuplicate(!isNotDuplicate);
 					if (isNotDuplicate && (rc.followFilter.apply(fetchData))) {
-						frontierLinkReceiver.process(crawledPageInfoBuilder);
+						frontierLinkReceiver.process(fetchedPageInfoBuilder);
 						frontierLinkReceiver.close();
 					} else {
 						LOGGER.debug("NOT Following {}", fetchData.uri());

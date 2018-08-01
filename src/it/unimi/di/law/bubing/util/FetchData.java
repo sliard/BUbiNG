@@ -338,6 +338,8 @@ public class FetchData implements URIResponse, Closeable {
  				final HttpHost httpHost = visitState != null ? 
 					new HttpHost(InetAddress.getByAddress(visitState.workbenchEntry.ipAddress), uri.getHost(), port, scheme) :
  					new HttpHost(uri.getHost(), port, scheme);
+ 				if (LOGGER.isTraceEnabled())
+ 					LOGGER.trace("Fetching {}", uri);
  				httpClient.execute(httpHost, httpGet, new ResponseHandler<Void>() {
 
  					@Override

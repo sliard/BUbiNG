@@ -35,7 +35,9 @@ public class PulsarWarcStore implements Closeable, Store {
 	private final WarcWriter warcWriter;
 	public PulsarWarcStore(final RuntimeConfiguration rc ) throws IOException {
 		ClientConfiguration conf = new ClientConfiguration();
-
+		conf.setListenerThreads(8);
+		conf.setIoThreads(8);
+		conf.setConnectionsPerBroker(2);
 		pulsarClient = PulsarClient.create(rc.pulsarClientConnection,conf);
 		ProducerConfiguration producerConfig = new ProducerConfiguration();
 		producerConfig.setBatchingEnabled(true);
@@ -77,13 +79,18 @@ public class PulsarWarcStore implements Closeable, Store {
 		pulsarWARCProducer.sendAsync(outputStream.toByteArray());
 		outputStream.reset();
 
+		WebPageTextContentProto.WebPage.Builder webPageBuilder = WebPageTextContentProto.WebPage.newBuilder();
+		if (textContent != null)
+			webPageBuilder.setContent(textContent.toString());
+		if (extraHeaders.get("BUbiNG-Guessed-Html5") != null)
+			webPageBuilder.setHtml5(extraHeaders.get("BUbiNG-Guessed-Html5").equals("true"));
+		if (extraHeaders.get("BUbiNG-Guessed-responsive") != null)
+			webPageBuilder.setViewport(extraHeaders.get("BUbiNG-Guessed-responsive").equals("true"));
+
 		pulsarPlainTextProducer.sendAsync(WebPageTextContentProto.WebPage.newBuilder()
 				.setUrl(uri.toString())
-				.setContent(textContent.toString())
-                .setHtml5(extraHeaders.get("BUbiNG-Guessed-Html5").equals("true"))
-                .setViewport(extraHeaders.get("BUbiNG-Guessed-responsive").equals("true"))
-                .setCharset(guessedCharset == null ? "" : guessedCharset)
-                .setLang(guessedLanguage == null ? "" : guessedLanguage)
+				.setCharset(guessedCharset == null ? "" : guessedCharset)
+				.setLang(guessedLanguage == null ? "" : guessedLanguage)
 				.build()
 				.toByteArray());
 	}

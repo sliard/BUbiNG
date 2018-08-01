@@ -26,71 +26,70 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 //RELEASE-STATUS: DIST
 
 /** A set of Pulsar Receivers
  */
-public final class ToCrawlURLReceiver implements MessageListener {
-	private static final Logger LOGGER = LoggerFactory.getLogger(ToCrawlURLReceiver.class);
+public final class CrawlRequestsReceiver implements MessageListener {
+	private static final Logger LOGGER = LoggerFactory.getLogger(CrawlRequestsReceiver.class);
 
 	/** A reference to the frontier. */
 	private final Frontier frontier;
 
 	private final PulsarClient pulsarClient;
-	private final List<Consumer> pulsarConsumers;
+	private final CompletableFuture<Consumer> pulsarConsumer;
 	private final int topicNumber;
 
 	/** Creates the thread.
 	 *
 	 * @param frontier the frontier instantiating this thread.
 	 */
-	public ToCrawlURLReceiver(final Frontier frontier) throws PulsarClientException {
-		ClientConfiguration conf = new ClientConfiguration();
-		conf.setIoThreads(8);
-		conf.setListenerThreads(8);
+	public CrawlRequestsReceiver(final Frontier frontier, int topicNumber, PulsarClient pulsarClient) throws PulsarClientException {
+
+		this.pulsarClient = pulsarClient;
 		this.frontier = frontier;
 		this.topicNumber = frontier.rc.pulsarFrontierTopicNumber;
-		pulsarClient = PulsarClient.create(frontier.rc.pulsarClientConnection, conf);
 
-		pulsarConsumers = new ArrayList<Consumer>(topicNumber);
-		List<CompletableFuture<Consumer>> asyncConsumers = new ArrayList<CompletableFuture<Consumer>>(topicNumber);
-		for (int i = 0; i < topicNumber; i++) {
-			ConsumerConfiguration consumerConfig = new ConsumerConfiguration();
-			consumerConfig.setSubscriptionType(SubscriptionType.Failover);
-			consumerConfig.setConsumerName(Integer.toString(MurmurHash3_128.murmurhash3_x86_32(frontier.rc.name, 0, frontier.rc.name.length(), i)));
-			consumerConfig.setMessageListener(this);
-			asyncConsumers.add(pulsarClient.subscribeAsync(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-" + Integer.toString(i), "toCrawlSubscription", consumerConfig));
-		}
-		for (int i = 0; i < topicNumber; i++) {
-			try {
-        Consumer c = asyncConsumers.get(i).get();
-        pulsarConsumers.add(c);
-			} catch (InterruptedException e) {
-				LOGGER.error("Error while getting Pulsar consumer", e);
-			} catch (ExecutionException e) {
-				LOGGER.error("Error while getting Pulsar consumer", e);
-			}
-		}
+		LOGGER.info("Receiver for crawl requests topic crawl-{} [started]", topicNumber);
+
+
+		ConsumerBuilder consumerBuilder = pulsarClient.newConsumer()
+				.subscriptionType(SubscriptionType.Failover)
+				.acknowledgmentGroupTime(500, TimeUnit.MILLISECONDS)
+				.messageListener(this)
+				.subscriptionInitialPosition(SubscriptionInitialPosition.Latest)
+				.subscriptionName("toCrawlSubscription");
+		CompletableFuture<Consumer> c = consumerBuilder
+					.consumerName(UUID.randomUUID().toString()+frontier.rc.name)
+					.topic(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-" + Integer.toString(topicNumber))
+					.subscribeAsync();
+		pulsarConsumer = c;
 	}
 
 	public void stop() {
-		for (Consumer c: pulsarConsumers) {
-			try {
-				c.close();
-			} catch (PulsarClientException e) {
-				e.printStackTrace();
-			}
-		}
+
 		try {
-			pulsarClient.close();
+			pulsarConsumer.get(1, TimeUnit.SECONDS).close();
+			LOGGER.info("Receiver for crawl requests topic crawl-{} [stopped]", topicNumber);
 		} catch (PulsarClientException e) {
+			LOGGER.error("Failed to stop receiver for crawl requests topic crawl-{}", topicNumber);
 			e.printStackTrace();
-		}
-		LOGGER.info("Completed");
-	}
+		} catch (InterruptedException e) {
+      e.printStackTrace();
+    } catch (ExecutionException e) {
+      e.printStackTrace();
+    } catch (TimeoutException e) {
+      e.printStackTrace();
+    }
+
+
+  }
 
 	@Override
 	public void received(Consumer consumer, Message message) {
@@ -100,6 +99,7 @@ public final class ToCrawlURLReceiver implements MessageListener {
 			if (LOGGER.isTraceEnabled())
 				LOGGER.trace("Received url {} to crawl", crawlRequest.toString());
 			frontier.quickReceivedCrawlRequests.put(crawlRequest); // Will block until not full
+			frontier.numberOfReceivedURLs.addAndGet(1);
 		} catch (InvalidProtocolBufferException e) {
 			LOGGER.error("Error while parsing message from Pulsar",e);
 		} catch (InterruptedException e) {

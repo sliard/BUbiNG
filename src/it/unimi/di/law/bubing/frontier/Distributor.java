@@ -97,6 +97,8 @@ public final class Distributor extends Thread {
 
 	private boolean processURL(final MsgFrontier.CrawlRequest crawlRequest, long now) {
 		try {
+			if (LOGGER.isTraceEnabled())
+				LOGGER.trace("Processing URL : {}", PulsarHelper.toString(crawlRequest.getUrl()));
 			VisitState visitState;
 			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrl());
 			final int currentlyInStore = frontier.schemeAuthority2Count.get(schemeAuthority, 0, schemeAuthority.length);

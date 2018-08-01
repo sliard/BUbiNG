@@ -101,6 +101,32 @@ public class HTMLParser<T> implements Parser<T> {
     StartTagType.SERVER_COMMON_ESCAPED.deregister();
   }
 
+  final static HashSet<String> relExcludeList;
+  static {
+    String[] excludeArray = new String[]{"stylesheet",
+      "prefetch",
+      "dns-prefetch",
+      "preconnect",
+      "preload",
+      "prerender",
+      "shortcut",
+      "icon",
+      "mask-icon",
+      "meta",
+      "apple-touch-icon",
+      "apple-touch-icon-precomposed",
+      "apple-touch-startup-image",
+      "image_src",
+      "edituri",
+      "https://api.w.org/",
+      "manifest",
+      "wlwmanifest",
+      "profile",
+      "publisher",
+      "enclosure",
+      "pingback"};
+    relExcludeList = Sets.newHashSet(excludeArray);
+  }
 
 
 
@@ -324,9 +350,9 @@ public class HTMLParser<T> implements Parser<T> {
                          final boolean isNoFollow, final boolean isNoIndex, final boolean isCanonical) {
     if (s == null) return;
     final URI url = BURL.parse(s);
-    boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,url);
     if (url == null) return;
     URI targetURI = base.resolve(url);
+    boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,targetURI);
     MsgCrawler.FetchLinkInfo.Builder fetchLinkInfo = makeLinkInfoFromBasicURI(targetURI);
     MsgLink.LinkInfo.Builder linkInfo = MsgLink.LinkInfo.newBuilder();
     if (linkName == HTMLElementName.A)
@@ -599,14 +625,28 @@ public class HTMLParser<T> implements Parser<T> {
           // TODO: detect flow breakers
 
           // IFRAME or FRAME + SRC
+
           if (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED)
             linkValue = startTag.getAttributeValue("src");
           else if (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT)
-            linkValue = startTag.getAttributeValue("src");
+            //linkValue = startTag.getAttributeValue("src");
+            linkValue = null;
           else if (name == HTMLElementName.OBJECT)
-            linkValue = startTag.getAttributeValue("data");
-          else if (name == HTMLElementName.A || name == HTMLElementName.AREA || name == HTMLElementName.LINK)
+            //linkValue = startTag.getAttributeValue("data");
+            linkValue = null;
+          else if (name == HTMLElementName.A || name == HTMLElementName.AREA)
             linkValue = startTag.getAttributeValue("href");
+          else if (name == HTMLElementName.LINK) {
+            String rel = startTag.getAttributeValue("rel");
+            if (rel != null) {
+              String[] rels = rel.split("[ ,]");
+              if (rels.length > 0) {
+                HashSet<String> relSet = Sets.newHashSet(rels);
+                if (Sets.intersection(relSet,relExcludeList).size() == 0)
+                  linkValue = startTag.getAttributeValue("href");
+              }
+            }
+          }
           else if (name == HTMLElementName.BASE) {
             final String s = startTag.getAttributeValue("href");
             if (s != null) {
@@ -668,10 +708,10 @@ public class HTMLParser<T> implements Parser<T> {
                 }
               } else {
                 final String metaName = startTag.getAttributeValue("name");
-                final String metaContent = startTag.getAttributeValue("content");
-                if (!metaName.equalsIgnoreCase("robots"))
+                String metaContent = startTag.getAttributeValue("content");
+                if (metaContent == null || metaName == null || !metaName.equalsIgnoreCase("robots"))
                   continue;
-                metaContent.toLowerCase();
+                metaContent = metaContent.toLowerCase();
                 if (metaContent != null) {
                   String metaContentLC = metaContent.toLowerCase();
                   if (metaContentLC.contains("noindex"))
@@ -705,7 +745,8 @@ public class HTMLParser<T> implements Parser<T> {
             title = currentTextOfInterest.toString();
             currentTextOfInterest.setLength(0);
           }
-          if ((name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED) ||
+          if ((linkValue != null) &&
+              (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED) ||
               (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT) ||
               (name == HTMLElementName.OBJECT) ||
               (name == HTMLElementName.A || name == HTMLElementName.AREA || name == HTMLElementName.LINK)){
@@ -799,7 +840,7 @@ public class HTMLParser<T> implements Parser<T> {
       if (metaLocation != null) digestAppendable.append(BURL.toByteArray(metaLocation));
       digestAppendable.append((char) 0);
     }
-    LOGGER.info("Finished parsing {} , digest : {}", base, digestAppendable != null ? digestAppendable.digest() : "null");
+    LOGGER.info("Finished parsing {}, outlinks : {}/{} ", base, crawledPageInfoBuilder.getExternalLinksCount(), crawledPageInfoBuilder.getInternalLinksCount());
     return digestAppendable != null ? digestAppendable.digest() : null;
   }
 
@@ -844,6 +885,12 @@ public class HTMLParser<T> implements Parser<T> {
   public StringBuilder getTextContent() {
     return textContent.textContent;
   }
+
+  @Override
+  public String getTitle() {
+    return title;
+  }
+
 
   @Override
   public Boolean responsiveDesign() {

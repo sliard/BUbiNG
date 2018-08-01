@@ -49,7 +49,8 @@ import it.unimi.dsi.lang.FlyweightPrototype;
  */
 public interface Parser<T> extends Filter<URIResponse> {
 
-	/**
+
+  /**
 	 * A class that can receive piece of text discovered during parsing.
 	 */
 	public static interface TextProcessor<T> extends Appendable, FlyweightPrototype<TextProcessor<T>> {
@@ -105,6 +106,9 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 * @return the cleaned page content or {@code null}.
 	 */
 	public StringBuilder getTextContent();
+
+	public String getTitle();
+
 
 	/**
 	 *

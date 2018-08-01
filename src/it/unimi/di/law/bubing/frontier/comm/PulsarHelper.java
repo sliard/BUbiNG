@@ -26,12 +26,10 @@ public class PulsarHelper
   }
 
   public static MsgURL.URL fromURI( final URI uri ) {
-    String rawPath = uri.getRawPath();
-    String rawQuery = uri.getRawQuery();
     return MsgURL.URL.newBuilder()
       .setScheme( getScheme(uri.getScheme()) )
       .setHost( uri.getHost() )
-      .setPathQuery( ((rawPath == null) ? "":rawPath) + ((rawQuery == null) ? "" : rawQuery) )
+      .setPathQuery( BURL.pathAndQuery(uri) )
       .build();
   }
 

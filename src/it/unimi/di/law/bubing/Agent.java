@@ -14,15 +14,18 @@ import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
-import it.unimi.di.law.bubing.frontier.comm.DiscoveredURLSendThread;
+import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
 import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
-import it.unimi.di.law.bubing.frontier.comm.ToCrawlURLReceiver;
+import it.unimi.di.law.bubing.frontier.comm.CrawlRequestsReceiver;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
+import org.apache.pulsar.client.api.ClientBuilder;
+import org.apache.pulsar.client.api.PulsarClient;
 import org.jgroups.JChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,14 +93,14 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	/** The frontier of this agent. */
 	private final Frontier frontier;
 
-	/** @see DiscoveredURLSendThread */
-	protected final DiscoveredURLSendThread discoveredURLSendThread;
+	/** @see FetchInfoSendThread */
+	protected final FetchInfoSendThread fetchInfoSendThread;
 
 	/** @see QuickToQueueThread */
 	protected final QuickToQueueThread quickToQueueThread;
 
-	/** @see ToCrawlURLReceiver */
-	protected final ToCrawlURLReceiver toCrawlURLReceiver;
+	/** @see CrawlRequestsReceiver */
+	protected final CrawlRequestsReceiver[] crawlRequestsReceivers;
 
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
@@ -117,15 +120,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		// TODO: check crawlIsNew for all components.
 		this.rc = rc;
 
-		//register();
+		register();
 
 		frontier = new Frontier(rc, this);
 		frontier.init();
 		//setListener(frontier);
-
-		(discoveredURLSendThread = new DiscoveredURLSendThread(frontier)).start();
-		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
-		toCrawlURLReceiver = new ToCrawlURLReceiver(frontier);
 
 		//connect();
 
@@ -133,6 +132,24 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		frontier.dnsThreads(rc.dnsThreads);
 		frontier.parsingThreads(rc.parsingThreads);
 		frontier.fetchingThreads(rc.fetchingThreads);
+
+
+		(fetchInfoSendThread = new FetchInfoSendThread(frontier)).start();
+		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
+		crawlRequestsReceivers = new CrawlRequestsReceiver[frontier.rc.pulsarFrontierTopicNumber];
+		PulsarClient pulsarClient = PulsarClient.builder()
+				.ioThreads(16)
+				.listenerThreads(16)
+				.connectionsPerBroker(4)
+				.enableTls(false)
+				.enableTlsHostnameVerification(false)
+				.statsInterval(10, TimeUnit.MINUTES)
+				.serviceUrl(frontier.rc.pulsarClientConnection).build();
+
+		for (int i = 0; i< frontier.rc.pulsarFrontierTopicNumber; i++) {
+			crawlRequestsReceivers[i] = new CrawlRequestsReceiver(frontier,i, pulsarClient);
+		}
+
 
 	}
 
@@ -164,7 +181,9 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			// The message thread uses the sieve, which will be closed by the frontier.
 			//discoveredURLReceiveThread.stop = true;
 			//discoveredURLReceiveThread.join();
-			toCrawlURLReceiver.stop();
+			for (int i = 0; i< frontier.rc.pulsarFrontierTopicNumber; i++) {
+				crawlRequestsReceivers[i].stop();
+			}
 			LOGGER.info("Joined message thread");
 
 			frontier.close();
@@ -174,13 +193,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			LOGGER.info("Job manager closed");
 
 			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
-			discoveredURLSendThread.stop = true;
-			discoveredURLSendThread.join();
+			fetchInfoSendThread.stop = true;
+			fetchInfoSendThread.join();
 			quickToQueueThread.stop = true;
 			quickToQueueThread.join();
 			LOGGER.info("Joined quick message thread");
-
-			frontier.snap();
 
 			LOGGER.info("Agent " + this + " exits");
 		}
@@ -606,7 +623,12 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.numberOfReceivedURLs.get();
 	}
 
-	@ManagedAttribute @Description("Number of duplicates")
+  @ManagedAttribute @Description("Number of fetched URLs sent to the frontier")
+  public long getSentURLs() {
+    return frontier.numberOfSentURLs.get();
+  }
+
+  @ManagedAttribute @Description("Number of duplicates")
 	public long getDuplicates() {
 		return frontier.duplicates.get();
 	}
