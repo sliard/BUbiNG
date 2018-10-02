@@ -854,42 +854,6 @@ public class Frontier {
 		workbenchStream.close();
 	}
 
-	/** Snaps the current URL queues to a TXT file to be used for seed in a next launch */
-	public void snapToSeed() throws IllegalArgumentException, IOException {
-
-		LOGGER.info( "Storing URLS found but not yet visited to visit" );
-		File tempSnapSeed = new File( rc.storeDir, ".seed.txt.gz" );
-		final OutputStreamWriter stringWriter = new OutputStreamWriter(new FastBufferedOutputStream( new GZIPOutputStream( new FileOutputStream( tempSnapSeed ) ) ) );
-
-		for ( VisitState visitState : distributor.schemeAuthority2VisitState.visitStates() ) {
-			// Create copy buffer
-			if (visitState != null) {
-				VisitState copyVisitState = new VisitState( visitState.schemeAuthority);
-				byte[] schemeAuthority = visitState.schemeAuthority;
-				while (!visitState.isEmpty()) {
-					byte[] url = visitState.dequeue();
-					if (url != VisitState.ROBOTS_PATH) {
-						URI uri = BURL.fromNormalizedSchemeAuthorityAndPathQuery(schemeAuthority, url);
-						stringWriter.write(uri.toASCIIString());
-						stringWriter.write("\n");
-					}
-					copyVisitState.enqueueCrawlRequest(url);
-				}
-				//Copy back to original
-				while (!copyVisitState.isEmpty()) {
-					byte[] url = copyVisitState.dequeue();
-					visitState.enqueueCrawlRequest(url);
-				}
-			}
-		}
-
-		stringWriter.close();
-		// move to file to its final name
-		File finalSnapSeed = new File( rc.storeDir, "seed.txt.gz" );
-		finalSnapSeed.delete();
-		Files.move(new File( rc.storeDir, ".seed.txt.gz" ),finalSnapSeed);
-	}
-
 	/** Restores data from the given directory.
          * @see #snap() */
 	@SuppressWarnings("unchecked")

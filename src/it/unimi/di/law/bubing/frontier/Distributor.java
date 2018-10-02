@@ -17,13 +17,17 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 
+import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 
+import java.lang.invoke.SerializedLambda;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.pulsar.client.api.PulsarClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
@@ -98,9 +102,9 @@ public final class Distributor extends Thread {
 	private boolean processURL(final MsgFrontier.CrawlRequest crawlRequest, long now) {
 		try {
 			if (LOGGER.isTraceEnabled())
-				LOGGER.trace("Processing URL : {}", PulsarHelper.toString(crawlRequest.getUrl()));
+				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
 			VisitState visitState;
-			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrl());
+			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrlKey());
 			final int currentlyInStore = frontier.schemeAuthority2Count.get(schemeAuthority, 0, schemeAuthority.length);
 			if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
 				visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
@@ -111,14 +115,11 @@ public final class Distributor extends Thread {
 						if (LOGGER.isTraceEnabled())
 							LOGGER.trace("New scheme+authority {} with path+query {}",
 									it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
-									crawlRequest.getUrl().getPathQuery());
+									new String(HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray())));
 						visitState = new VisitState(schemeAuthority);
 						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
 						visitState.enqueueRobots();
-						MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
-						MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
-						crBuilder.setUrl(cleanedURL);
-						visitState.enqueueCrawlRequest(crBuilder.build().toByteArray());
+						visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
 						synchronized (schemeAuthority2VisitState) {
 							schemeAuthority2VisitState.add(visitState);
 						}
@@ -129,25 +130,18 @@ public final class Distributor extends Thread {
 					if (frontier.virtualizer.count(visitState) > 0) {
 						// Safe: there are URLs on disk, and this fact cannot change concurrently.
 						movedFromSieveToVirtualizer++;
-            MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
-            MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
-            crBuilder.setUrl(cleanedURL);
-            frontier.virtualizer.enqueueCrawlRequest(visitState, crBuilder.build().toByteArray());
+
+            frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
 					} else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 						/* Safe: we are enqueueing to a sane (modulo race conditions)
 						 * visit state, which will be necessarily go through the DoneThread later. */
 						visitState.checkRobots(now);
-            MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
-            MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
-            crBuilder.setUrl(cleanedURL);
-            visitState.enqueueCrawlRequest(crBuilder.build().toByteArray());
+
+            visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
 						movedFromSieveToWorkbench++;
 					} else { // visitState.urlsOnDisk == 0
 						movedFromSieveToVirtualizer++;
-            MsgFrontier.CrawlRequest.Builder crBuilder = MsgFrontier.CrawlRequest.newBuilder(crawlRequest);
-            MsgURL.URL.Builder cleanedURL = crBuilder.getUrlBuilder().clearHost().clearScheme();
-            crBuilder.setUrl(cleanedURL);
-            frontier.virtualizer.enqueueCrawlRequest(visitState, crBuilder.build().toByteArray());
+            frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
 					}
 				}
 			} else deletedFromSieve++;

@@ -11,7 +11,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 
+import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.protobuf.url.MsgURL;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import org.apache.http.client.CookieStore;
@@ -287,10 +289,10 @@ public final class FetchingThread extends Thread implements Closeable {
 
         if (LOGGER.isTraceEnabled())
           LOGGER.trace("Processing visitstate for {}", PulsarHelper.toString(PulsarHelper.schemeAuthority(visitState.schemeAuthority).build()));
-        final MsgURL.URL schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
+        final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
 
         while (!visitState.isEmpty()) {
-          final byte[] path = visitState.firstPath(); // Contains a crawlRequest with only path+query and crawl options
+          final byte[] zpath = visitState.firstPath(); // Contains a zPathQuery
 
           if (fetchData == null) {
             for (int i = 0; ((fetchData = availableFetchData.poll()) == null) || fetchData.inUse; i++) {
@@ -305,18 +307,18 @@ public final class FetchingThread extends Thread implements Closeable {
 
           MsgFrontier.CrawlRequest.Builder crawlRequest;
           try {
-            crawlRequest = MsgFrontier.CrawlRequest.newBuilder(MsgFrontier.CrawlRequest.parseFrom(path));
-          } catch (InvalidProtocolBufferException e) {
-            LOGGER.error("Error while parsing path {}", new String(path), e);
+            crawlRequest = MsgFrontier.CrawlRequest.newBuilder().setUrlKey(MsgURL.Key.newBuilder().setZPathQuery(ByteString.copyFrom(zpath)).build());
+          } catch (Exception e) {
+            LOGGER.error("Error while parsing path {}", new String(HuffmanModel.defaultModel.decompress(zpath)), e);
             fetchData.inUse = false;
             visitState.dequeue();
             continue; // skip to next element in visitState
           }
 
-          final MsgURL.URL.Builder urlBuilder = crawlRequest.getUrlBuilder().setScheme(schemeAuthorityProto.getScheme()).setHost(schemeAuthorityProto.getHost());
-          crawlRequest.setUrl(urlBuilder);
+          final MsgURL.Key.Builder urlKeyBuilder = crawlRequest.getUrlKeyBuilder().setScheme(schemeAuthorityProto.getScheme()).setZHost(schemeAuthorityProto.getZHost());
+          crawlRequest.setUrlKey(urlKeyBuilder);
           final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority,
-              crawlRequest.getUrl().getPathQuery().getBytes(StandardCharsets.US_ASCII));
+              HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
 
           LOGGER.trace("Next URL to fetch : {}", url);
 
@@ -330,7 +332,7 @@ public final class FetchingThread extends Thread implements Closeable {
             visitState.schedulePurge();
             fetchData.inUse = false;
             break; // Skip to next VisitState
-          } else if (path == VisitState.ROBOTS_PATH) {
+          } else if (zpath == VisitState.ROBOTS_PATH) {
             if (LOGGER.isTraceEnabled())
               LOGGER.trace("Processing ROBOTS.TXT");
             fetchData.inUse = true;

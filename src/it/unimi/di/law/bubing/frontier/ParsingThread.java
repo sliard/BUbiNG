@@ -11,8 +11,10 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.LanguageCodes;
 import com.google.common.collect.ImmutableMap;
+import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -176,10 +178,10 @@ public class ParsingThread extends Thread {
 										 FetchData fetchData,
 										 char[][] robotsFilter) {
 			scheduledLinks = outlinks = 0;
-			this.uri = PulsarHelper.toURI(crawlRequest.getUrl());
+			this.uri = PulsarHelper.toURI(crawlRequest.getUrlKey());
 			this.crawlRequest = crawlRequest;
 			this.schemeAuthority = schemeAuthority;
-			this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrl( PulsarHelper.fromURI(uri) );
+			this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrlKey( crawlRequest.getUrlKey() );
 			this.robotsFilter = robotsFilter;
 			this.totalWeight = 0.0f;
 			this.fetchData = fetchData;
@@ -387,7 +389,9 @@ public class ParsingThread extends Thread {
 					else {
 						final byte[] firstPath = visitState.dequeue();
 						if (LOGGER.isTraceEnabled())
-							LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty() ? "visit state is now empty " : " first path now is " + it.unimi.di.law.bubing.util.Util.toString(visitState.firstPath())));
+							LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty() ?
+									"visit state is now empty " :
+									" first path now is " + it.unimi.di.law.bubing.util.Util.toString(HuffmanModel.defaultModel.decompress(visitState.firstPath()))));
 						visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
 					}
 
@@ -497,10 +501,10 @@ public class ParsingThread extends Thread {
 								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
 
 								frontier.outdegree.add(fetchedPageInfoBuilder.getExternalLinksCount());
-								final String currentHost = url.getHost();
+								final ByteString currentZHost = fetchData.getCrawlRequest().getUrlKey().getZHost();
 								int currentOutHostDegree = 0;
 								for(final MsgCrawler.FetchLinkInfo u: fetchedPageInfoBuilder.getExternalLinksList())
-									if( !currentHost.equals(u.getTarget().getHost()) )
+									if( !currentZHost.equals(u.getTarget().getZHost()) )
 										currentOutHostDegree++;
 								frontier.externalOutdegree.add(currentOutHostDegree);
 							}

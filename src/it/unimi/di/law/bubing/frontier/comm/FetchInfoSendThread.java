@@ -17,6 +17,8 @@ package it.unimi.di.law.bubing.frontier.comm;
  */
 //RELEASE-STATUS: DIST
 
+import com.exensa.wdl.common.Serializer;
+import com.exensa.wdl.protobuf.url.MsgURL;
 import it.unimi.di.law.bubing.frontier.Frontier;
 
 import java.util.concurrent.*;
@@ -86,7 +88,14 @@ public final class FetchInfoSendThread extends Thread {
 
             while (fetchInfo != null) {
               try {
-                final int topic = PulsarHelper.getTopic(fetchInfo.getUrl(), pulsarProducers.length);
+                if (LOGGER.isTraceEnabled()) {
+                  LOGGER.trace("Sending fetchinfo for {}", Serializer.URL.Key.toString(fetchInfo.getUrlKey()));
+                  for (MsgCrawler.FetchLinkInfo linkInfo : fetchInfo.getInternalLinksList()) {
+                    LOGGER.trace(" - link to {}", Serializer.URL.Key.toString(linkInfo.getTarget()));
+                  }
+                }
+
+                final int topic = PulsarHelper.getTopic(fetchInfo.getUrlKey(), pulsarProducers.length);
                 pulsarProducers[topic].get(timeout, TimeUnit.SECONDS).sendAsync(fetchInfo.toByteArray());
                 frontier.numberOfSentURLs.addAndGet(1);
                 fetchInfo = null;

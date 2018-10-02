@@ -263,27 +263,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		else LOGGER.warn("Agent not paused: not resuming");
 	}
 
-	@ManagedOperation @Description("Dump current queue to reseed")
-	public void snapSeed() {
-		LOGGER.info( "Going to pause the agent for dumping the URL queue..." );
-		if (rc.snappingSeed) // already snapping ?
-			return;
-		rc.snappingSeed = true;
-		rc.paused = true;
-		try {
-			frontier.snapToSeed();
-		} catch (IOException e) {
-			LOGGER.error("Error while writing", e);
-		}
-
-		synchronized( rc ) {
-			rc.snappingSeed = false;
-			rc.paused = false;
-			rc.notifyAll();
-		}
-
-	}
-
 	@ManagedOperation @Description("Add a new IPv4 to the black list; it can be a single IP address or a file (prefixed by file:)")
 	public void addBlackListedIPv4(@org.softee.management.annotation.Parameter("address") @Description("An IPv4 address to be blacklisted") String address) throws ConfigurationException, FileNotFoundException {
 		final Lock lock = rc.blackListedIPv4Lock.writeLock();

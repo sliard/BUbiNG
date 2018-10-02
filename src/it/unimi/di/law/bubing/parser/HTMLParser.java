@@ -320,7 +320,7 @@ public class HTMLParser<T> implements Parser<T> {
 
   private MsgFrontier.CrawlRequest.Builder makePageInfoFromURI(final URI origin) {
     MsgFrontier.CrawlRequest.Builder newPageInfo = MsgFrontier.CrawlRequest.newBuilder();
-    newPageInfo.setUrl(PulsarHelper.fromURI(origin))
+    newPageInfo.setUrlKey(PulsarHelper.fromURI(origin))
         .setCrawlOptions(MsgFrontier.CrawlRequestOptions.getDefaultInstance())
         .build();
     return newPageInfo;
@@ -388,7 +388,7 @@ public class HTMLParser<T> implements Parser<T> {
   }
 
   @Override
-  public byte[] parse(final URI uri, final HttpResponse httpResponse, final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder) throws IOException {
+  public byte[] parse(final URI uri, final HttpResponse httpResponse, final MsgCrawler.FetchInfo.Builder fetchInfoBuilder) throws IOException {
     guessedCharset = null;
     boolean charsetValid = false;
     guessedLanguage = null;
@@ -552,7 +552,7 @@ public class HTMLParser<T> implements Parser<T> {
     finalGuessedCharset = charset;
 
     //MsgFrontier.CrawlRequest origin = makePageInfoFromURI(uri).buildPartial();
-    crawledPageInfoBuilder.setUrl( PulsarHelper.fromURI(uri) );
+    fetchInfoBuilder.setUrlKey( PulsarHelper.fromURI(uri) );
     if (textProcessor != null) textProcessor.init(uri);
 
     // Get location if present
@@ -572,7 +572,7 @@ public class HTMLParser<T> implements Parser<T> {
         linkInfo.getLinkInfoBuilder()
           .setLinkType(EnumType.Enum.LINK);
           //.setLinkRel(EnumRel.Enum.LOCATION); // TODO: probably a link type (redirect), not a rel
-        crawledPageInfoBuilder.addExternalLinks( linkInfo );
+        fetchInfoBuilder.addExternalLinks( linkInfo );
       }
     }
 
@@ -680,7 +680,7 @@ public class HTMLParser<T> implements Parser<T> {
                       // This shouldn't happen by standard, but people unfortunately does it.
                       if (!refresh.isAbsolute() && LOGGER.isDebugEnabled())
                         LOGGER.debug("Found relative META refresh URL: \"{}\"", urlPattern);
-                      crawledPageInfoBuilder.addExternalLinks(
+                      fetchInfoBuilder.addExternalLinks(
                         makeLinkInfoFromBasicURI( base.resolve(refresh) )
                           .setLinkInfo( MsgLink.LinkInfo.newBuilder()
                             //.setLinkRel( EnumRel.Enum.REFRESH ) // TODO: probably a link type (kind of redirect), not a rel
@@ -698,7 +698,7 @@ public class HTMLParser<T> implements Parser<T> {
                     if (!metaLocation.isAbsolute() && LOGGER.isDebugEnabled())
                       LOGGER.debug("Found relative META location URL: \"{}\"", content);
                     this.metaLocation = base.resolve(metaLocation);
-                    crawledPageInfoBuilder.addExternalLinks(
+                    fetchInfoBuilder.addExternalLinks(
                       makeLinkInfoFromBasicURI( this.metaLocation )
                         .setLinkInfo( MsgLink.LinkInfo.newBuilder()
                           //.setLinkRel( EnumRel.Enum.LOCATION ) // TODO: probably a link type (redirect), not a rel
@@ -715,13 +715,13 @@ public class HTMLParser<T> implements Parser<T> {
                 if (metaContent != null) {
                   String metaContentLC = metaContent.toLowerCase();
                   if (metaContentLC.contains("noindex"))
-                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOINDEX(true));
+                    fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOINDEX(true));
                   if (metaContentLC.contains("nofollow"))
-                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOFOLLOW(true));
+                    fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOFOLLOW(true));
                   if (metaContentLC.contains("noarchive"))
-                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOARCHIVE(true));
+                    fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOARCHIVE(true));
                   if (metaContentLC.contains("nosnippet"))
-                    crawledPageInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOSNIPPET(true));
+                    fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOSNIPPET(true));
                 }
 
               }
@@ -750,7 +750,7 @@ public class HTMLParser<T> implements Parser<T> {
               (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT) ||
               (name == HTMLElementName.OBJECT) ||
               (name == HTMLElementName.A || name == HTMLElementName.AREA || name == HTMLElementName.LINK)){
-              process(crawledPageInfoBuilder, schemeAuthority, base, linkValue, currentTextOfInterest.toString(), name,false, false, false);
+              process(fetchInfoBuilder, schemeAuthority, base, linkValue, currentTextOfInterest.toString(), name,false, false, false);
               linkValue = null;
               currentTextOfInterest.setLength(0);
               captureTextOfInterest = false;
@@ -840,7 +840,7 @@ public class HTMLParser<T> implements Parser<T> {
       if (metaLocation != null) digestAppendable.append(BURL.toByteArray(metaLocation));
       digestAppendable.append((char) 0);
     }
-    LOGGER.info("Finished parsing {}, outlinks : {}/{} ", base, crawledPageInfoBuilder.getExternalLinksCount(), crawledPageInfoBuilder.getInternalLinksCount());
+    LOGGER.info("Finished parsing {}, outlinks : {}/{} ", base, fetchInfoBuilder.getExternalLinksCount(), fetchInfoBuilder.getInternalLinksCount());
     return digestAppendable != null ? digestAppendable.digest() : null;
   }
 

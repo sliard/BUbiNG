@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.exensa.util.compression.HuffmanModel;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.util.BURL;
 
@@ -80,7 +81,8 @@ public final class DNSThread extends Thread {
 
 				try {
 					// This is the first point in which DNS resolution happens for new hosts.
-					if (LOGGER.isDebugEnabled()) LOGGER.debug("Resolving host {} with DNS because of URL {}", host, BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, visitState.firstPath()));
+					if (LOGGER.isDebugEnabled())
+						LOGGER.debug("Resolving host {} with DNS because of URL {}", host, BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(visitState.firstPath())));
 					InetAddress[] addresses = frontier.rc.dnsResolver.resolve(host);
 					ArrayList<InetAddress> ipv4Addresses = new ArrayList<InetAddress>();
 					for (InetAddress a:addresses) {
