@@ -396,16 +396,20 @@ public class Frontier {
 				LOGGER.trace("Opening file " + robotsFile + " to write robots.txt");
 				Configuration conf = new Configuration(true);
 				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
-				CompressionCodec codec = ccf.getCodecByClassName(ZstdCodec.class.getName());
+				String codecName = ZstdCodec.class.getName();
+				CompressionCodec codec = ccf.getCodecByClassName(codecName);
 				OutputStream warcOutputStream = null;
-				try {
-					warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
-				} catch (IOException e) {
-					LOGGER.error("Unable to create file", e);
-					System.exit(1);
+				if ( codec == null )
+					LOGGER.error( "failed to load compression codec {}", codecName );
+				else {
+					try {
+						warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
+					} catch (IOException e) {
+						LOGGER.error("Unable to create file", e);
+						System.exit(1);
+					}
 				}
 				WarcWriter warcWriter = new UncompressedWarcWriter(warcOutputStream);
-
 				return warcWriter;
 			}
 		};

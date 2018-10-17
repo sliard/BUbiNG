@@ -64,6 +64,34 @@ public final class PureTextAppendable implements Appendable, CharSequence {
     return this;
   }
 
+  public void append( final char[] buffer, final int offset, final int length ) {
+    for ( int i=offset; i<offset+length; ++i ) {
+      final char c = buffer[i];
+      if ( Character.isWhitespace(c) )
+        appendWhiteSpace( Character.getType(c) );
+      else {
+        textContent.append( c );
+        lastAppendedWasSpace = false;
+        lastAppendedWasNewLine = false;
+      }
+    }
+  }
+
+  private void appendWhiteSpace( final int charType ) {
+    if ( charType == Character.SPACE_SEPARATOR ) {
+      if ( lastAppendedWasSpace ) return;
+      textContent.append( ' ' );
+      lastAppendedWasSpace = true;
+    }
+    else
+    if ( charType == Character.LINE_SEPARATOR || charType == Character.PARAGRAPH_SEPARATOR || charType == Character.CONTROL ) {
+      if ( lastAppendedWasNewLine ) return;
+      textContent.append( '\n' );
+      lastAppendedWasSpace = true;
+      lastAppendedWasNewLine = true;
+    }
+  }
+
 
   @Override
   public int length() {

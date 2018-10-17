@@ -132,7 +132,6 @@ public class ParsingThread extends Thread {
 	}
 
 
-
 	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init initialized}
 	 *  specifying URI and scheme/authority of the page being visited and the robot filter to be
 	 *  applied. Then, one or more URLs can be
@@ -337,243 +336,7 @@ public class ParsingThread extends Thread {
 				}
 
 				try { // This try/finally guarantees that we will release the visit state and signal back.
-					final VisitState visitState = fetchData.visitState;
-					if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
-
-					// This is always the same, independently of what will happen.
-					final int entrySize = visitState.workbenchEntry.size();
-					long ipDelay = rc.ipDelay;
-					final int knownCount = frontier.agent.getKnownCount();
-					if (knownCount > 1 && rc.ipDelayFactor != 0) ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * frontier.agent.getKnownCount() * entrySize / (entrySize + 1.)));
-							visitState.workbenchEntry.nextFetch = fetchData.endTime + ipDelay;
-					visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
-					if (fetchData.exception != null) {
-						LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
-						LOGGER.debug("Exception content : ", fetchData.exception);
-						final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
-
-						if (visitState.lastExceptionClass != exceptionClass) { // A new problem
-							/* If the visit state *just broke down*, we increment the number of broken visit states. */
-							if (visitState.lastExceptionClass == null) {
-								frontier.brokenVisitStates.incrementAndGet();
-								visitState.retries = 0;
-							}
-							visitState.lastExceptionClass = exceptionClass;
-						}
-						else visitState.retries++; // An old problem
-
-						if (visitState.retries < EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
-							final long delay = EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
-							// Exponentially growing delay
-							visitState.nextFetch = fetchData.endTime + delay;
-							if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
-						}
-						else {
-							frontier.brokenVisitStates.decrementAndGet();
-							// Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
-							if (EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
-								visitState.schedulePurge();
-								if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
-							}
-							else {
-								visitState.dequeue();
-								visitState.lastExceptionClass = null;
-								// Regular delay
-								visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay;
-								if (LOGGER.isInfoEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
-							}
-						}
-
-						continue;
-					}
-					else {
-						final byte[] firstPath = visitState.dequeue();
-						if (LOGGER.isTraceEnabled())
-							LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty() ?
-									"visit state is now empty " :
-									" first path now is " + it.unimi.di.law.bubing.util.Util.toString(HuffmanModel.defaultModel.decompress(visitState.firstPath()))));
-						visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
-					}
-
-					if (visitState.lastExceptionClass != null) frontier.brokenVisitStates.decrementAndGet();
-					visitState.lastExceptionClass = null;
-
-					if (fetchData.robots) {
-						frontier.fetchedRobots.incrementAndGet();
-						frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
-
-						if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
-							// We go on getting/creating a workbench entry only if we have robots permissions.
-							visitState.schedulePurge();
-							LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
-						}
-
-						visitState.lastRobotsFetch = fetchData.endTime;
-						continue;
-					}
-
-					final URI url = fetchData.uri();
-
-					frontier.fetchedResources.incrementAndGet();
-
-					byte[] digest = null;
-					Charset guessedCharset = null;
-					String guessedLanguage = null;
-
-					final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
-
-					frontierLinkReceiver.init(visitState.schemeAuthority,
-							fetchData.getCrawlRequest(),
-							fetchedPageInfoBuilder,
-							fetchData,
-							visitState.robotsFilter);
-					final long streamLength = fetchData.response().getEntity().getContentLength();
-					Map<String, String> extraMap = ImmutableMap.of("","");
-					StringBuilder textContent = null;
-					if (streamLength != 0) { // We don't parse zero-length streams
-						try {
-							if (rc.parseFilter.apply(fetchData)) {
-								boolean parserFound = false;
-								for (final Parser<?> parser: parsers)
-									if (parser.apply(fetchData)) {
-										parserFound = true;
-										try {
-											digest = parser.parse(fetchData.uri(), fetchData.response(), fetchedPageInfoBuilder);
-											// Spam detection (NOTE: skipped if the parse() method throws an exception)
-											if (rc.spamDetector != null && (visitState.termCountUpdates < rc.spamDetectionThreshold || rc.spamDetectionPeriodicity != Integer.MAX_VALUE)) {
-												final Object result = parser.result();
-												if (result instanceof SpamTextProcessor.TermCount) visitState.updateTermCount((SpamTextProcessor.TermCount)result);
-												if ((visitState.termCountUpdates - rc.spamDetectionThreshold) % rc.spamDetectionPeriodicity == 0) {
-													visitState.spammicity = (float)((SpamDetector<Short2ShortMap>)rc.spamDetector).estimate(visitState.termCount);
-													LOGGER.info("Spammicity for " + visitState + ": " + visitState.spammicity + " (" + visitState.termCountUpdates + " updates)");
-												}
-											}
-										} catch(final BufferOverflowException e) {
-											LOGGER.info("Buffer overflow during parsing of " + url + " with " + parser);
-										} catch(final IOException e) {
-											LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
-										}
-										String title = null;
-										if ((title = parser.getTitle()) != null)
-										  fetchedPageInfoBuilder.setTitle(title);
-										guessedCharset = parser.guessedCharset();
-										if (parser.guessedLanguage() != null)
-											guessedLanguage = parser.guessedLanguage().getLanguage();
-										if (parser.getRewrittenContent() != null) {
-											HttpEntity originalEntity = fetchData.response().getEntity(); // Actually a caching EntityWrapper
-											BasicHttpEntity rewrittenEntity = new BasicHttpEntity();
-											InputStream is;
-											if (guessedCharset == null) // We use the same encoding that was used for decoding.
-												is = IOUtils.toInputStream(parser.getRewrittenContent(), StandardCharsets.UTF_8);
-											else
-												is = IOUtils.toInputStream(parser.getRewrittenContent(), guessedCharset);
-											rewrittenEntity.setContent(is);
-											rewrittenEntity.setContentType(originalEntity.getContentType());
-
-											if (originalEntity instanceof InspectableCachedHttpEntity) {
-												InspectableCachedHttpEntity modifiableEntity = (InspectableCachedHttpEntity) originalEntity;
-												modifiableEntity.setEntity(rewrittenEntity);
-												modifiableEntity.copyContent(rc.responseBodyMaxByteSize, fetchData.startTime, rc.connectionTimeout, 10);
-												rewrittenEntity.setContentLength(modifiableEntity.getContentLength());
-												fetchData.response().setHeader("Content-Length", Long.toString(modifiableEntity.getContentLength()));
-												fetchData.response().setEntity(modifiableEntity);
-												// We are cheating with the truth, so we must change the response's header
-											}
-										}
-										textContent = parser.getTextContent();
-
-										fetchData.extraMap.putAll(ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
-												"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
-												"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
-												"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
-												"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset)
-                                                );
-                                        fetchData.extraMap.put("BUbiNG-Guessed-Html5", String.valueOf(parser.html5()));
-                                        fetchData.extraMap.put("BUbiNG-Guessed-responsive", String.valueOf(parser.responsiveDesign()));
-										if (guessedCharset != null)
-											fetchData.extraMap.put("BUbiNG-Guessed-Charset",guessedCharset.name());
-										if (guessedLanguage != null) {
-											fetchData.extraMap.put("BUbiNG-Guessed-Language", guessedLanguage);
-											fetchData.lang = LanguageCodes.getByte(guessedLanguage);
-										}
-										break;
-									}
-								if (!parserFound) LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
-
-								frontier.outdegree.add(fetchedPageInfoBuilder.getExternalLinksCount());
-								final ByteString currentZHost = fetchData.getCrawlRequest().getUrlKey().getZHost();
-								int currentOutHostDegree = 0;
-								for(final MsgCrawler.FetchLinkInfo u: fetchedPageInfoBuilder.getExternalLinksList())
-									if( !currentZHost.equals(u.getTarget().getZHost()) )
-										currentOutHostDegree++;
-								frontier.externalOutdegree.add(currentOutHostDegree);
-							}
-							else if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not parsing page " + url);
-						}
-						catch(final Exception e) {
-							// This mainly catches Jericho and network problems
-							LOGGER.warn("Exception during parsing of " + url, e);
-						}
-					}
-
-					final boolean mustBeStored = rc.storeFilter.apply(fetchData);
-
-					if (digest == null) {
-						// We don't log for zero-length streams.
-						if (streamLength != 0 && LOGGER.isDebugEnabled()) LOGGER.debug("Computing binary digest for " + url);
-						// Fallback when all other parsers could not complete digest computation.
-						digest = fetchData.binaryParser.parse(fetchData.uri(), fetchData.response(), null);
-					}
-
-					final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
-					if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, Boolean.valueOf(isNotDuplicate));
-					fetchData.isDuplicate(!isNotDuplicate);
-					if (isNotDuplicate && (rc.followFilter.apply(fetchData))) {
-						frontierLinkReceiver.process(fetchedPageInfoBuilder);
-						frontierLinkReceiver.close();
-					} else {
-						LOGGER.debug("NOT Following {}", fetchData.uri());
-					}
-					// ALERT: store exceptions should cause shutdown.
-					final String result;
-					if (mustBeStored) {
-						if (isNotDuplicate) {
-							// Sot, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
-							incrementCountAndPurge(true, visitState, rc);
-							final int code = fetchData.response().getStatusLine().getStatusCode() / 100;
-							if (code > 0 && code < 6) frontier.archetypesStatus[code].incrementAndGet();
-							else frontier.archetypesStatus[0].incrementAndGet();
-
-							if (streamLength >= 0) frontier.contentLength.add(streamLength);
-
-							final Header contentTypeHeader = fetchData.response().getEntity().getContentType();
-							if (contentTypeHeader != null) {
-								final String contentType = contentTypeHeader.getValue();
-								if (StringUtils.startsWithIgnoreCase(contentType, "text")) frontier.contentTypeText.incrementAndGet();
-								else if (StringUtils.startsWithIgnoreCase(contentType, "image")) frontier.contentTypeImage.incrementAndGet();
-								else if (StringUtils.startsWithIgnoreCase(contentType, "application")) frontier.contentTypeApplication.incrementAndGet();
-								else frontier.contentTypeOthers.incrementAndGet();
-							}
-
-							result = "stored";
-						}
-						else {
-							frontier.duplicates.incrementAndGet();
-							incrementCountAndPurge(false, visitState, rc);
-							result = "duplicate";
-						}
-						fetchData.extraMap.put("BUbiNG-Fetching-Duration", Long.toString(fetchData.endTime - fetchData.startTime));
-						store.store(fetchData.uri(), fetchData.response(), !isNotDuplicate, digest, guessedCharset == null ? null : guessedCharset.name(), guessedLanguage,
-								fetchData.extraMap, textContent);
-
-					}
-					else {
-						result = "not stored";
-						incrementCountAndPurge(false, visitState, rc);
-					}
-
-					if (LOGGER.isDebugEnabled())
-						LOGGER.debug("Fetched " + url + " (" + Util.formatSize((long)(1000.0 * fetchData.length() / (fetchData.endTime - fetchData.startTime + 1)), formatDouble) + "B/s; " + frontierLinkReceiver.scheduledLinks + "/" + frontierLinkReceiver.outlinks + "; " + result + ")");
+					parseAndStore( frontierLinkReceiver, fetchData );
 				}
 				finally {
 					fetchData.inUse = false;
@@ -599,4 +362,304 @@ public class ParsingThread extends Thread {
 		}
 	}
 
+	private void parseAndStore( final FrontierEnqueuer frontierLinkReceiver, final FetchData fetchData ) throws IOException, InterruptedException {
+		final RuntimeConfiguration rc = frontier.rc;
+		final VisitState visitState = fetchData.visitState;
+		if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
+
+		if ( !checkAndUpdateFetchData(fetchData) )
+			return;
+
+		final URI url = fetchData.uri();
+
+		frontier.fetchedResources.incrementAndGet();
+
+		final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
+
+		frontierLinkReceiver.init(visitState.schemeAuthority,
+			fetchData.getCrawlRequest(),
+			fetchedPageInfoBuilder,
+			fetchData,
+			visitState.robotsFilter);
+
+		final long streamLength = fetchData.response().getEntity().getContentLength();
+
+		final ParseData parseData = streamLength != 0
+			? parse( fetchData, fetchedPageInfoBuilder )
+			: new ParseData(); // We don't parse zero-length streams
+
+		if ( parseData == null )
+			return; // failure while parsing
+
+		if (parseData.digest == null) {
+			// We don't log for zero-length streams.
+			if (streamLength != 0 && LOGGER.isDebugEnabled()) LOGGER.debug("Computing binary digest for " + url);
+			// Fallback when all other parsers could not complete digest computation.
+			parseData.digest = fetchData.binaryParser.parse(fetchData.uri(), fetchData.response(), null);
+		}
+
+		final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
+		if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, isNotDuplicate);
+		fetchData.isDuplicate(!isNotDuplicate);
+		if (isNotDuplicate && (rc.followFilter.apply(fetchData))) {
+			frontierLinkReceiver.process(fetchedPageInfoBuilder);
+			frontierLinkReceiver.close();
+		} else {
+			LOGGER.debug("NOT Following {}", fetchData.uri());
+		}
+
+		final String result = store( rc, fetchData, parseData, isNotDuplicate, streamLength );
+
+		if (LOGGER.isDebugEnabled())
+			LOGGER.debug("Fetched " + url + " (" + Util.formatSize((long)(1000.0 * fetchData.length() / (fetchData.endTime - fetchData.startTime + 1)), formatDouble) + "B/s; " + frontierLinkReceiver.scheduledLinks + "/" + frontierLinkReceiver.outlinks + "; " + result + ")");
+	}
+
+	private boolean checkAndUpdateFetchData( final FetchData fetchData ) throws IOException, InterruptedException {
+		final RuntimeConfiguration rc = frontier.rc;
+		final VisitState visitState = fetchData.visitState;
+
+		// This is always the same, independently of what will happen.
+		final int entrySize = visitState.workbenchEntry.size();
+		long ipDelay = rc.ipDelay;
+		final int knownCount = frontier.agent.getKnownCount();
+		if (knownCount > 1 && rc.ipDelayFactor != 0)
+			ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * frontier.agent.getKnownCount() * entrySize / (entrySize + 1.)));
+		//visitState.workbenchEntry.nextFetch = fetchData.endTime + ipDelay;
+		visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
+
+		if (fetchData.exception != null) {
+			LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
+			LOGGER.debug("Exception content : ", fetchData.exception);
+			final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
+
+			if (visitState.lastExceptionClass != exceptionClass) { // A new problem
+				// If the visit state *just broke down*, we increment the number of broken visit states.
+				if (visitState.lastExceptionClass == null) {
+					frontier.brokenVisitStates.incrementAndGet();
+					visitState.retries = 0;
+				}
+				visitState.lastExceptionClass = exceptionClass;
+			}
+			else visitState.retries++; // An old problem
+
+			if (visitState.retries < EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
+				final long delay = EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
+				// Exponentially growing delay
+				visitState.nextFetch = fetchData.endTime + delay;
+				if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
+			}
+			else {
+				frontier.brokenVisitStates.decrementAndGet();
+				// Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
+				if (EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
+					visitState.schedulePurge();
+					if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
+				}
+				else {
+					visitState.dequeue();
+					visitState.lastExceptionClass = null;
+					// Regular delay
+					visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay;
+					if (LOGGER.isDebugEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
+				}
+			}
+
+			return false;
+		}
+		else {
+			final byte[] firstPath = visitState.dequeue();
+			if (LOGGER.isTraceEnabled())
+				LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty() ?
+					"visit state is now empty " :
+					" first path now is " + it.unimi.di.law.bubing.util.Util.toString(HuffmanModel.defaultModel.decompress(visitState.firstPath()))));
+			visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
+		}
+
+		if (visitState.lastExceptionClass != null) frontier.brokenVisitStates.decrementAndGet();
+		visitState.lastExceptionClass = null;
+
+		if (fetchData.robots) {
+			frontier.fetchedRobots.incrementAndGet();
+			frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+
+			if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
+				// We go on getting/creating a workbench entry only if we have robots permissions.
+				visitState.schedulePurge();
+				LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
+			}
+
+			visitState.lastRobotsFetch = fetchData.endTime;
+			return false;
+		}
+
+		return true;
+	}
+
+	private ParseData parse( final FetchData fetchData, final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) {
+		final RuntimeConfiguration rc = frontier.rc;
+		final URI url = fetchData.uri();
+
+		try {
+			ParseData parseData = null;
+			if ( rc.parseFilter.apply(fetchData) ) {
+				final Parser<?> parser = getParser( fetchData );
+				if ( parser != null )
+					parseData = doParse( parser, fetchData, fetchedPageInfoBuilder );
+				else
+					LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
+
+				frontier.outdegree.add(fetchedPageInfoBuilder.getExternalLinksCount());
+				final ByteString currentZHost = fetchData.getCrawlRequest().getUrlKey().getZHost();
+				int currentOutHostDegree = 0;
+				for(final MsgCrawler.FetchLinkInfo u: fetchedPageInfoBuilder.getExternalLinksList())
+					if( !currentZHost.equals(u.getTarget().getZHost()) )
+						currentOutHostDegree++;
+				frontier.externalOutdegree.add(currentOutHostDegree);
+			}
+			else
+			if ( LOGGER.isDebugEnabled() )
+				LOGGER.debug("I'm not parsing page " + url);
+			return parseData;
+		}
+		catch( final IOException e ) {
+			// This mainly catches Jericho and network problems
+			LOGGER.warn("Exception during parsing of " + url, e);
+			return null;
+		}
+	}
+
+	private Parser<?> getParser( final FetchData fetchData ) {
+		for ( final Parser<?> parser : parsers ) {
+			if ( parser.apply(fetchData) )
+				return parser;
+		}
+		return null;
+	}
+
+	private ParseData doParse( final Parser<?> parser, final FetchData fetchData, final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) throws IOException {
+		final RuntimeConfiguration rc = frontier.rc;
+		final URI url = fetchData.uri();
+		final VisitState visitState = fetchData.visitState;
+		final ParseData parseData = new ParseData();
+
+		try {
+			parseData.digest = parser.parse(fetchData.uri(), fetchData.response(), fetchedPageInfoBuilder);
+			// Spam detection (NOTE: skipped if the parse() method throws an exception)
+			if (rc.spamDetector != null && (visitState.termCountUpdates < rc.spamDetectionThreshold || rc.spamDetectionPeriodicity != Integer.MAX_VALUE)) {
+				final Object result = parser.result();
+				if (result instanceof SpamTextProcessor.TermCount) visitState.updateTermCount((SpamTextProcessor.TermCount)result);
+				if ((visitState.termCountUpdates - rc.spamDetectionThreshold) % rc.spamDetectionPeriodicity == 0) {
+					visitState.spammicity = (float)((SpamDetector<Short2ShortMap>)rc.spamDetector).estimate(visitState.termCount);
+					LOGGER.info("Spammicity for " + visitState + ": " + visitState.spammicity + " (" + visitState.termCountUpdates + " updates)");
+				}
+			}
+		} catch(final BufferOverflowException e) {
+			LOGGER.info("Buffer overflow during parsing of " + url + " with " + parser);
+		} catch(final IOException e) {
+			LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
+		}
+		String title = null;
+		if ((title = parser.getTitle()) != null)
+			fetchedPageInfoBuilder.setTitle(title);
+		parseData.guessedCharset = parser.guessedCharset();
+		if (parser.guessedLanguage() != null)
+			parseData.guessedLanguage = parser.guessedLanguage().getLanguage();
+		if (parser.getRewrittenContent() != null) {
+			HttpEntity originalEntity = fetchData.response().getEntity(); // Actually a caching EntityWrapper
+			BasicHttpEntity rewrittenEntity = new BasicHttpEntity();
+			InputStream is;
+			if (parseData.guessedCharset == null) // We use the same encoding that was used for decoding.
+				is = IOUtils.toInputStream(parser.getRewrittenContent(), StandardCharsets.UTF_8);
+			else
+				is = IOUtils.toInputStream(parser.getRewrittenContent(), parseData.guessedCharset);
+			rewrittenEntity.setContent(is);
+			rewrittenEntity.setContentType(originalEntity.getContentType());
+
+			if (originalEntity instanceof InspectableCachedHttpEntity) {
+				InspectableCachedHttpEntity modifiableEntity = (InspectableCachedHttpEntity) originalEntity;
+				modifiableEntity.setEntity(rewrittenEntity);
+				modifiableEntity.copyContent(rc.responseBodyMaxByteSize, fetchData.startTime, rc.connectionTimeout, 10);
+				rewrittenEntity.setContentLength(modifiableEntity.getContentLength());
+				fetchData.response().setHeader("Content-Length", Long.toString(modifiableEntity.getContentLength()));
+				fetchData.response().setEntity(modifiableEntity);
+				// We are cheating with the truth, so we must change the response's header
+			}
+		}
+		parseData.textContent = parser.getTextContent();
+
+		fetchData.extraMap.putAll(ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
+			"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
+			"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
+			"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
+			"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset)
+		);
+		fetchData.extraMap.put("BUbiNG-Guessed-Html5", String.valueOf(parser.html5()));
+		fetchData.extraMap.put("BUbiNG-Guessed-responsive", String.valueOf(parser.responsiveDesign()));
+		if (parseData.guessedCharset != null)
+			fetchData.extraMap.put("BUbiNG-Guessed-Charset",parseData.guessedCharset.name());
+		if (parseData.guessedLanguage != null) {
+			fetchData.extraMap.put("BUbiNG-Guessed-Language", parseData.guessedLanguage);
+			fetchData.lang = LanguageCodes.getByte(parseData.guessedLanguage);
+		}
+
+		return parseData;
+	}
+
+	private String store( final RuntimeConfiguration rc, final FetchData fetchData, final ParseData parseData, final boolean isNotDuplicate, final long streamLength ) throws IOException, InterruptedException {
+		final VisitState visitState = fetchData.visitState;
+		final boolean mustBeStored = rc.storeFilter.apply( fetchData );
+
+		// ALERT: store exceptions should cause shutdown.
+		final String result;
+		if (mustBeStored) {
+			if (isNotDuplicate) {
+				// Sot, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
+				incrementCountAndPurge(true, visitState, rc);
+				final int code = fetchData.response().getStatusLine().getStatusCode() / 100;
+				if (code > 0 && code < 6) frontier.archetypesStatus[code].incrementAndGet();
+				else frontier.archetypesStatus[0].incrementAndGet();
+
+				if (streamLength >= 0) frontier.contentLength.add(streamLength);
+
+				final Header contentTypeHeader = fetchData.response().getEntity().getContentType();
+				if (contentTypeHeader != null) {
+					final String contentType = contentTypeHeader.getValue();
+					if (StringUtils.startsWithIgnoreCase(contentType, "text")) frontier.contentTypeText.incrementAndGet();
+					else if (StringUtils.startsWithIgnoreCase(contentType, "image")) frontier.contentTypeImage.incrementAndGet();
+					else if (StringUtils.startsWithIgnoreCase(contentType, "application")) frontier.contentTypeApplication.incrementAndGet();
+					else frontier.contentTypeOthers.incrementAndGet();
+				}
+
+				result = "stored";
+			}
+			else {
+				frontier.duplicates.incrementAndGet();
+				incrementCountAndPurge(false, visitState, rc);
+				result = "duplicate";
+			}
+			fetchData.extraMap.put("BUbiNG-Fetching-Duration", Long.toString(fetchData.endTime - fetchData.startTime));
+			store.store( fetchData.uri(), fetchData.response(), !isNotDuplicate,
+				parseData.digest, parseData.getCharsetName(), parseData.guessedLanguage,
+				fetchData.extraMap, parseData.textContent );
+
+		}
+		else {
+			result = "not stored";
+			incrementCountAndPurge(false, visitState, rc);
+		}
+
+		return result;
+	}
+
+	private static final class ParseData
+	{
+		Charset guessedCharset = null;
+		String guessedLanguage = null;
+		byte[] digest = null;
+		StringBuilder textContent = null;
+
+		String getCharsetName() {
+			return guessedCharset == null ? null : guessedCharset.name();
+		}
+	}
 }
