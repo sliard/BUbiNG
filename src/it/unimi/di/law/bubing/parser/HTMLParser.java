@@ -784,8 +784,9 @@ public class HTMLParser<T> implements Parser<T> {
     String tld = uri.getHost().substring(uri.getHost().lastIndexOf('.') + 1);
     String guessedLang = guessedLanguage == null ? null : guessedLanguage.getLanguage();
     if (textContent.length() > 5) {
-      String textForLangDetect = textContent.subSequence(0, Math.min(textContent.length(), MAX_LANGUAGE_PAGE_CONTENT) - 1).toString() + " "; // +" " is Workaround CLD2 bug (SIGSEGV)
-      Cld2Result result = Cld2Tool.detect(textForLangDetect, tld, guessedLang);
+      //String textForLangDetect = textContent.subSequence(0, Math.min(textContent.length(), MAX_LANGUAGE_PAGE_CONTENT) - 1).toString() + " "; // +" " is Workaround CLD2 bug (SIGSEGV)
+      //Cld2Result result = Cld2Tool.detect(textForLangDetect, tld, guessedLang);
+      Cld2Result result = Cld2Tool.detect( textContent, MAX_LANGUAGE_PAGE_CONTENT, tld, guessedLang );
       if (LOGGER.isDebugEnabled())
         LOGGER.debug("Raw text submitted to language detection is {}", textContent.toString());
       //cld2Result.setEncoding_hint(22); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h

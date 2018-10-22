@@ -19,8 +19,10 @@ package it.unimi.di.law.bubing.frontier.comm;
 
 import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.protobuf.url.MsgURL;
+import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.Frontier;
 
+import java.util.ArrayList;
 import java.util.concurrent.*;
 
 import org.apache.pulsar.client.api.*;
@@ -29,110 +31,76 @@ import org.slf4j.LoggerFactory;
 
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 
-/** A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit(). */
+/**
+ * A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
+ */
 
-public final class FetchInfoSendThread extends Thread {
-    private static final Logger LOGGER = LoggerFactory.getLogger(FetchInfoSendThread.class);
-    /** A reference to the frontier. */
-    private final Frontier frontier;
+public final class FetchInfoSendThread extends Thread
+{
+  private static final Logger LOGGER = LoggerFactory.getLogger( FetchInfoSendThread.class );
+  /**
+   * A reference to the frontier.
+   */
+  private final Frontier frontier;
+  private final PulsarManager pulsarManager;
 
+  /**
+   * Creates the thread.
+   *
+   * @param frontier the frontier instantiating the thread.
+   */
+  public FetchInfoSendThread( final Frontier frontier, final PulsarManager pulsarManager ) {
+    this.frontier = frontier;
+    this.pulsarManager = pulsarManager;
 
-    private final PulsarClient pulsarClient; // PULSAR
-    private final CompletableFuture<Producer>[] pulsarProducers; // PULSAR
+    setName( this.getClass().getSimpleName() );
+    setPriority( Thread.MAX_PRIORITY ); // This must be done quickly
+  }
 
-    /** Creates the thread.
-     *
-     * @param frontier the frontier instantiating the thread.
-     */
-    public FetchInfoSendThread(final Frontier frontier) throws PulsarClientException {
-        setName(this.getClass().getSimpleName());
-        setPriority(Thread.MAX_PRIORITY); // This must be done quickly
-        this.frontier = frontier;
-        ClientBuilder clientBuilder = PulsarClient.builder()
-            .ioThreads(16)
-            .listenerThreads(16)
-            .connectionsPerBroker(4)
-            .enableTls(false)
-            .enableTlsHostnameVerification(false)
-            .statsInterval(10, TimeUnit.MINUTES)
-            .serviceUrl(frontier.rc.pulsarClientConnection);
+  /**
+   * When set to true, this thread will complete its execution.
+   */
+  public volatile boolean stop = false;
 
-        this.pulsarClient = clientBuilder.build();
-        ProducerBuilder producerBuilder = pulsarClient.newProducer()
-            .enableBatching(true)
-            .batchingMaxMessages(1024)
-            .batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
-            .blockIfQueueFull(true)
-            .sendTimeout(30000, TimeUnit.MILLISECONDS)
-            .compressionType(CompressionType.LZ4)
-            .producerName(frontier.rc.name);
+  @Override
+  public void run() {
+    try {
+      LOGGER.warn( "thread [started]" );
 
-        pulsarProducers = new CompletableFuture[frontier.rc.pulsarFrontierTopicNumber];
-
-        for (int i=0; i<frontier.rc.pulsarFrontierTopicNumber; i++) {
-          pulsarProducers[i] = producerBuilder.topic(frontier.rc.pulsarFrontierDiscoveredURLsTopic + "-"+Integer.toString(i)).createAsync();
-          LOGGER.info("Producer for {} is created", frontier.rc.pulsarFrontierDiscoveredURLsTopic + "-"+Integer.toString(i));
+      final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
+      boolean stopping = false;
+      while ( true ) {
+        if ( stop && !stopping ) {
+          stopping = true;
+          LOGGER.warn( "thread [stopping]" );
         }
-    }
 
-    /** When set to true, this thread will complete its execution. */
-    public volatile boolean stop;
+        final MsgCrawler.FetchInfo fetchInfo = quickToSendURLs.poll( 1, TimeUnit.SECONDS );
+        if ( fetchInfo == null ) {
+          if ( stopping ) break;
+          else continue;
+        }
 
-    @Override
-    public void run() {
-        try {
-          final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
-          int timeout = 1;
-          while (!stop) {
-            MsgCrawler.FetchInfo fetchInfo = quickToSendURLs.poll(1, TimeUnit.SECONDS);
-
-            while (fetchInfo != null) {
-              try {
-                if (LOGGER.isTraceEnabled()) {
-                  LOGGER.trace("Sending fetchinfo for {}", Serializer.URL.Key.toString(fetchInfo.getUrlKey()));
-                  for (MsgCrawler.FetchLinkInfo linkInfo : fetchInfo.getInternalLinksList()) {
-                    LOGGER.trace(" - link to {}", Serializer.URL.Key.toString(linkInfo.getTarget()));
-                  }
-                }
-
-                final int topic = PulsarHelper.getTopic(fetchInfo.getUrlKey(), pulsarProducers.length);
-                pulsarProducers[topic].get(timeout, TimeUnit.SECONDS).sendAsync(fetchInfo.toByteArray());
-                frontier.numberOfSentURLs.addAndGet(1);
-                fetchInfo = null;
-              } catch (InterruptedException e1) {
-                e1.printStackTrace();
-              } catch (ExecutionException e1) {
-                e1.printStackTrace();
-              } catch (TimeoutException e1) {
-                e1.printStackTrace();
-              }
-              timeout = Math.max(60,timeout * 2);
-            }
+        if ( LOGGER.isTraceEnabled() ) {
+          LOGGER.trace( "Sending fetchinfo for {}", Serializer.URL.Key.toString(fetchInfo.getUrlKey()) );
+          for ( final MsgCrawler.FetchLinkInfo linkInfo : fetchInfo.getInternalLinksList() ) {
+            LOGGER.trace( " - link to {}", Serializer.URL.Key.toString(linkInfo.getTarget()) );
           }
-
-        } catch (Throwable t) {
-            LOGGER.error("Unexpected exception ", t);
         }
 
-        /* BEGIN PULSAR */
-        for (CompletableFuture<Producer> p: pulsarProducers) {
-            try {
-                p.get(1,TimeUnit.SECONDS).closeAsync();
-            } catch (InterruptedException e) {
-              e.printStackTrace();
-            } catch (ExecutionException e) {
-              e.printStackTrace();
-            } catch (TimeoutException e) {
-              e.printStackTrace();
-            }
-        }
-        try {
-            pulsarClient.close();
-        } catch (PulsarClientException e) {
-            e.printStackTrace();
-        }
-        /* END PULSAR */
-
-        LOGGER.info("Completed");
+        pulsarManager
+          .getFetchInfoProducer( fetchInfo.getUrlKey() )
+          .sendAsync( fetchInfo.toByteArray() );
+      }
     }
+    catch ( InterruptedException e ) {
+      LOGGER.error( "Interrupted", e );
+    }
+    catch ( Throwable t ) {
+      LOGGER.error( "Unexpected error", t );
+    }
+    finally {
+      LOGGER.warn( "thread [stopped]" );
+    }
+  }
 }

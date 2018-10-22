@@ -401,7 +401,7 @@ public class ParsingThread extends Thread {
 		final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
 		if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, isNotDuplicate);
 		fetchData.isDuplicate(!isNotDuplicate);
-		if (isNotDuplicate && (rc.followFilter.apply(fetchData))) {
+		if (isNotDuplicate && rc.followFilter.apply(fetchData)) {
 			frontierLinkReceiver.process(fetchedPageInfoBuilder);
 			frontierLinkReceiver.close();
 		} else {
@@ -423,57 +423,20 @@ public class ParsingThread extends Thread {
 		long ipDelay = rc.ipDelay;
 		final int knownCount = frontier.agent.getKnownCount();
 		if (knownCount > 1 && rc.ipDelayFactor != 0)
-			ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * frontier.agent.getKnownCount() * entrySize / (entrySize + 1.)));
-		//visitState.workbenchEntry.nextFetch = fetchData.endTime + ipDelay;
+			ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
 		visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
 
 		if (fetchData.exception != null) {
-			LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
-			LOGGER.debug("Exception content : ", fetchData.exception);
-			final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
-
-			if (visitState.lastExceptionClass != exceptionClass) { // A new problem
-				// If the visit state *just broke down*, we increment the number of broken visit states.
-				if (visitState.lastExceptionClass == null) {
-					frontier.brokenVisitStates.incrementAndGet();
-					visitState.retries = 0;
-				}
-				visitState.lastExceptionClass = exceptionClass;
-			}
-			else visitState.retries++; // An old problem
-
-			if (visitState.retries < EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
-				final long delay = EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
-				// Exponentially growing delay
-				visitState.nextFetch = fetchData.endTime + delay;
-				if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
-			}
-			else {
-				frontier.brokenVisitStates.decrementAndGet();
-				// Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
-				if (EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
-					visitState.schedulePurge();
-					if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
-				}
-				else {
-					visitState.dequeue();
-					visitState.lastExceptionClass = null;
-					// Regular delay
-					visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay;
-					if (LOGGER.isDebugEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
-				}
-			}
-
+			processFetchDataException( fetchData );
 			return false;
 		}
-		else {
-			final byte[] firstPath = visitState.dequeue();
-			if (LOGGER.isTraceEnabled())
-				LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty() ?
-					"visit state is now empty " :
-					" first path now is " + it.unimi.di.law.bubing.util.Util.toString(HuffmanModel.defaultModel.decompress(visitState.firstPath()))));
-			visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
-		}
+
+		final byte[] firstPath = visitState.dequeue();
+		if (LOGGER.isTraceEnabled())
+			LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty()
+				? "visit state is now empty "
+				: "first path now is " + it.unimi.di.law.bubing.util.Util.toString(HuffmanModel.defaultModel.decompress(visitState.firstPath()))));
+		visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
 
 		if (visitState.lastExceptionClass != null) frontier.brokenVisitStates.decrementAndGet();
 		visitState.lastExceptionClass = null;
@@ -493,6 +456,45 @@ public class ParsingThread extends Thread {
 		}
 
 		return true;
+	}
+
+	private void processFetchDataException( final FetchData fetchData ) {
+		LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
+		LOGGER.debug("Exception content : ", fetchData.exception);
+		final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
+		final VisitState visitState = fetchData.visitState;
+
+		if (visitState.lastExceptionClass != exceptionClass) { // A new problem
+			// If the visit state *just broke down*, we increment the number of broken visit states.
+			if (visitState.lastExceptionClass == null) {
+				frontier.brokenVisitStates.incrementAndGet();
+				visitState.retries = 0;
+			}
+			visitState.lastExceptionClass = exceptionClass;
+		}
+		else visitState.retries++; // An old problem
+
+		if (visitState.retries < EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
+			final long delay = EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
+			// Exponentially growing delay
+			visitState.nextFetch = fetchData.endTime + delay;
+			if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
+		}
+		else {
+			frontier.brokenVisitStates.decrementAndGet();
+			// Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
+			if (EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
+				visitState.schedulePurge();
+				if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
+			}
+			else {
+				visitState.dequeue();
+				visitState.lastExceptionClass = null;
+				// Regular delay
+				visitState.nextFetch = fetchData.endTime + frontier.rc.schemeAuthorityDelay;
+				if (LOGGER.isDebugEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
+			}
+		}
 	}
 
 	private ParseData parse( final FetchData fetchData, final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) {

@@ -3,7 +3,6 @@ package it.unimi.di.law.bubing;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -14,18 +13,16 @@ import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
 import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
+import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
 import it.unimi.di.law.bubing.frontier.comm.CrawlRequestsReceiver;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
-import org.apache.pulsar.client.api.ClientBuilder;
-import org.apache.pulsar.client.api.PulsarClient;
 import org.jgroups.JChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,10 +85,14 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	/** The name of the system property that, if set, makes it possible to choose a JGroups configuration file. */
 	public static final String JGROUPS_CONFIGURATION_PROPERTY_NAME = "it.unimi.di.law.bubing.jgroups.configurationFile";
 
+	private static final String DEFAULT_JGROUPS_CONFIGURATION_FILE = "/" + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml";
+
 	/** The only instance of global data in this agent. */
 	private final RuntimeConfiguration rc;
 	/** The frontier of this agent. */
 	private final Frontier frontier;
+
+	private final PulsarManager pulsarManager;
 
 	/** @see FetchInfoSendThread */
 	protected final FetchInfoSendThread fetchInfoSendThread;
@@ -99,19 +100,23 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	/** @see QuickToQueueThread */
 	protected final QuickToQueueThread quickToQueueThread;
 
-	/** @see CrawlRequestsReceiver */
-	protected final CrawlRequestsReceiver[] crawlRequestsReceivers;
-
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
 
 	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
 		// TODO: configure strategies
 
-		super(rc.name, rc.weight, new InetSocketAddress(hostname, jmxPort),
-				new JChannel(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null ? (InputStream) new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME)) : JGroupsJobManager.class.getResourceAsStream('/' + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml")),
-				rc.group, new ConsistentHashAssignmentStrategy<BubingJob>(), new LinkedBlockingQueue<BubingJob>(),
-				new TimedDroppingThreadFactory<BubingJob>(1800000), new DiscardMessagesStrategy<BubingJob>());
+		super(rc.name, rc.weight,
+			new InetSocketAddress(hostname, jmxPort),
+			new JChannel( System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null
+				? new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME))
+				: JGroupsJobManager.class.getResourceAsStream(DEFAULT_JGROUPS_CONFIGURATION_FILE) ),
+			rc.group,
+			new ConsistentHashAssignmentStrategy<>(),
+			new LinkedBlockingQueue<>(),
+			new TimedDroppingThreadFactory<>(1800000),
+			new DiscardMessagesStrategy<>()
+		);
 
 		theAgent = this;
 
@@ -133,24 +138,13 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		frontier.parsingThreads(rc.parsingThreads);
 		frontier.fetchingThreads(rc.fetchingThreads);
 
+		pulsarManager = new PulsarManager( rc );
 
-		(fetchInfoSendThread = new FetchInfoSendThread(frontier)).start();
+		pulsarManager.createFetchInfoProducers();
+		(fetchInfoSendThread = new FetchInfoSendThread(frontier,pulsarManager)).start();
 		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
-		crawlRequestsReceivers = new CrawlRequestsReceiver[frontier.rc.pulsarFrontierTopicNumber];
-		PulsarClient pulsarClient = PulsarClient.builder()
-				.ioThreads(16)
-				.listenerThreads(16)
-				.connectionsPerBroker(4)
-				.enableTls(false)
-				.enableTlsHostnameVerification(false)
-				.statsInterval(10, TimeUnit.MINUTES)
-				.serviceUrl(frontier.rc.pulsarClientConnection).build();
 
-		for (int i = 0; i< frontier.rc.pulsarFrontierTopicNumber; i++) {
-			crawlRequestsReceivers[i] = new CrawlRequestsReceiver(frontier,i, pulsarClient);
-		}
-
-
+		pulsarManager.createCrawlRequestConsumers( frontier );
 	}
 
 	public static Agent getAgent() {
@@ -170,36 +164,72 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 				rc.wait();
 		}
 
-		LOGGER.info("Terminating the agent");
 		terminate();
 	}
 
-	public void terminate() throws Exception {
-		// Stuff to be done at stopping time
-		if (!hasStopped) {
+	private void terminate() {
+		synchronized ( this ) {
+			if ( hasStopped )
+				return;
 			hasStopped = true;
-			// The message thread uses the sieve, which will be closed by the frontier.
-			//discoveredURLReceiveThread.stop = true;
-			//discoveredURLReceiveThread.join();
-			for (int i = 0; i< frontier.rc.pulsarFrontierTopicNumber; i++) {
-				crawlRequestsReceivers[i].stop();
+		}
+
+		unsafeTerminate();
+	}
+
+	private void unsafeTerminate() {
+		try {
+			// Stuff to be done at stopping time
+			LOGGER.warn( "Terminating agent {}", this );
+
+			synchronized ( rc ) {
+				if ( !rc.stopping ) {
+					LOGGER.warn( "Notifying termination to RuntimeConfiguration" );
+					rc.stopping = true;
+					rc.notifyAll();
+				}
 			}
-			LOGGER.info("Joined message thread");
 
+			LOGGER.warn( "Closing CrawlRequest consumers" );
+			pulsarManager.closeCrawlRequestConsumers();
+			LOGGER.warn( "CrawlRequest consumers closed" );
+
+			LOGGER.warn( "Closing Frontier" );
 			frontier.close();
+			LOGGER.warn( "Frontier closed" );
 
-			LOGGER.info("Going to close job manager " + this);
+			LOGGER.warn( "Closing Job Manager {}", this );
 			close();
-			LOGGER.info("Job manager closed");
+			LOGGER.warn( "Job Manager {} closed", this );
 
 			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
+			LOGGER.warn( "Stopping FetchInfoSendThread" );
 			fetchInfoSendThread.stop = true;
+			LOGGER.warn( "Waiting FetchInfoSendThread to stop" );
 			fetchInfoSendThread.join();
-			quickToQueueThread.stop = true;
-			quickToQueueThread.join();
-			LOGGER.info("Joined quick message thread");
+			LOGGER.warn( "FetchInfoSendThread stopped" );
 
-			LOGGER.info("Agent " + this + " exits");
+			LOGGER.warn( "Stopping QuickToQueueThread" );
+			quickToQueueThread.stop = true;
+			LOGGER.warn( "Waiting QuickToQueueThread to stop" );
+			quickToQueueThread.join();
+			LOGGER.warn( "QuickToQueueThread stopped" );
+
+			LOGGER.warn( "Closing FetchInfo producers" );
+			pulsarManager.closeFetchInfoProducers();
+			LOGGER.warn( "FetchInfo producers closed" );
+
+			LOGGER.warn( "Closing Pulsar client" );
+			pulsarManager.closePulsarClient();
+			LOGGER.warn( "Pulsar client closed" );
+
+			LOGGER.warn( "Agent {} terminated", this );
+		}
+		catch ( InterruptedException e ) {
+			LOGGER.error( String.format("Termination of agent %s was interrupted",this), e );
+		}
+		catch ( IOException e ) {
+			LOGGER.error( String.format("While terminating agent %s",this), e );
 		}
 	}
 
@@ -795,20 +825,26 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		additional.addProperty("weight", Integer.toString(weight));
 		additional.addProperty("crawlIsNew", Boolean.valueOf(jsapResult.getBoolean("new")));
 		if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));
-		Agent agent = new Agent(host, port, new RuntimeConfiguration(new StartupConfiguration(jsapResult.getString("properties"), additional)));
 
-		Runtime.getRuntime().addShutdownHook(new Thread( () -> {
+		final RuntimeConfiguration rc = new RuntimeConfiguration( new StartupConfiguration(jsapResult.getString("properties"), additional) );
+		final Agent agent = new Agent(host, port, rc);
+
+		final Thread shutdownHookThread = new Thread( () -> {
 			try {
-				if (!hasStopped)
-					agent.terminate();
-			} catch (Exception e) {
-				LOGGER.error("Error during shutdown",e);
-			} finally {
-				System.exit(0);
+				LOGGER.warn( "ShutdownHook : invoked" );
+				agent.terminate();
 			}
-		}));
+			catch (Exception e) {
+				LOGGER.error("Error during shutdown",e);
+			}
+			LOGGER.warn( "ShutdownHook : exited" );
+		} );
+
+		Runtime.getRuntime().addShutdownHook( shutdownHookThread );
+		LOGGER.warn( "Invoking agent.run()" );
 		agent.run();
-		System.exit(0); // Kills remaining FetchingThread instances, if any.
+		LOGGER.warn( "agent.run() exited" );
+		Runtime.getRuntime().removeShutdownHook( shutdownHookThread );
 	}
 
 }

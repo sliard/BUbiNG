@@ -16,7 +16,6 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
-import com.google.common.io.Files;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
@@ -38,7 +37,6 @@ import it.unimi.dsi.util.Properties;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -46,7 +44,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
-import java.util.zip.GZIPOutputStream;
 
 import net.htmlparser.jericho.Config;
 import net.htmlparser.jericho.LoggerProvider;
@@ -643,19 +640,29 @@ public class Frontier {
 		/* First we wait for all high-level threads to complete. Note that only the workbench thread
 		 * needs to be interrupted--all other threads check regularly for rc.stopping. Note that
 		 * visit states in the todo and done list will be moved by snap() back into the workbench. */
+
+		LOGGER.warn( "Closing frontier" );
+
+		LOGGER.warn( "Interrupting TODO thread" );
 		todoThread.interrupt();
 
+		LOGGER.warn( "Waiting distributor to stop" );
 		distributor.join();
-		LOGGER.info("Joined distributor");
+		LOGGER.warn( "Distributor stopped" );
+
+		LOGGER.warn( "Waiting TODO thread to stop" );
 		todoThread.join();
-		LOGGER.info("Joined todo thread");
+		LOGGER.warn( "TODO thread stopped" );
 
 		/* First we stop DNS threads; note that we have to set explicitly stop. */
+		LOGGER.warn( "Stopping DNS threads" );
 		for (DNSThread t : dnsThreads) t.stop = true;
+		LOGGER.warn( "Waiting for DNS threads to stop" );
 		for (DNSThread t : dnsThreads) t.join();
-		LOGGER.info("Joined DNS threads");
+		LOGGER.warn( "DNS threads stopped" );
 
 		/* We wait for all fetching activity to come to a stop. */
+		LOGGER.warn( "Stopping fetching threads" );
 		for (FetchingThread t : fetchingThreads) t.stop = true;
 
 		/* This extremely poor form of timeout waiting for fetching threads is motivated by threads
@@ -665,60 +672,79 @@ public class Frontier {
 		boolean someAlive;
 
 		do {
-			Thread.sleep(1000);
 			someAlive = false;
 			for (FetchingThread t : fetchingThreads) someAlive |= t.isAlive();
-		} while (someAlive && System.currentTimeMillis() - time < rc.socketTimeout * 2);
-
-		if (someAlive) for (FetchingThread t : fetchingThreads) t.abort(); // Abort any still open requests.
-
-		time = System.currentTimeMillis();
-		do {
-			Thread.sleep(1000);
-			someAlive = false;
-			for (FetchingThread t : fetchingThreads) someAlive |= t.isAlive();
+			if ( someAlive ) {
+				LOGGER.warn( "Waiting fetching threads to stop" );
+				Thread.sleep(1000);
+			}
 		} while (someAlive && System.currentTimeMillis() - time < rc.socketTimeout * 2);
 
 		if (someAlive) {
-			LOGGER.error("Some fetching threads are still alive");
-			for (FetchingThread t : fetchingThreads) t.interrupt();
+			LOGGER.warn( "Aborting fetching threads" );
+			for (FetchingThread t : fetchingThreads) t.abort(); // Abort any still open requests.
 		}
 
-		// This catches fetching threads stuck because all parsing threads crashed
-		for (FetchingThread t : fetchingThreads) t.join();
+		time = System.currentTimeMillis();
+		do {
+			someAlive = false;
+			for (FetchingThread t : fetchingThreads) someAlive |= t.isAlive();
+			if ( someAlive ) {
+				LOGGER.warn( "Waiting fetching threads to abort" );
+				Thread.sleep(1000);
+			}
+		} while (someAlive && System.currentTimeMillis() - time < rc.socketTimeout * 2);
 
-		LOGGER.info("Joined fetching threads");
+		if (someAlive) {
+			LOGGER.warn( "Interrupting fetching threads" );
+			for (FetchingThread t : fetchingThreads) t.interrupt();
+      // This catches fetching threads stuck because all parsing threads crashed
+      LOGGER.warn( "Waiting fetching threads to interrupt" );
+      for (FetchingThread t : fetchingThreads) t.join();
+		}
+
+		LOGGER.warn( "fetching threads stopped" );
 
 		// We wait to be sure that the done thread wakes up and released all remaining visit states.
+		LOGGER.warn( "Sleeping for 2s..." );
 		Thread.sleep(2000);
+
+		LOGGER.warn( "Stopping Done thread" );
 		doneThread.stop = true;
+		LOGGER.warn( "Waiting for Done thread to stop" );
 		doneThread.join();
-		LOGGER.info("Joined done thread");
+		LOGGER.warn( "Done thread stopped" );
 
 		// Wait for all results to be parsed, unless there are no more parsing threads alive
 		while (results.size() != 0) {
 			someAlive = false;
 			for (ParsingThread t : parsingThreads) someAlive |= t.isAlive();
-			if (! someAlive) {
+			if ( !someAlive ) {
 				LOGGER.error("No parsing thread alive: some results might not have been parsed");
 				break;
 			}
+			LOGGER.warn( "Waiting for parsing threads to end" );
 			Thread.sleep(1000);
 		}
 		if (results.size() == 0) LOGGER.info("All results have been parsed");
 
 		/* Then we stop parsing threads; note that we have to set explicitly stop. */
+		LOGGER.warn( "Stopping parsing threads" );
 		for (ParsingThread t : parsingThreads) t.stop = true;
+		LOGGER.warn( "Waiting parsing threads to stop" );
 		for (ParsingThread t : parsingThreads) t.join();
+		LOGGER.warn( "Parsing threads stopped" );
 
-		LOGGER.info("Joined parsing threads and closed stores");
+		//LOGGER.info("Joined parsing threads and closed stores");
 
+		LOGGER.warn( "Closing stores" );
 		for (FetchingThread t : fetchingThreads) t.close();
 		for (FetchData fd; (fd = availableFetchData.poll()) != null;) { fd.close(); }
 		for (FetchData fd; (fd = results.poll()) != null;) { fd.close(); }
+		LOGGER.warn( "Stores closed" );
 
-		LOGGER.info("Closed fetching threads");
 
+		LOGGER.warn( "Releasing VisitStates" );
 		// Move the todo list back into the workbench
 		for (VisitState visitState; (visitState = todo.poll()) != null;) workbench.release(visitState);
 		// Move the done list back into the workbench (here we catch visit states released by the interrupts on the fetching threads, if any)
@@ -735,9 +761,12 @@ public class Frontier {
 			if (dequeuedURLs == 0) LOGGER.info("No URLs on disk during last refill: " + visitState);
 			if (visitState.acquired) LOGGER.warn("Visit state in the poll queue is acquired: " + visitState);
 		}
+		LOGGER.warn( "VisitStates released" );
 
 		// We invoke done() here so the final stats are the last thing printed.
 		distributor.statsThread.done();
+
+		LOGGER.warn( "Frontier closed" );
 	}
 		/** Update, if necessary, the {@link #requiredFrontSize}. The current front size is the number of
 	 * visit states present in the workbench and in the {@link #todo} queue. If this quantity is

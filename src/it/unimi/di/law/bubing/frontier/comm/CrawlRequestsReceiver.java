@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier.comm;
  * limitations under the License.
  */
 
+import com.exensa.wdl.common.Serializer;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.util.*;
@@ -36,80 +37,40 @@ import java.util.concurrent.TimeoutException;
 
 /** A set of Pulsar Receivers
  */
-public final class CrawlRequestsReceiver implements MessageListener {
+public final class CrawlRequestsReceiver implements MessageListener<byte[]>
+{
 	private static final Logger LOGGER = LoggerFactory.getLogger(CrawlRequestsReceiver.class);
 
 	/** A reference to the frontier. */
 	private final Frontier frontier;
-
-	private final PulsarClient pulsarClient;
-	private final CompletableFuture<Consumer> pulsarConsumer;
-	private final int topicNumber;
+	private final int topic;
 
 	/** Creates the thread.
 	 *
 	 * @param frontier the frontier instantiating this thread.
 	 */
-	public CrawlRequestsReceiver(final Frontier frontier, int topicNumber, PulsarClient pulsarClient) throws PulsarClientException {
-
-		this.pulsarClient = pulsarClient;
+	public CrawlRequestsReceiver( final Frontier frontier, final int topic ) {
 		this.frontier = frontier;
-		this.topicNumber = frontier.rc.pulsarFrontierTopicNumber;
-
-		LOGGER.info("Receiver for crawl requests topic crawl-{} [started]", topicNumber);
-
-
-		ConsumerBuilder consumerBuilder = pulsarClient.newConsumer()
-				.subscriptionType(SubscriptionType.Failover)
-				.acknowledgmentGroupTime(500, TimeUnit.MILLISECONDS)
-				.messageListener(this)
-				.subscriptionInitialPosition(SubscriptionInitialPosition.Latest)
-				.subscriptionName("toCrawlSubscription");
-		CompletableFuture<Consumer> c = consumerBuilder
-					.consumerName(UUID.randomUUID().toString()+frontier.rc.name)
-					.topic(frontier.rc.pulsarFrontierToCrawlURLsTopic + "-" + Integer.toString(topicNumber))
-					.subscribeAsync();
-		pulsarConsumer = c;
+		this.topic = topic;
 	}
 
-	public void stop() {
-
-		try {
-			pulsarConsumer.get(1, TimeUnit.SECONDS).close();
-			LOGGER.info("Receiver for crawl requests topic crawl-{} [stopped]", topicNumber);
-		} catch (PulsarClientException e) {
-			LOGGER.error("Failed to stop receiver for crawl requests topic crawl-{}", topicNumber);
-			e.printStackTrace();
-		} catch (InterruptedException e) {
-      e.printStackTrace();
-    } catch (ExecutionException e) {
-      e.printStackTrace();
-    } catch (TimeoutException e) {
-      e.printStackTrace();
-    }
-
-
-  }
-
 	@Override
-	public void received(Consumer consumer, Message message) {
+	public void received( final Consumer<byte[]> consumer, final Message<byte[]> message ) {
 		try {
-			final MsgFrontier.CrawlRequest crawlRequest;
-			crawlRequest = MsgFrontier.CrawlRequest.parseFrom(message.getData());
-			if (LOGGER.isTraceEnabled())
-				LOGGER.trace("Received url {} to crawl", crawlRequest.toString());
-			frontier.quickReceivedCrawlRequests.put(crawlRequest); // Will block until not full
-			frontier.numberOfReceivedURLs.addAndGet(1);
-		} catch (InvalidProtocolBufferException e) {
-			LOGGER.error("Error while parsing message from Pulsar",e);
-		} catch (InterruptedException e) {
-			LOGGER.error("Error while enqueueing message from Pulsar",e);
-		} finally {
-			try {
-				consumer.acknowledge(message);
-			} catch (PulsarClientException e) {
-				LOGGER.error("Error while acknowledging message to Pulsar", e);
-			}
+			final MsgFrontier.CrawlRequest crawlRequest = MsgFrontier.CrawlRequest.parseFrom( message.getData() );
+			if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
+			frontier.quickReceivedCrawlRequests.put( crawlRequest ); // Will block until not full
+			frontier.numberOfReceivedURLs.addAndGet( 1 );
+			consumer.acknowledge( message );
 		}
+		catch ( InvalidProtocolBufferException e ) {
+			LOGGER.error( String.format("Error while parsing message for topic %d",topic), e );
+		}
+		catch ( InterruptedException e ) {
+			LOGGER.error( String.format("Interrupted while processing message for topic %d",topic), e );
+		}
+		catch ( PulsarClientException e ) {
+		  LOGGER.error( String.format("While acknowledging message for topic %d",topic), e );
+    }
 	}
 }
