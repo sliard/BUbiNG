@@ -16,10 +16,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
-import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
 import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
-import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
-import it.unimi.di.law.bubing.frontier.comm.CrawlRequestsReceiver;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
@@ -94,12 +91,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	private final PulsarManager pulsarManager;
 
-	/** @see FetchInfoSendThread */
-	protected final FetchInfoSendThread fetchInfoSendThread;
-
-	/** @see QuickToQueueThread */
-	protected final QuickToQueueThread quickToQueueThread;
-
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
 
@@ -127,7 +118,10 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 		register();
 
-		frontier = new Frontier(rc, this);
+		pulsarManager = new PulsarManager( rc );
+		pulsarManager.createFetchInfoProducers();
+
+		frontier = new Frontier(rc, this, pulsarManager );
 		frontier.init();
 		//setListener(frontier);
 
@@ -137,12 +131,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		frontier.dnsThreads(rc.dnsThreads);
 		frontier.parsingThreads(rc.parsingThreads);
 		frontier.fetchingThreads(rc.fetchingThreads);
-
-		pulsarManager = new PulsarManager( rc );
-
-		pulsarManager.createFetchInfoProducers();
-		(fetchInfoSendThread = new FetchInfoSendThread(frontier,pulsarManager)).start();
-		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
 
 		pulsarManager.createCrawlRequestConsumers( frontier );
 	}
@@ -201,19 +189,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			LOGGER.warn( "Closing Job Manager {}", this );
 			close();
 			LOGGER.warn( "Job Manager {} closed", this );
-
-			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
-			LOGGER.warn( "Stopping FetchInfoSendThread" );
-			fetchInfoSendThread.stop = true;
-			LOGGER.warn( "Waiting FetchInfoSendThread to stop" );
-			fetchInfoSendThread.join();
-			LOGGER.warn( "FetchInfoSendThread stopped" );
-
-			LOGGER.warn( "Stopping QuickToQueueThread" );
-			quickToQueueThread.stop = true;
-			LOGGER.warn( "Waiting QuickToQueueThread to stop" );
-			quickToQueueThread.join();
-			LOGGER.warn( "QuickToQueueThread stopped" );
 
 			LOGGER.warn( "Closing FetchInfo producers" );
 			pulsarManager.closeFetchInfoProducers();

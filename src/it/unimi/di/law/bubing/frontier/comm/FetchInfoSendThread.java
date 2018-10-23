@@ -17,19 +17,16 @@ package it.unimi.di.law.bubing.frontier.comm;
  */
 //RELEASE-STATUS: DIST
 
-import com.exensa.wdl.common.Serializer;
-import com.exensa.wdl.protobuf.url.MsgURL;
-import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.Frontier;
 
 import java.util.ArrayList;
 import java.util.concurrent.*;
 
-import org.apache.pulsar.client.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+
 
 /**
  * A thread that takes care of sending the content of {@link Frontier#quickToSendDiscoveredURLs} with submit().
@@ -38,20 +35,15 @@ import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 public final class FetchInfoSendThread extends Thread
 {
   private static final Logger LOGGER = LoggerFactory.getLogger( FetchInfoSendThread.class );
-  /**
-   * A reference to the frontier.
-   */
-  private final Frontier frontier;
-  private final PulsarManager pulsarManager;
+  private static final int BULK_SIZE = 512;
+  private static final long SLEEP_DURATION = 50;
 
-  /**
-   * Creates the thread.
-   *
-   * @param frontier the frontier instantiating the thread.
-   */
-  public FetchInfoSendThread( final Frontier frontier, final PulsarManager pulsarManager ) {
-    this.frontier = frontier;
+  private final PulsarManager pulsarManager;
+  private final ArrayBlockingQueue<MsgCrawler.FetchInfo> queue;
+
+  public FetchInfoSendThread( final PulsarManager pulsarManager, final ArrayBlockingQueue<MsgCrawler.FetchInfo> queue ) {
     this.pulsarManager = pulsarManager;
+    this.queue = queue;
 
     setName( this.getClass().getSimpleName() );
     setPriority( Thread.MAX_PRIORITY ); // This must be done quickly
@@ -66,8 +58,8 @@ public final class FetchInfoSendThread extends Thread
   public void run() {
     try {
       LOGGER.warn( "thread [started]" );
+      final ArrayList<MsgCrawler.FetchInfo> bulk = new ArrayList<>( BULK_SIZE );
 
-      final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendURLs = frontier.quickToSendDiscoveredURLs;
       boolean stopping = false;
       while ( true ) {
         if ( stop && !stopping ) {
@@ -75,22 +67,18 @@ public final class FetchInfoSendThread extends Thread
           LOGGER.warn( "thread [stopping]" );
         }
 
-        final MsgCrawler.FetchInfo fetchInfo = quickToSendURLs.poll( 1, TimeUnit.SECONDS );
-        if ( fetchInfo == null ) {
+        if ( queue.drainTo(bulk,BULK_SIZE) == 0 ) {
           if ( stopping ) break;
-          else continue;
+          Thread.sleep( SLEEP_DURATION );
+          continue;
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-          LOGGER.trace( "Sending fetchinfo for {}", Serializer.URL.Key.toString(fetchInfo.getUrlKey()) );
-          for ( final MsgCrawler.FetchLinkInfo linkInfo : fetchInfo.getInternalLinksList() ) {
-            LOGGER.trace( " - link to {}", Serializer.URL.Key.toString(linkInfo.getTarget()) );
-          }
+        for ( final MsgCrawler.FetchInfo fetchInfo : bulk ) {
+          pulsarManager
+            .getFetchInfoProducer( fetchInfo.getUrlKey() )
+            .sendAsync( fetchInfo.toByteArray() );
         }
-
-        pulsarManager
-          .getFetchInfoProducer( fetchInfo.getUrlKey() )
-          .sendAsync( fetchInfo.toByteArray() );
+        bulk.clear();
       }
     }
     catch ( InterruptedException e ) {

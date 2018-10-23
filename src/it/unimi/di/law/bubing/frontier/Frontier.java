@@ -19,6 +19,8 @@ package it.unimi.di.law.bubing.frontier;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
+import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
@@ -121,8 +123,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 public class Frontier {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Frontier.class);
 
-	public static final int NUM_TO_QUEUE_URL_LISTS = 16;
-
 	/** Names of the scalar fields saved by {@link #snap()}. */
 	public static enum PropertyKeys {
 		PATHQUERIESINQUEUES,
@@ -210,23 +210,17 @@ public class Frontier {
 	/** The runtime configuration. */
 	public final RuntimeConfiguration rc;
 
+	public final PulsarManager pulsarManager;
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
-	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[];
+	//public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[];
 
 	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
-	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
+	public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
 
 	/** A queue to quickly buffer to be crawled URLs (as {@link MsgCrawler.FetchInfo} serialized. */
-	public ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
+	public final ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
 
-	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
-	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
-		@Override
-		protected Integer initialValue() {
-			return new Integer(initialThreadIndexInToQueueList.getAndIncrement() % NUM_TO_QUEUE_URL_LISTS);
-		}
-	};
 	/** The parsing threads. */
 	public final ObjectArrayList<ParsingThread> parsingThreads;
 
@@ -264,6 +258,8 @@ public class Frontier {
 	/** A Bloom filter storing page digests for duplicate detection. */
 	public BloomFilter<Void> digests;
 
+	private final FetchInfoSendThread fetchInfoSendThread;
+
 	/** The threads resolving DNS for new {@linkplain VisitState visit states}. */
 	protected final ObjectArrayList<DNSThread> dnsThreads;
 
@@ -275,7 +271,7 @@ public class Frontier {
 
 	/** The URL cache. This cache stores the most recent URLs that have been
 	 * {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued}. */
-	public final FastApproximateByteArrayCache urlCache;
+	//public final FastApproximateByteArrayCache urlCache; // FIXME: seive ?
 
 	/** The workbench virtualizer used by this frontier. */
 	protected final WorkbenchVirtualizer virtualizer;
@@ -379,9 +375,10 @@ public class Frontier {
 	 *
 	 * @param rc the configuration to be used to set all parameters.
 	 * @param agent the BUbiNG agent possessing this frontier. */
-	public Frontier(final RuntimeConfiguration rc, final Agent agent) throws IllegalArgumentException {
+	public Frontier( final RuntimeConfiguration rc, final Agent agent, final PulsarManager pulsarManager ) throws IllegalArgumentException {
 		this.rc = rc;
 		this.agent = agent;
+		this.pulsarManager = pulsarManager;
 
 		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
@@ -411,7 +408,7 @@ public class Frontier {
 			}
 		};
 
-		urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize);
+		//urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize); // FIXME: seive ?
 
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();
@@ -460,7 +457,10 @@ public class Frontier {
 				.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
 				.build();
 
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>(64 * 1024);
 
+		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
 		fetchingThreads = new ObjectArrayList<>();
 		parsingThreads = new ObjectArrayList<>();
@@ -475,12 +475,6 @@ public class Frontier {
 
 		// Configures Jericho to use SLF4J
 		Config.LoggerProvider = LoggerProvider.SLF4J;
-
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>(64 * 1024);
-		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
-		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
-			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
 	}
 
 	public void init() throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException, InterruptedException {
@@ -496,6 +490,7 @@ public class Frontier {
 		}
 
 		// Never start child threads before every data structure is created or restored
+		fetchInfoSendThread.start();
 		distributor.start();
 		(todoThread = new TodoThread(this)).start();
 		(doneThread = new DoneThread(this)).start();
@@ -589,12 +584,6 @@ public class Frontier {
 		LOGGER.info("Number of Parsing Threads set to " + newParsingThreads);
 	}
 
-	public void enqueueUrlList(final MsgCrawler.FetchInfo urls) {
-		int currentIndex = localThreadIndexInToQueueList.get();
-		quickToQueueURLLists[currentIndex].offer(urls);
-		localThreadIndexInToQueueList.set((currentIndex + 1) % NUM_TO_QUEUE_URL_LISTS);
-	}
-
 	/** Enqueues a URL to the the BUbiNG crawl.
 	 *
 	 * <ul>
@@ -608,7 +597,14 @@ public class Frontier {
 	 *
 	 * </ul>
 	 *
-	 * @param crawledPageInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
+	 * @param fetchInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
+	public void enqueueUrlList( final MsgCrawler.FetchInfo fetchInfo ) {
+		if ( quickToSendDiscoveredURLs.remainingCapacity() == 0 )
+			LOGGER.warn( "quickToSendDiscoveredURLs is full" );
+		quickToSendDiscoveredURLs.offer( fetchInfo );
+	}
+
+	/*
 	public void enqueue(final MsgCrawler.FetchInfo crawledPageInfo)  {
 
 		try {
@@ -623,6 +619,8 @@ public class Frontier {
 
 		return;
 	}
+	*/
+
 	/** Returns whether the workbench is full.
 	 *
 	 * @return whether the workbench is full. */
@@ -641,7 +639,7 @@ public class Frontier {
 		 * needs to be interrupted--all other threads check regularly for rc.stopping. Note that
 		 * visit states in the todo and done list will be moved by snap() back into the workbench. */
 
-		LOGGER.warn( "Closing frontier" );
+		LOGGER.warn( "Closing Frontier" );
 
 		LOGGER.warn( "Interrupting TODO thread" );
 		todoThread.interrupt();
@@ -736,6 +734,12 @@ public class Frontier {
 		LOGGER.warn( "Parsing threads stopped" );
 
 		//LOGGER.info("Joined parsing threads and closed stores");
+
+		LOGGER.warn( "Stopping FetchInfoSendThread" );
+		fetchInfoSendThread.stop = true;
+		LOGGER.warn( "Waiting FetchInfoSendThread to stop" );
+		fetchInfoSendThread.join();
+		LOGGER.warn( "FetchInfoSendThread stopped" );
 
 		LOGGER.warn( "Closing stores" );
 		for (FetchingThread t : fetchingThreads) t.close();

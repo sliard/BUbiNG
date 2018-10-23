@@ -302,7 +302,7 @@ public final class StatsThread implements Runnable {
 				+ "; on disk: " + frontier.virtualizer.onDisk() + "\n");
 		statInfo.append("STATS : Speed dist: " + toString(frontier.speedDist) + "\n");
 		for(int i = frontier.speedDist.length(); i-- != 0;) frontier.speedDist.set(i, 0); // Cleanup
-		statInfo.append("STATS : Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses() + "\n");
+		//statInfo.append("STATS : Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses() + "\n"); // FIXME: seive ?
 		LOGGER.info(statInfo.toString());
 		distributor.lastHighCostStat = System.currentTimeMillis();
 	}

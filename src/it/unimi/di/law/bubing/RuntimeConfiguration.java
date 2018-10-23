@@ -391,6 +391,7 @@ public class RuntimeConfiguration {
 		final List<Iterator<URI>> seedSequence = new ArrayList<>();
 		if (seedFile.getName().equals("..") || seedFile.getName().equals("."))
 			return seedSequence;
+
 		try {
 			LOGGER.info("Adding seed {}", seedFile.getPath());
 			if (seedFile.isDirectory())
@@ -419,8 +420,9 @@ public class RuntimeConfiguration {
 					}
 				});
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
+		}
+		catch (IOException e ) {
+			LOGGER.error( "Failed to open seed file", e );
 		}
 		return seedSequence;
 	}
