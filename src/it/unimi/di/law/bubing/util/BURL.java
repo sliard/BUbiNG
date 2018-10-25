@@ -437,6 +437,19 @@ public final class BURL {
 		return new String(host);
 	}
 
+	public static byte[] hostFromSchemeAuthorityAsByteArray( final byte[] schemeAuthority ) {
+		final int length = schemeAuthority.length;
+		final int startOfAuthority = ArrayUtils.indexOf(schemeAuthority, (byte)':') + 3;
+		int atPosition;
+		for(atPosition = startOfAuthority; atPosition < length; atPosition++) if (schemeAuthority[atPosition] == (byte)'@') break;
+		final int startOfHost = atPosition != length ? atPosition + 1 : startOfAuthority;
+
+		int endOfHost;
+		for(endOfHost = startOfHost; endOfHost < length; endOfHost++) if (schemeAuthority[endOfHost] == (byte)':') break;
+		return Arrays.copyOfRange( schemeAuthority, startOfHost, endOfHost );
+
+	}
+
 
 	/** Finds the start of the host part in a URL.
 	 *

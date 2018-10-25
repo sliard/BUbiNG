@@ -312,10 +312,8 @@ public final class FetchingThread extends Thread implements Closeable {
 
       if ( fetchData == null )
         fetchData = getAvailableFetchData();
-      if ( fetchData == null ) {
-        LOGGER.warn( "No fetchData available" );
-        continue;
-      }
+      if ( fetchData == null )
+        continue; // stop requested
 
       final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest( schemeAuthorityProto, zpath );
       final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
@@ -385,8 +383,6 @@ public final class FetchingThread extends Thread implements Closeable {
       long newSleep = 1 << Math.min(i, 10);
       Thread.sleep(newSleep);
     }
-    if (fetchData.inUse)
-      LOGGER.error("Received a FetchData already in use");
     return fetchData;
   }
 

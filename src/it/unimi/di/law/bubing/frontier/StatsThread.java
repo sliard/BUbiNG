@@ -304,7 +304,7 @@ public final class StatsThread implements Runnable {
 		for(int i = frontier.speedDist.length(); i-- != 0;) frontier.speedDist.set(i, 0); // Cleanup
 		//statInfo.append("STATS : Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses() + "\n"); // FIXME: seive ?
 		LOGGER.info(statInfo.toString());
-		distributor.lastHighCostStat = System.currentTimeMillis();
+		distributor.lastHighCostStats = System.currentTimeMillis();
 	}
 
 	/** Returns the number of visit states on disk.

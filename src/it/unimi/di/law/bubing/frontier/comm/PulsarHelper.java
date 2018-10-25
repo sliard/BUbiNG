@@ -38,15 +38,14 @@ public class PulsarHelper
     return URI.create( toString(url) );
   }
 
-
   public static URI toURI( final MsgURL.Key urlKey ) {
     return URI.create( toString(urlKey) );
   }
 
-
   public static String toString( final MsgURL.Key url ) {
     return Serializer.URL.Key.toString(url);
   }
+
   public static String toString( final MsgURL.URL url ) {
     return getScheme(url.getScheme()) + "://" + url.getHost() + url.getPathQuery();
   }
@@ -56,15 +55,17 @@ public class PulsarHelper
   }
 
   public static byte[] schemeAuthority( final MsgURL.KeyOrBuilder urlKey ) {
-    return (getScheme(urlKey.getScheme()) + "://" + Serializer.URL.from(urlKey).getHost()).getBytes(StandardCharsets.US_ASCII);
+    return schemeAuthority( Serializer.URL.from(urlKey) );
   }
+
   public static byte[] schemeAuthority( final MsgURL.URL url ) {
-    return (getScheme(url.getScheme()) + "://" + url.getHost()).getBytes(StandardCharsets.US_ASCII);
+    return toASCII( getScheme(url.getScheme()) + "://" + url.getHost() );
   }
-  public static MsgURL.Key.Builder schemeAuthority(final byte[] schemeAuthority) {
-    MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
-    urlBuilder.setZHost(ByteString.copyFrom(HuffmanModel.defaultModel.compress(BURL.hostFromSchemeAndAuthority(schemeAuthority).getBytes(StandardCharsets.US_ASCII))));
-    String sa = new String(schemeAuthority, StandardCharsets.US_ASCII);
+
+  public static MsgURL.Key.Builder schemeAuthority( final byte[] schemeAuthority ) {
+    final MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
+    urlBuilder.setZHost( ByteString.copyFrom(toZ(BURL.hostFromSchemeAuthorityAsByteArray(schemeAuthority))) );
+    final String sa = fromASCII( schemeAuthority );
     if (sa.startsWith("https://"))
       urlBuilder.setScheme(EnumScheme.Enum.HTTPS);
     else
@@ -87,5 +88,19 @@ public class PulsarHelper
       case HTTPS : return "https";
       default: return null;
     }
+  }
+
+  public static byte[] toZ( final byte[] ascii ) {
+    return HuffmanModel.defaultModel.compress( ascii );
+  }
+
+  // FIXME: in most cases, we should use it.unimi.di.law.bubing.util.Util.toByteArray
+  public static byte[] toASCII( final String string ) {
+    return string.getBytes( StandardCharsets.US_ASCII );
+  }
+
+  // FIXME: in most cases, we should use it.unimi.di.law.bubing.util.Util.toString
+  public static String fromASCII( final byte[] ascii ) {
+    return new String( ascii, StandardCharsets.US_ASCII );
   }
 }

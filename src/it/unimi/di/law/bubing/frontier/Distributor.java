@@ -21,6 +21,8 @@ import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.Serializer;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.dsi.Util;
+
+import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,13 +77,24 @@ public final class Distributor extends Thread {
 	protected final VisitStateSet schemeAuthority2VisitState;
 	/** The thread printing statistics. */
 	protected final StatsThread statsThread;
+  /** The last time we produced a low-cost statistics. */
+  private long lastLowCostStats;
 	/** The last time we produced a high-cost statistics. */
-	protected volatile long lastHighCostStat;
+	volatile long lastHighCostStats;
 	/** The last time we checked for visit states to be purged. */
-	protected volatile long lastPurgeCheck;
+	private long lastPurgeCheck;
 
-	protected long movedFromSieveToVirtualizer = 0, movedFromSieveToOverflow = 0, movedFromSieveToWorkbench = 0, deletedFromSieve = 0;
-	/** Creates a distributor for the given frontier.
+	private long movedFromSieveToVirtualizer = 0, movedFromSieveToOverflow = 0, movedFromSieveToWorkbench = 0, deletedFromSieve = 0;
+
+	/** stats */
+	private long movedFromQueues = 0;
+	private long deletedFromQueues = 0;
+	/** low cost stats */
+	private long fullWorkbenchSleepTime = 0;
+	private long largeFrontSleepTime = 0;
+	private long noReadyURLsSleepTime = 0;
+
+  /** Creates a distributor for the given frontier.
 	 *
 	 * @param frontier the frontier instantiating this distribution.
 	 */
@@ -120,26 +133,34 @@ public final class Distributor extends Thread {
 						// Send the visit state to the DNS threads
 						frontier.newVisitStates.add(visitState);
 						movedFromSieveToWorkbench++;
-				} else {
+				}
+				else {
 					if (frontier.virtualizer.count(visitState) > 0) {
 						// Safe: there are URLs on disk, and this fact cannot change concurrently.
 						movedFromSieveToVirtualizer++;
-
             frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
-					} else if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
+					}
+					else
+					if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 						/* Safe: we are enqueueing to a sane (modulo race conditions)
 						 * visit state, which will be necessarily go through the DoneThread later. */
 						visitState.checkRobots(now);
-
             visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
 						movedFromSieveToWorkbench++;
-					} else { // visitState.urlsOnDisk == 0
+					}
+					else { // visitState.urlsOnDisk == 0
+            // FIXME: we are here not only because visitState.urlsOnDisk == 0
 						movedFromSieveToVirtualizer++;
             frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
 					}
 				}
-			} else deletedFromSieve++;
-		} catch (Throwable t) {
+			}
+			else {
+			  deletedFromSieve++;
+			  // FIXME: why return true ? we haven't added anything !
+      }
+		}
+		catch (Throwable t) {
 			LOGGER.error("Unexpected exception", t);
 			return false;
 		}
@@ -149,11 +170,8 @@ public final class Distributor extends Thread {
 	@Override
 	public void run() {
 		try {
-			long movedFromQueues = 0, deletedFromQueues = 0, lastLowCostStat = 0;
-			long fullWorkbenchSleepTime = 0, largeFrontSleepTime = 0, noReadyURLsSleepTime = 0;
-
 			/* During the following loop, you should set round to -1 every time something useful is done (e.g., a URL is read from the sieve, or from the virtual queues etc.) */
-			for(int round = 0; ; round++) {
+			for ( int round=0; ; round += 1 ) {
 				frontier.rc.ensureNotPaused();
 				if (frontier.rc.stopping) break;
 				long now = System.currentTimeMillis();
@@ -166,89 +184,54 @@ public final class Distributor extends Thread {
 				 * front size is adaptively set by FetchingThread instances when they detect that the
 				 * visit states in the todo list plus workbench.size() is below the current required size
 				 * (i.e., we are counting IPs). */
-				if (! workbenchIsFull) {
+				if ( !workbenchIsFull ) {
 					VisitState visitState = frontier.refill.poll();
 					if (visitState != null) { // The priority is given to already started visits
 						round = -1;
-						if (frontier.virtualizer.count(visitState) == 0) LOGGER.info("No URLs on disk during refill: " + visitState);
+						if ( frontier.virtualizer.count(visitState) == 0 )
+						  LOGGER.info( "No URLs on disk during refill: " + visitState );
 						else {
 							// Note that this might make temporarily the workbench too big by a little bit.
 							final int pathQueryLimit = visitState.pathQueryLimit();
-							if (LOGGER.isDebugEnabled()) LOGGER.debug("Refilling {} with {} URLs", visitState, Integer.valueOf(pathQueryLimit));
+              if (LOGGER.isDebugEnabled()) LOGGER.debug("Refilling {} with {} URLs", visitState, pathQueryLimit);
 							visitState.checkRobots(now);
 							final int dequeuedURLs = frontier.virtualizer.dequeueCrawlRequests(visitState, pathQueryLimit);
 							movedFromQueues += dequeuedURLs;
 						}
 					}
-					else if (frontIsSmall){
+					else
+					if ( frontIsSmall ) {
 						// It is necessary to enrich the workbench picking up URLs from the sieve
-
+            int toAdd = Math.min( 100, frontier.quickReceivedCrawlRequests.size() );
 						// Note that this might make temporarily the workbench too big by a little bit.
-						for(int i = 100; i-- != 0 && ! frontier.quickReceivedCrawlRequests.isEmpty();) {
-							round = -1;
-							MsgFrontier.CrawlRequest crawlRequest = frontier.quickReceivedCrawlRequests.take();
-							if (!processURL(crawlRequest, now))
-								i++;
-						}
+            while ( toAdd > 0 && !frontier.quickReceivedCrawlRequests.isEmpty() ) {
+              round = -1;
+              final MsgFrontier.CrawlRequest crawlRequest = frontier.quickReceivedCrawlRequests.take();
+              if ( processURL(crawlRequest,now) )
+                toAdd -= 1;
+            }
 					}
 				}
 
-				if (now - LOW_COST_STATS_INTERVAL > lastLowCostStat) {
-					final long overallSieve = movedFromSieveToVirtualizer + movedFromSieveToWorkbench + movedFromSieveToOverflow + deletedFromSieve;
-					final long overallQueues = movedFromQueues + deletedFromQueues;
-					if (overallSieve != 0) LOGGER.info("Moved " + overallSieve  + " URLs from sieve (" + Util.format(100.0 * deletedFromSieve / overallSieve) + "% deleted, " + Util.format(100.0 * movedFromSieveToWorkbench / overallSieve) + "% to workbench, " + Util.format(100.0 * movedFromSieveToVirtualizer / overallSieve) + "% to virtual queues, " + Util.format(100.0 * movedFromSieveToOverflow / overallSieve) + "% to overflow)");
-					if (overallQueues != 0) LOGGER.info("Moved " + overallQueues + " URLs from queues (" + Util.format(100.0 * deletedFromQueues / overallQueues) + "% deleted)");
-					movedFromSieveToVirtualizer = movedFromSieveToWorkbench = movedFromSieveToOverflow = movedFromQueues = deletedFromSieve = deletedFromQueues = 0;
-
-					LOGGER.info("Sleeping: large front " + largeFrontSleepTime + ", full workbench " + fullWorkbenchSleepTime + ", no ready URLs " + noReadyURLsSleepTime);
-					largeFrontSleepTime = 0;
-					fullWorkbenchSleepTime = 0;
-					noReadyURLsSleepTime = 0;
-					statsThread.emit();
-					lastLowCostStat = now;
-
-					frontier.virtualizer.collectIf(.50, .75);
+				if ( now - LOW_COST_STATS_INTERVAL > lastLowCostStats ) {
+				  doLowCostStats();
+				  lastLowCostStats = now;
 				}
 
-				if (now - HIGH_COST_STATS_INTERVAL > lastHighCostStat) {
-					lastHighCostStat = Long.MAX_VALUE;
-					final Thread thread = new Thread(statsThread, statsThread.getClass().getSimpleName());
-					thread.start();
+				if ( now - HIGH_COST_STATS_INTERVAL > lastHighCostStats ) {
+					lastHighCostStats = Long.MAX_VALUE;
+					startHighCostStats();
 				}
 
-				if (now - PURGE_CHECK_INTERVAL > lastPurgeCheck) {
-					synchronized (schemeAuthority2VisitState) {
-						for (VisitState visitState : schemeAuthority2VisitState.visitStates())
-							if (visitState != null) {
-								/* We've been scheduled for purge, or we have fetched at least a
-								 * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
-								 * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
-								 * same visit state later, in which case we will create it again. */
-								if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0
-										&& visitState.nextFetch < now - PURGE_DELAY
-										&& visitState.isEmpty()
-										&& !visitState.acquired
-									/*&& visitState.lastExceptionClass == null*/) {
-									LOGGER.info((visitState.nextFetch == Long.MAX_VALUE ? "Purging " : "Purging by delay ") + visitState);
-									// This will modify the backing array on which we are enumerating, but it won't be a serious problem.
-									frontier.virtualizer.remove(visitState);
-									schemeAuthority2VisitState.remove(visitState);
-								} else {
-									if (visitState.purgeRequired) {
-
-										frontier.virtualizer.remove(visitState);
-										frontier.distributor.schemeAuthority2VisitState.remove(visitState);
-									}
-								}
-							}
-					}
+				if ( now - PURGE_CHECK_INTERVAL > lastPurgeCheck ) {
+				  doPurgeCheck( now );
 					lastPurgeCheck = now;
 				}
 
-				if (round != -1) {
+				if ( round != -1 ) {
 					final int sleepTime = 1 << Math.min(10, round);
-					if (! frontIsSmall) largeFrontSleepTime += sleepTime;
-					else if (workbenchIsFull) fullWorkbenchSleepTime += sleepTime;
+					if (workbenchIsFull) fullWorkbenchSleepTime += sleepTime;
+					else if (!frontIsSmall) largeFrontSleepTime += sleepTime;
 					else noReadyURLsSleepTime += sleepTime;
 					if (frontier.rc.stopping) break;
 					Thread.sleep(sleepTime);
@@ -259,7 +242,6 @@ public final class Distributor extends Thread {
 		}
 		catch (Throwable t) {
 			LOGGER.error("Unexpected exception", t);
-			return;
 		}
 	}
 
@@ -272,4 +254,74 @@ public final class Distributor extends Thread {
 	private boolean frontIsSmall() {
 		return frontier.todo.size() + frontier.workbench.approximatedSize() - frontier.workbench.broken.get() <= frontier.requiredFrontSize.get();
 	}
+
+	private void doLowCostStats() throws IOException {
+		final long overallSieve = deletedFromSieve + movedFromSieveToWorkbench + movedFromSieveToVirtualizer + movedFromSieveToOverflow;
+		if ( overallSieve != 0 )
+		  LOGGER.info(String.format(
+		    "Moved %,d URLs from sieve (%s%% deleted, %s%% to workbench, %s%% to virtual queues, %s%% to overflow)",
+        overallSieve,
+        Util.format(100.0 * deletedFromSieve / overallSieve),
+        Util.format(100.0 * movedFromSieveToWorkbench / overallSieve),
+        Util.format(100.0 * movedFromSieveToVirtualizer / overallSieve),
+        Util.format(100.0 * movedFromSieveToOverflow / overallSieve)
+      ));
+    deletedFromSieve = movedFromSieveToWorkbench = movedFromSieveToVirtualizer = movedFromSieveToOverflow = 0;
+
+    final long overallQueues = movedFromQueues + deletedFromQueues;
+		if ( overallQueues != 0 )
+		  LOGGER.info(String.format(
+		    "Moved %,d URLs from queues (%s%% deleted)",
+        overallQueues,
+        Util.format(100.0 * deletedFromQueues / overallQueues)
+      ));
+    movedFromQueues = deletedFromQueues = 0;
+
+		LOGGER.info(String.format(
+		  "Sleeping: large front %,d, full workbench %,d, no ready URLs %,d",
+      largeFrontSleepTime,
+      fullWorkbenchSleepTime,
+      noReadyURLsSleepTime
+    ));
+
+		largeFrontSleepTime = 0;
+		fullWorkbenchSleepTime = 0;
+		noReadyURLsSleepTime = 0;
+
+		statsThread.emit();
+		frontier.virtualizer.collectIf(.50, .75);
+	}
+
+	private void startHighCostStats() {
+    final Thread thread = new Thread(statsThread, statsThread.getClass().getSimpleName());
+    thread.start();
+  }
+
+  private void doPurgeCheck( final long now ) throws IOException {
+    synchronized (schemeAuthority2VisitState) {
+      for (VisitState visitState : schemeAuthority2VisitState.visitStates())
+        if (visitState != null) {
+          /* We've been scheduled for purge, or we have fetched at least a
+           * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
+           * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
+           * same visit state later, in which case we will create it again. */
+          if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0
+            && visitState.nextFetch < now - PURGE_DELAY
+            && visitState.isEmpty()
+            && !visitState.acquired
+            /*&& visitState.lastExceptionClass == null*/) {
+            LOGGER.info((visitState.nextFetch == Long.MAX_VALUE ? "Purging " : "Purging by delay ") + visitState);
+            // This will modify the backing array on which we are enumerating, but it won't be a serious problem.
+            frontier.virtualizer.remove(visitState);
+            schemeAuthority2VisitState.remove(visitState);
+          } else {
+            if (visitState.purgeRequired) {
+
+              frontier.virtualizer.remove(visitState);
+              frontier.distributor.schemeAuthority2VisitState.remove(visitState);
+            }
+          }
+        }
+    }
+  }
 }
