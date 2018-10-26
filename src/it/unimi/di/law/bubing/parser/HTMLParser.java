@@ -347,7 +347,7 @@ public class HTMLParser<T> implements Parser<T> {
     final URI url = BURL.parse(s);
     if (url == null) return;
     URI targetURI = base.resolve(url);
-    boolean hasSameSchemeAuthority = ParsingThread.FrontierEnqueuer.sameSchemeAuthority(schemeAuthority,targetURI);
+    boolean hasSameSchemeAuthority = BURL.sameSchemeAuthority(schemeAuthority,targetURI);
     MsgCrawler.FetchLinkInfo.Builder fetchLinkInfo = makeLinkInfoFromBasicURI(targetURI);
     MsgLink.LinkInfo.Builder linkInfo = MsgLink.LinkInfo.newBuilder();
     if (linkName == HTMLElementName.A)

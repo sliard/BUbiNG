@@ -3,25 +3,20 @@ package it.unimi.di.law.bubing.frontier;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
-import java.nio.BufferOverflowException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
-import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.LanguageCodes;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
-import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
 import org.apache.http.entity.BasicHttpEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +40,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  */
 
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.parser.HTMLParser;
 import it.unimi.di.law.bubing.parser.Parser;
 import it.unimi.di.law.bubing.parser.SpamTextProcessor;
 import it.unimi.di.law.bubing.spam.SpamDetector;
@@ -57,10 +51,6 @@ import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.warc.filters.Filter;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.dsi.Util;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 
 import java.util.Random;
@@ -87,58 +77,14 @@ import java.util.Random;
 public class ParsingThread extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ParsingThread.class);
 
-	/** A map recording for each type of exception a timeout, Note that 0 means standard politeness time. */
-	protected static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_WAIT_TIME = new Object2LongOpenHashMap<>();
-	/** A map recording for each type of exception the number of retries. */
-	protected static final Object2IntOpenHashMap<Class<?>> EXCEPTION_TO_MAX_RETRIES = new Object2IntOpenHashMap<>();
-	/** A map recording for each type of exception the number of retries. */
-	protected static final ObjectOpenHashSet<Class<?>> EXCEPTION_HOST_KILLER = new ObjectOpenHashSet<>();
-
-	static {
-		EXCEPTION_TO_WAIT_TIME.defaultReturnValue(TimeUnit.HOURS.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(java.net.NoRouteToHostException.class, TimeUnit.HOURS.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(java.net.SocketException.class, TimeUnit.MINUTES.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, TimeUnit.MINUTES.toMillis(1));
-		//EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, 10000);
-		EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, TimeUnit.HOURS.toMillis(1));
-		//EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, 5000);
-		EXCEPTION_TO_WAIT_TIME.put(javax.net.ssl.SSLPeerUnverifiedException.class, TimeUnit.HOURS.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.CircularRedirectException.class, 0);
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.RedirectException.class, 0);
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, TimeUnit.HOURS.toMillis(1));
-		//EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, 20000);
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.ConnectionClosedException.class, TimeUnit.MINUTES.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.HttpHostConnectException.class, TimeUnit.HOURS.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.NoHttpResponseException.class, TimeUnit.MINUTES.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.TruncatedChunkException.class, TimeUnit.MINUTES.toMillis(1));
-		EXCEPTION_TO_WAIT_TIME.put(org.apache.http.MalformedChunkCodingException.class, TimeUnit.MINUTES.toMillis(1));
-
-		EXCEPTION_TO_MAX_RETRIES.defaultReturnValue(0);
-		EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.RedirectException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.ConnectionClosedException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.NoHttpResponseException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.TruncatedChunkException.class, 0);
-		EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.MalformedChunkCodingException.class, 0);
-
-		EXCEPTION_HOST_KILLER.add(java.net.NoRouteToHostException.class);
-		EXCEPTION_HOST_KILLER.add(java.net.UnknownHostException.class);
-		EXCEPTION_HOST_KILLER.add(java.net.SocketException.class);
-		EXCEPTION_HOST_KILLER.add(javax.net.ssl.SSLPeerUnverifiedException.class);
-		EXCEPTION_HOST_KILLER.add(org.apache.http.conn.ConnectTimeoutException.class);
-	}
-
-
-	/** A small gadget used to insert links in the frontier. It should be {@linkplain #init initialized}
+  /** A small gadget used to insert links in the frontier. It should be {@linkplain #init initialized}
 	 *  specifying URI and scheme/authority of the page being visited and the robot filter to be
 	 *  applied. Then, one or more URLs can be
 	 *  {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued}: the actual
 	 *  enqueuing takes place only if the URL passes both the schedule and the robots filter.
 	 */
-	public static final class FrontierEnqueuer {
+	private static final class FrontierEnqueuer
+	{
 		private static final boolean ASSERTS = false;
 		private final Frontier frontier;
 		private final Filter<Link> scheduleFilter;
@@ -146,23 +92,21 @@ public class ParsingThread extends Thread {
 		private URI uri;
 		private FetchData fetchData;
 		private char[][] robotsFilter;
-		private final ByteArrayList byteList;
-		public int outlinks;
-		public int scheduledLinks;
-		public float totalWeight;
 
-		public MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder;
-		public MsgFrontier.CrawlRequest crawlRequest;
+		private int outlinks;
+		private int scheduledLinks;
+		private float totalWeight;
+
+		private MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder;
 
 		/** Creates the enqueuer.
 		 *
 		 * @param frontier the frontier instantiating the enqueuer.
 		 * @param rc the configuration to be used.
 		 */
-		public FrontierEnqueuer(final Frontier frontier, final RuntimeConfiguration rc) {
+		FrontierEnqueuer(final Frontier frontier, final RuntimeConfiguration rc) {
 			this.frontier = frontier;
 			this.scheduleFilter = rc.scheduleFilter;
-			this.byteList = new ByteArrayList();
 
 		}
 
@@ -171,75 +115,29 @@ public class ParsingThread extends Thread {
 		 * @param schemeAuthority the scheme+authority of the page to be parsed.
 		 * @param robotsFilter the robots filter of the (authority of the) page to be parsed.
 		 */
-		public void init(byte[] schemeAuthority,
-										 MsgFrontier.CrawlRequest crawlRequest,
-										 MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
-										 FetchData fetchData,
-										 char[][] robotsFilter) {
-			scheduledLinks = outlinks = 0;
-			this.uri = PulsarHelper.toURI(crawlRequest.getUrlKey());
-			this.crawlRequest = crawlRequest;
-			this.schemeAuthority = schemeAuthority;
-			this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrlKey( crawlRequest.getUrlKey() );
-			this.robotsFilter = robotsFilter;
+		void init( byte[] schemeAuthority,
+               MsgFrontier.CrawlRequest crawlRequest,
+							 MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
+               FetchData fetchData,
+               char[][] robotsFilter ) {
+      this.schemeAuthority = schemeAuthority;
+      this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrlKey( crawlRequest.getUrlKey() );
+      this.fetchData = fetchData;
+      this.robotsFilter = robotsFilter;
+			this.uri = PulsarHelper.toURI( crawlRequest.getUrlKey() );
+      this.scheduledLinks = this.outlinks = 0;
 			this.totalWeight = 0.0f;
-			this.fetchData = fetchData;
 
 		}
 
-		public void close() {
+		void flush() {
 			crawledPageInfoBuilder
 				.setContentLength( (int)fetchData.response().getEntity().getContentLength() )
 				.setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
 				.setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
 				.setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
 				.setLanguage( fetchData.lang );
-			frontier.enqueueUrlList( crawledPageInfoBuilder.build() );
-		}
-
-		public static boolean sameSchemeAuthority(final byte[] schemeAuthority, final URI url) {
-			final String scheme = url.getScheme();
-			int schemeLength = scheme.length();
-			if (schemeAuthority.length < schemeLength + 3) return false;
-			for(int i = schemeLength; i-- != 0;) if (schemeAuthority[i] != (byte)scheme.charAt(i)) return false;
-			if (schemeAuthority[schemeLength++] != (byte)':') return false;
-			if (schemeAuthority[schemeLength++] != (byte)'/') return false;
-			if (schemeAuthority[schemeLength++] != (byte)'/') return false;
-
-			final String authority = url.getRawAuthority();
-			if (schemeAuthority.length != schemeLength + authority.length()) return false;
-			for(int i = authority.length(); i-- != 0;) if (schemeAuthority[schemeLength + i] != (byte)authority.charAt(i)) return false;
-			return true;
-		}
-
-		private boolean process( final MsgCrawler.FetchLinkInfo.Builder linkInfo, boolean isInternal ) {
-			final URI url = PulsarHelper.toURI( linkInfo.getTarget() );
-			outlinks++;
-
-			final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
-
-			if (!scheduleFilter.apply(new Link(uri, url)))
-				return false;
-			/*if (!scheduleFilter.apply(new Link(uri, url))) {
-				crawlerInfoBuilder.setMatchesScheduleRule(false);
-			} else
-				crawlerInfoBuilder.setMatchesScheduleRule(true);
-				*/
-			crawlerInfoBuilder.setIsBlackListed(BlackListing.checkBlacklistedHost(frontier, url));
-
-			final boolean sameSchemeAuthority = isInternal;
-			if (ASSERTS)
-				assert it.unimi.di.law.bubing.util.Util.toString(schemeAuthority).equals(BURL.schemeAndAuthority(url)) == sameSchemeAuthority : "(" + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority) + ").equals(" + BURL.schemeAndAuthority(url) + ") != " + sameSchemeAuthority;
-
-			if (RuntimeConfiguration.FETCH_ROBOTS) {
-				if (robotsFilter == null)
-					LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority));
-				else if (sameSchemeAuthority && !URLRespectsRobots.apply(robotsFilter, url)) {
-					crawlerInfoBuilder.setDoesRespectRobots(false);
-				}
-			}
-			linkInfo.setCrawlerInfo(crawlerInfoBuilder);
-			return true;
+			frontier.enqueue( crawledPageInfoBuilder.build() );
 		}
 
 		/** Enqueues the given URL, provided that it passes the schedule filter, its host is {@link RuntimeConfiguration#blackListedHostHashes blacklisted}.
@@ -247,7 +145,7 @@ public class ParsingThread extends Thread {
 		 *
 		 * @param fetchedPageInfoBuilder the CrawledPageInfo to be enqueued.
 		 */
-		public void process(final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder) {
+		void process( final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) {
 			for (int index = 0; index < fetchedPageInfoBuilder.getExternalLinksCount(); ) {
 				MsgCrawler.FetchLinkInfo.Builder linkInfo = fetchedPageInfoBuilder.getExternalLinksBuilder(index);
 				if (process(linkInfo, false))
@@ -263,6 +161,36 @@ public class ParsingThread extends Thread {
 					fetchedPageInfoBuilder.removeInternalLinks(index);
 			}
 		}
+
+    private boolean process( final MsgCrawler.FetchLinkInfo.Builder linkInfo, boolean isInternal ) {
+      final URI url = PulsarHelper.toURI( linkInfo.getTarget() );
+      outlinks++;
+
+      final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
+
+      if (!scheduleFilter.apply(new Link(uri, url)))
+        return false;
+			/*if (!scheduleFilter.apply(new Link(uri, url))) {
+				crawlerInfoBuilder.setMatchesScheduleRule(false);
+			} else
+				crawlerInfoBuilder.setMatchesScheduleRule(true);
+				*/
+      crawlerInfoBuilder.setIsBlackListed(BlackListing.checkBlacklistedHost(frontier, url));
+
+      final boolean sameSchemeAuthority = isInternal;
+      if (ASSERTS)
+        assert it.unimi.di.law.bubing.util.Util.toString(schemeAuthority).equals(BURL.schemeAndAuthority(url)) == sameSchemeAuthority : "(" + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority) + ").equals(" + BURL.schemeAndAuthority(url) + ") != " + sameSchemeAuthority;
+
+      if (RuntimeConfiguration.FETCH_ROBOTS) {
+        if (robotsFilter == null)
+          LOGGER.error("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(schemeAuthority));
+        else if (sameSchemeAuthority && !URLRespectsRobots.apply(robotsFilter, url)) {
+          crawlerInfoBuilder.setDoesRespectRobots(false);
+        }
+      }
+      linkInfo.setCrawlerInfo(crawlerInfoBuilder);
+      return true;
+    }
 	}
 
 	/** Whether we should stop (used also to reduce the number of threads). */
@@ -370,17 +298,17 @@ public class ParsingThread extends Thread {
 		if ( !checkAndUpdateFetchData(fetchData) )
 			return;
 
-		final URI url = fetchData.uri();
-
 		frontier.fetchedResources.incrementAndGet();
 
 		final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
 
-		frontierLinkReceiver.init(visitState.schemeAuthority,
+		frontierLinkReceiver.init(
+		  visitState.schemeAuthority,
 			fetchData.getCrawlRequest(),
 			fetchedPageInfoBuilder,
 			fetchData,
-			visitState.robotsFilter);
+			visitState.robotsFilter
+    );
 
 		final long streamLength = fetchData.response().getEntity().getContentLength();
 
@@ -391,19 +319,22 @@ public class ParsingThread extends Thread {
 		if ( parseData == null )
 			return; // failure while parsing
 
+    updateOutDegrees( fetchData, fetchedPageInfoBuilder );
+
 		if (parseData.digest == null) {
 			// We don't log for zero-length streams.
-			if (streamLength != 0 && LOGGER.isDebugEnabled()) LOGGER.debug("Computing binary digest for " + url);
+			if (streamLength != 0 && LOGGER.isDebugEnabled()) LOGGER.debug("Computing binary digest for " + fetchData.uri());
 			// Fallback when all other parsers could not complete digest computation.
 			parseData.digest = fetchData.binaryParser.parse(fetchData.uri(), fetchData.response(), null);
 		}
 
 		final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
-		if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", url, isNotDuplicate);
+		if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", fetchData.uri(), isNotDuplicate);
 		fetchData.isDuplicate(!isNotDuplicate);
+
 		if (isNotDuplicate && rc.followFilter.apply(fetchData)) {
 			frontierLinkReceiver.process(fetchedPageInfoBuilder);
-			frontierLinkReceiver.close();
+			frontierLinkReceiver.flush();
 		} else {
 			LOGGER.debug("NOT Following {}", fetchData.uri());
 		}
@@ -411,10 +342,10 @@ public class ParsingThread extends Thread {
 		final String result = store( rc, fetchData, parseData, isNotDuplicate, streamLength );
 
 		if (LOGGER.isDebugEnabled())
-			LOGGER.debug("Fetched " + url + " (" + Util.formatSize((long)(1000.0 * fetchData.length() / (fetchData.endTime - fetchData.startTime + 1)), formatDouble) + "B/s; " + frontierLinkReceiver.scheduledLinks + "/" + frontierLinkReceiver.outlinks + "; " + result + ")");
+			LOGGER.debug("Fetched " + fetchData.uri() + " (" + Util.formatSize((long)(1000.0 * fetchData.length() / (fetchData.endTime - fetchData.startTime + 1)), formatDouble) + "B/s; " + frontierLinkReceiver.scheduledLinks + "/" + frontierLinkReceiver.outlinks + "; " + result + ")");
 	}
 
-	private boolean checkAndUpdateFetchData( final FetchData fetchData ) throws IOException, InterruptedException {
+	private boolean checkAndUpdateFetchData( final FetchData fetchData ) throws IOException, InterruptedException { // FIXME: see if this can be done by FetchingThread
 		final RuntimeConfiguration rc = frontier.rc;
 		final VisitState visitState = fetchData.visitState;
 
@@ -426,20 +357,15 @@ public class ParsingThread extends Thread {
 			ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
 		visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
 
-		if (fetchData.exception != null) {
-			processFetchDataException( fetchData );
-			return false;
-		}
+		if ( !checkFetchDataException(fetchData) )
+		  return false; // don't parse
 
 		final byte[] firstPath = visitState.dequeue();
 		if (LOGGER.isTraceEnabled())
-			LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.toString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty()
-				? "visit state is now empty "
-				: "first path now is " + it.unimi.di.law.bubing.util.Util.toString(HuffmanModel.defaultModel.decompress(visitState.firstPath()))));
+			LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.zToString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty()
+          ? "visit state is now empty "
+          : "first path now is " + it.unimi.di.law.bubing.util.Util.zToString(visitState.firstPath())));
 		visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
-
-		if (visitState.lastExceptionClass != null) frontier.brokenVisitStates.decrementAndGet();
-		visitState.lastExceptionClass = null;
 
 		if (fetchData.robots) {
 			frontier.fetchedRobots.incrementAndGet();
@@ -452,30 +378,40 @@ public class ParsingThread extends Thread {
 			}
 
 			visitState.lastRobotsFetch = fetchData.endTime;
-			return false;
+			return false; // don't parse
 		}
 
-		return true;
+		return true; // do parse
 	}
 
-	private void processFetchDataException( final FetchData fetchData ) {
-		LOGGER.info("Exception " + fetchData.exception.getClass().toString() + " while fetching " + fetchData.uri());
-		LOGGER.debug("Exception content : ", fetchData.exception);
-		final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
-		final VisitState visitState = fetchData.visitState;
+	private boolean checkFetchDataException( final FetchData fetchData ) {  // FIXME: see if this can be done by FetchingThread
+    final VisitState visitState = fetchData.visitState;
 
-		if (visitState.lastExceptionClass != exceptionClass) { // A new problem
-			// If the visit state *just broke down*, we increment the number of broken visit states.
-			if (visitState.lastExceptionClass == null) {
-				frontier.brokenVisitStates.incrementAndGet();
-				visitState.retries = 0;
-			}
-			visitState.lastExceptionClass = exceptionClass;
-		}
-		else visitState.retries++; // An old problem
+    if ( fetchData.exception == null ) {
+      if ( visitState.lastExceptionClass != null ) {
+        frontier.brokenVisitStates.decrementAndGet();
+        visitState.lastExceptionClass = null;
+      }
+      return true;
+    }
 
-		if (visitState.retries < EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
-			final long delay = EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
+    final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
+
+    if (LOGGER.isDebugEnabled()) LOGGER.debug("Exception while fetching " + fetchData.uri(), fetchData.exception);
+		else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + " while fetching " + fetchData.uri());
+
+		if (visitState.lastExceptionClass == exceptionClass )
+		  visitState.retries += 1; // An old problem
+    else { // A new problem
+      // If the visit state *just broke down*, we increment the number of broken visit states.
+      if (visitState.lastExceptionClass == null)
+        frontier.brokenVisitStates.incrementAndGet();
+      visitState.lastExceptionClass = exceptionClass;
+      visitState.retries = 0;
+    }
+
+		if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
+			final long delay = ExceptionHelper.EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
 			// Exponentially growing delay
 			visitState.nextFetch = fetchData.endTime + delay;
 			if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
@@ -483,7 +419,7 @@ public class ParsingThread extends Thread {
 		else {
 			frontier.brokenVisitStates.decrementAndGet();
 			// Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
-			if (EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
+			if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
 				visitState.schedulePurge();
 				if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
 			}
@@ -495,40 +431,41 @@ public class ParsingThread extends Thread {
 				if (LOGGER.isDebugEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
 			}
 		}
+
+		return false;
 	}
 
 	private ParseData parse( final FetchData fetchData, final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) {
-		final RuntimeConfiguration rc = frontier.rc;
-		final URI url = fetchData.uri();
+    if ( !frontier.rc.parseFilter.apply(fetchData) ) {
+      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "I'm not parsing page " + fetchData.uri() );
+      return null;
+    }
+
+    final Parser<?> parser = getParser( fetchData );
+    if ( parser == null ) {
+      if ( LOGGER.isInfoEnabled() ) LOGGER.info( "I'm not parsing page " + fetchData.uri() + " because I could not find a suitable parser" );
+      return null;
+    }
 
 		try {
-			ParseData parseData = null;
-			if ( rc.parseFilter.apply(fetchData) ) {
-				final Parser<?> parser = getParser( fetchData );
-				if ( parser != null )
-					parseData = doParse( parser, fetchData, fetchedPageInfoBuilder );
-				else
-					LOGGER.info("I'm not parsing page " + url + " because I could not find a suitable parser");
-
-				frontier.outdegree.add(fetchedPageInfoBuilder.getExternalLinksCount());
-				final ByteString currentZHost = fetchData.getCrawlRequest().getUrlKey().getZHost();
-				int currentOutHostDegree = 0;
-				for(final MsgCrawler.FetchLinkInfo u: fetchedPageInfoBuilder.getExternalLinksList())
-					if( !currentZHost.equals(u.getTarget().getZHost()) )
-						currentOutHostDegree++;
-				frontier.externalOutdegree.add(currentOutHostDegree);
-			}
-			else
-			if ( LOGGER.isDebugEnabled() )
-				LOGGER.debug("I'm not parsing page " + url);
-			return parseData;
-		}
-		catch( final IOException e ) {
-			// This mainly catches Jericho and network problems
-			LOGGER.warn("Exception during parsing of " + url, e);
-			return null;
-		}
+      return doParse( parser, fetchData, fetchedPageInfoBuilder );
+    }
+    catch ( final IOException e ) {
+      // This mainly catches Jericho and network problems
+      LOGGER.warn( "Exception while parsing " + fetchData.uri() + " with " + parser, e );
+      return null;
+    }
 	}
+
+	private void updateOutDegrees( final FetchData fetchData, final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) {
+    frontier.outdegree.add( fetchedPageInfoBuilder.getExternalLinksCount() );
+    final ByteString currentZHost = fetchData.getCrawlRequest().getUrlKey().getZHost();
+    int currentOutHostDegree = 0;
+    for( final MsgCrawler.FetchLinkInfo u : fetchedPageInfoBuilder.getExternalLinksList() )
+      if( !currentZHost.equals(u.getTarget().getZHost()) )
+        currentOutHostDegree += 1;
+    frontier.externalOutdegree.add( currentOutHostDegree );
+  }
 
 	private Parser<?> getParser( final FetchData fetchData ) {
 		for ( final Parser<?> parser : parsers ) {
@@ -540,61 +477,33 @@ public class ParsingThread extends Thread {
 
 	private ParseData doParse( final Parser<?> parser, final FetchData fetchData, final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder ) throws IOException {
 		final RuntimeConfiguration rc = frontier.rc;
-		final URI url = fetchData.uri();
 		final VisitState visitState = fetchData.visitState;
 		final ParseData parseData = new ParseData();
 
-		try {
-			parseData.digest = parser.parse(fetchData.uri(), fetchData.response(), fetchedPageInfoBuilder);
-			// Spam detection (NOTE: skipped if the parse() method throws an exception)
-			if (rc.spamDetector != null && (visitState.termCountUpdates < rc.spamDetectionThreshold || rc.spamDetectionPeriodicity != Integer.MAX_VALUE)) {
-				final Object result = parser.result();
-				if (result instanceof SpamTextProcessor.TermCount) visitState.updateTermCount((SpamTextProcessor.TermCount)result);
-				if ((visitState.termCountUpdates - rc.spamDetectionThreshold) % rc.spamDetectionPeriodicity == 0) {
-					visitState.spammicity = (float)((SpamDetector<Short2ShortMap>)rc.spamDetector).estimate(visitState.termCount);
-					LOGGER.info("Spammicity for " + visitState + ": " + visitState.spammicity + " (" + visitState.termCountUpdates + " updates)");
-				}
-			}
-		} catch(final BufferOverflowException e) {
-			LOGGER.info("Buffer overflow during parsing of " + url + " with " + parser);
-		} catch(final IOException e) {
-			LOGGER.warn("An exception occurred while parsing " + url + " with " + parser, e);
-		}
-		String title = null;
-		if ((title = parser.getTitle()) != null)
+    parseData.digest = parser.parse( fetchData.uri(), fetchData.response(), fetchedPageInfoBuilder );
+    // Spam detection (NOTE: skipped if the parse() method throws an exception)
+    if ( rc.spamDetector != null )
+      updateSpammicity( parser, visitState );
+
+    if (parser.getRewrittenContent() != null)
+      rewriteContentToFetchData( parser.getRewrittenContent(), parser.guessedCharset(), fetchData );
+
+		String title;
+		if ( (title=parser.getTitle()) != null )
 			fetchedPageInfoBuilder.setTitle(title);
+
 		parseData.guessedCharset = parser.guessedCharset();
 		if (parser.guessedLanguage() != null)
 			parseData.guessedLanguage = parser.guessedLanguage().getLanguage();
-		if (parser.getRewrittenContent() != null) {
-			HttpEntity originalEntity = fetchData.response().getEntity(); // Actually a caching EntityWrapper
-			BasicHttpEntity rewrittenEntity = new BasicHttpEntity();
-			InputStream is;
-			if (parseData.guessedCharset == null) // We use the same encoding that was used for decoding.
-				is = IOUtils.toInputStream(parser.getRewrittenContent(), StandardCharsets.UTF_8);
-			else
-				is = IOUtils.toInputStream(parser.getRewrittenContent(), parseData.guessedCharset);
-			rewrittenEntity.setContent(is);
-			rewrittenEntity.setContentType(originalEntity.getContentType());
-
-			if (originalEntity instanceof InspectableCachedHttpEntity) {
-				InspectableCachedHttpEntity modifiableEntity = (InspectableCachedHttpEntity) originalEntity;
-				modifiableEntity.setEntity(rewrittenEntity);
-				modifiableEntity.copyContent(rc.responseBodyMaxByteSize, fetchData.startTime, rc.connectionTimeout, 10);
-				rewrittenEntity.setContentLength(modifiableEntity.getContentLength());
-				fetchData.response().setHeader("Content-Length", Long.toString(modifiableEntity.getContentLength()));
-				fetchData.response().setEntity(modifiableEntity);
-				// We are cheating with the truth, so we must change the response's header
-			}
-		}
 		parseData.textContent = parser.getTextContent();
 
-		fetchData.extraMap.putAll(ImmutableMap.of("X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
+		fetchData.extraMap.putAll(ImmutableMap.of(
+		  "X-BUbiNG-Charset-Detection-Info", parser.getCharsetDetectionInfo().toString(),
 			"X-BUbiNG-Language-Detection-Info", parser.getLanguageDetectionInfo().toString(),
 			"BUbiNG-Guessed-Meta-Charset", parser.getCharsetDetectionInfo().htmlMetaCharset,
 			"BUbiNG-Guessed-ICU-Charset", parser.getCharsetDetectionInfo().icuCharset,
-			"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset)
-		);
+			"BUbiNG-Guessed-HTTP-Charset", parser.getCharsetDetectionInfo().httpHeaderCharset
+    ));
 		fetchData.extraMap.put("BUbiNG-Guessed-Html5", String.valueOf(parser.html5()));
 		fetchData.extraMap.put("BUbiNG-Guessed-responsive", String.valueOf(parser.responsiveDesign()));
 		if (parseData.guessedCharset != null)
@@ -607,6 +516,35 @@ public class ParsingThread extends Thread {
 		return parseData;
 	}
 
+	private void updateSpammicity( final Parser<?> parser, final VisitState visitState ) {
+	  final RuntimeConfiguration rc = frontier.rc;
+    if (visitState.termCountUpdates < rc.spamDetectionThreshold || rc.spamDetectionPeriodicity != Integer.MAX_VALUE) {
+      final Object result = parser.result();
+      if (result instanceof SpamTextProcessor.TermCount) visitState.updateTermCount((SpamTextProcessor.TermCount)result);
+      if ((visitState.termCountUpdates - rc.spamDetectionThreshold) % rc.spamDetectionPeriodicity == 0) {
+        visitState.spammicity = (float)((SpamDetector<Short2ShortMap>)rc.spamDetector).estimate(visitState.termCount);
+        LOGGER.info("Spammicity for " + visitState + ": " + visitState.spammicity + " (" + visitState.termCountUpdates + " updates)");
+      }
+    }
+  }
+
+  private void rewriteContentToFetchData( final StringBuilder content, final Charset charsetOpt, final FetchData fetchData ) throws IOException {
+	  final HttpResponse response = fetchData.response();
+	  final InspectableCachedHttpEntity originalEntity = (InspectableCachedHttpEntity) response.getEntity();
+	  final BasicHttpEntity rewrittenEntity = new BasicHttpEntity();
+	  final InputStream is = IOUtils.toInputStream( content, charsetOpt != null ? charsetOpt : StandardCharsets.UTF_8 );
+
+    rewrittenEntity.setContent( is );
+    rewrittenEntity.setContentType( originalEntity.getContentType() );
+    originalEntity.setEntity( rewrittenEntity );
+    originalEntity.copyFullContent();
+    final long contentLength = originalEntity.getContentLength();
+    rewrittenEntity.setContentLength( contentLength );
+    // We are cheating with the truth, so we must change the response's header
+    response.setHeader("Content-Length", Long.toString(contentLength));
+    response.setEntity( originalEntity );
+  }
+
 	private String store( final RuntimeConfiguration rc, final FetchData fetchData, final ParseData parseData, final boolean isNotDuplicate, final long streamLength ) throws IOException, InterruptedException {
 		final VisitState visitState = fetchData.visitState;
 		final boolean mustBeStored = rc.storeFilter.apply( fetchData );
@@ -615,7 +553,7 @@ public class ParsingThread extends Thread {
 		final String result;
 		if (mustBeStored) {
 			if (isNotDuplicate) {
-				// Sot, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
+				// Soft, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
 				incrementCountAndPurge(true, visitState, rc);
 				final int code = fetchData.response().getStatusLine().getStatusCode() / 100;
 				if (code > 0 && code < 6) frontier.archetypesStatus[code].incrementAndGet();

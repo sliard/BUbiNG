@@ -129,8 +129,8 @@ public final class DNSThread extends Thread {
 
 					visitState.lastExceptionClass = UnknownHostException.class;
 
-					if (visitState.retries < ParsingThread.EXCEPTION_TO_MAX_RETRIES.getInt(UnknownHostException.class)) {
-						final long delay = ParsingThread.EXCEPTION_TO_WAIT_TIME.getLong(UnknownHostException.class) << visitState.retries;
+					if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getInt(UnknownHostException.class)) {
+						final long delay = ExceptionHelper.EXCEPTION_TO_WAIT_TIME.getLong(UnknownHostException.class) << visitState.retries;
 						// Exponentially growing delay
 						visitState.nextFetch = System.currentTimeMillis() + delay;
 						LOGGER.debug("Will retry DNS resolution of state " + visitState + " with delay " + delay);

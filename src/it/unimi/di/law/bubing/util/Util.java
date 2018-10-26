@@ -7,6 +7,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 
+import com.exensa.util.compression.HuffmanModel;
 import org.apache.commons.lang.BooleanUtils;
 
 /*
@@ -275,6 +276,10 @@ public class Util {
 			charArray[i] = (char)byteArray[i];
 		}
 		return new String(charArray);
+	}
+
+	public static String zToString( final byte[] zBytes ) {
+		return toString( HuffmanModel.defaultModel.decompress(zBytes) );
 	}
 
 	/** Returns a string representation of an ASCII byte-array fragment.

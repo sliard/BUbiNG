@@ -598,7 +598,7 @@ public class Frontier {
 	 * </ul>
 	 *
 	 * @param fetchInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
-	public void enqueueUrlList( final MsgCrawler.FetchInfo fetchInfo ) {
+	public void enqueue( final MsgCrawler.FetchInfo fetchInfo ) {
 		if ( quickToSendDiscoveredURLs.remainingCapacity() == 0 )
 			LOGGER.warn( "quickToSendDiscoveredURLs is full" );
 		quickToSendDiscoveredURLs.offer( fetchInfo );

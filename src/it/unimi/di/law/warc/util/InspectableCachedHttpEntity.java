@@ -56,6 +56,16 @@ public class InspectableCachedHttpEntity extends HttpEntityWrapper {
 		this.cachedContent.clear();
 	}
 
+	public void copyFullContent() throws IOException {
+		if ( wrappedEntity == THROW_AWAY_ENTITY )
+			throw new IllegalStateException();
+		final InputStream content = wrappedEntity.getContent();
+		for ( int r; (r=content.read(buffer,0,BUFFER_SIZE)) > 0; ) {
+			byteBuffer.clear().limit( r );
+			cachedContent.write( byteBuffer );
+		}
+	}
+
 	public boolean copyContent(final long maxLength, final long startTime, final long minDelay, final long minBytesPerSecond) throws IOException, TooSlowException {
 		if (this.wrappedEntity == THROW_AWAY_ENTITY) throw new IllegalStateException();
 		final InputStream content = this.wrappedEntity.getContent();
