@@ -7,7 +7,6 @@ import com.ibm.icu.text.CharsetDetector;
 import com.ibm.icu.text.CharsetMatch;
 import com.martiansoftware.jsap.*;
 import it.unimi.di.law.bubing.Agent;
-import it.unimi.di.law.bubing.frontier.ParsingThread;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.bubing.util.Util;
@@ -165,7 +164,7 @@ public class HTMLParser<T> implements Parser<T> {
   /**
    * An object emboding the digest logic, or {@code null} for no digest computation.
    */
-  protected final DirectDigestAppendable digestAppendable;
+  private final DigestAppendable digestAppendable;
   /**
    * A text processor, or {@code null}.
    */
@@ -206,7 +205,7 @@ public class HTMLParser<T> implements Parser<T> {
   protected StringBuilder rewritten;
   protected StringBuilder currentTextOfInterest;
   protected boolean captureTextOfInterest;
-  protected PureTextAppendable textContent;
+  private final PureTextAppendable textContent;
 
   private static final HashSet<String> ENDLINE_SET = Sets.newHashSet(ARTICLE, ASIDE, FOOTER, DETAILS, SECTION, HEADER, HGROUP, NAV, P, H1, H2, H3, H4, H5, H6, UL, OL, DIR, MENU, PRE, DL, DIV, CENTER, NOSCRIPT, NOFRAMES, BLOCKQUOTE, FORM, ISINDEX, HR, TABLE, FIELDSET, ADDRESS, LI, DT, DD, TR, CAPTION, LEGEND, BR);
   private static final HashSet<String> INDENT_SET = Sets.newHashSet(LI, DD);
@@ -232,7 +231,7 @@ public class HTMLParser<T> implements Parser<T> {
    */
   public HTMLParser(final HashFunction hashFunction, final TextProcessor<T> textProcessor, final boolean crossAuthorityDuplicates, final int bufferSize) {
     this.buffer = bufferSize != 0 ? new char[bufferSize] : null;
-    this.digestAppendable = hashFunction == null ? null : new DirectDigestAppendable(hashFunction);
+    this.digestAppendable = hashFunction == null ? null : new DigestAppendable( hashFunction );
     this.textProcessor = textProcessor;
     this.crossAuthorityDuplicates = crossAuthorityDuplicates;
     this.charsetDetectionBuffer = new byte[MAX_CHARSET_PAGE_CONTENT];
@@ -537,6 +536,7 @@ public class HTMLParser<T> implements Parser<T> {
     }
 
     URI run() throws IOException {
+      textContent.init(); // FIXME: added by Manu
       for (final Segment segment : streamedSource) {
         rewrite = true;
         if (segment.getEnd() <= lastSegmentEnd)
@@ -559,6 +559,7 @@ public class HTMLParser<T> implements Parser<T> {
           rewritten.append( cb.array(), cb.position(), cb.remaining() );
         }
       }
+      textContent.flush(); // FIXME: added by Manu
       return base;
     }
 
@@ -579,19 +580,19 @@ public class HTMLParser<T> implements Parser<T> {
         name == HTMLElementName.I || name == HTMLElementName.B || name == HTMLElementName.EM)
         rewrite = false; // INLINE_NO_WHITESPACE
       else if (name == HTMLElementName.SCRIPT || name == HTMLElementName.OPTION || name == HTMLElementName.STYLE) {
-        textContent.append(" ");
+        textContent.append(' ');
         if (!startTag.isSyntacticalEmptyElementTag()) // FIXME: may be isEmptyElementTag(), copy/paste from BUbiNG source code
           skipping += 1;
         rewrite = false; // IGNORABLE_ELEMENT
       } else if (ENDLINE_SET.contains(name))
-        textContent.append("\n");
+        textContent.append('\n');
       else
-        textContent.append(" ");
+        textContent.append(' ');
 
       if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) && !startTag.isSyntacticalEmptyElementTag())
         inSpecialText++;
 
-      if (digestAppendable != null) digestAppendable.startTag(startTag);
+      if (digestAppendable != null) digestAppendable.append(startTag);
       // TODO: detect flow breakers
 
       // IFRAME or FRAME + SRC
@@ -709,7 +710,7 @@ public class HTMLParser<T> implements Parser<T> {
       if (digestAppendable != null) {
         if (endTag.getTagType() != EndTagType.NORMAL)
           return;
-        digestAppendable.endTag(endTag);
+        digestAppendable.append(endTag);
       }
 
       if (name == HTMLElementName.TITLE) {
@@ -734,22 +735,22 @@ public class HTMLParser<T> implements Parser<T> {
         rewrite = false;
       else
       if (name == HTMLElementName.SCRIPT || name == HTMLElementName.OPTION || name == HTMLElementName.STYLE) {
-        textContent.append("\n");
+        textContent.append('\n');
         skipping = Math.max(0, skipping - 1); // Ignore extra closing tags
         rewrite = false;
       }
       else
       if (ENDLINE_SET.contains(name))
-        textContent.append("\n");
+        textContent.append('\n');
       else
-        textContent.append(" ");
+        textContent.append(' ');
     }
 
     private void onOtherSegment( final Segment segment ) throws IOException {
       if ( inSpecialText != 0 )
         return;
 
-      java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
+      final java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
 
       textContent.append( cb.array(), cb.position(), cb.remaining() );
       if ( captureTextOfInterest )
@@ -809,9 +810,9 @@ public class HTMLParser<T> implements Parser<T> {
     // This is to avoid collapsing 3xx pages with boilerplate content (as opposed to 0-length content).
     if (digestAppendable != null && httpResponse.getStatusLine().getStatusCode() / 100 == 3) {
       digestAppendable.append((char) 0);
-      if (location != null) digestAppendable.append(BURL.toByteArray(location));
+      if (location != null) digestAppendable.append(location.toString());
       digestAppendable.append((char) 0);
-      if (metaLocation != null) digestAppendable.append(BURL.toByteArray(metaLocation));
+      if (metaLocation != null) digestAppendable.append(metaLocation.toString());
       digestAppendable.append((char) 0);
     }
   }
@@ -830,7 +831,6 @@ public class HTMLParser<T> implements Parser<T> {
     rewritten.setLength(0);
     captureTextOfInterest = false;
     currentTextOfInterest.setLength(0);
-    textContent.init();
 
     final HttpEntity entity = httpResponse.getEntity();
     final InputStream contentStream = entity.getContent();
@@ -950,7 +950,7 @@ public class HTMLParser<T> implements Parser<T> {
 
   @Override
   public StringBuilder getTextContent() {
-    return textContent.textContent;
+    return textContent.getContent();
   }
 
   @Override
