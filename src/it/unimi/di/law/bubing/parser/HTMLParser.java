@@ -129,7 +129,7 @@ public final class HTMLParser<T> implements Parser<T> {
   /**
    * The size of the internal Jericho buffer.
    */
-  public static final int CHAR_BUFFER_SIZE = 128 * 1024;
+  private static final int CHAR_BUFFER_SIZE = 1024*1024;
   /**
    * The max required amount of page content (without HTML entities) for charset detection
    */

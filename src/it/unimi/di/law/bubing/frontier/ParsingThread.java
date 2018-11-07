@@ -3,6 +3,7 @@ package it.unimi.di.law.bubing.frontier;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
+import java.nio.BufferOverflowException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
@@ -207,6 +208,8 @@ public class ParsingThread extends Thread {
   private final Random rng;
   /**  */
   private final FrontierEnqueuer frontierLinkReceiver;
+  /** A counter for java.nio.BufferOverflowException from Jericho */
+  private static int overflowCounter = 0;
   /** Creates a thread.
    *
    * @param frontier the frontier instantiating the thread.
@@ -366,7 +369,11 @@ public class ParsingThread extends Thread {
     try {
       return doParse( parser, fetchData, fetchedPageInfoBuilder );
     }
-    catch ( final IOException e ) {
+    catch ( final BufferOverflowException e ) {
+      LOGGER.warn( "Overflow while parsing {} ({})", fetchData.uri(), ++overflowCounter );
+      return null;
+    }
+    catch ( final Exception e ) {
       // This mainly catches Jericho and network problems
       LOGGER.warn( "Exception while parsing " + fetchData.uri() + " with " + parser, e );
       return null;
