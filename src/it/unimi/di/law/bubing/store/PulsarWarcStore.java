@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 /** A {@link Store} implementation using Pulsar. */
 
 public class PulsarWarcStore implements Closeable, Store {
-	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );
+	private final static Logger LOGGER = LoggerFactory.getLogger( PulsarWarcStore.class );
 
 	private final PulsarClient pulsarClient;
 	private final Producer pulsarWARCProducer;

@@ -54,7 +54,7 @@ import org.slf4j.LoggerFactory;
 /** A {@link Store} implementation using the {@link it.unimi.di.law.warc} package. */
 
 public class MultiWarcStore implements Closeable, Store {
-	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );
+	private final static Logger LOGGER = LoggerFactory.getLogger( MultiWarcStore.class );
 
 	private final int OUTPUT_STREAM_BUFFER_SIZE = 32*1024 * 1024;
 	private final static String STORE_NAME_FORMAT = "store.warc.%s.%s.zstm";

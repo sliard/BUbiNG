@@ -82,7 +82,7 @@ import static net.htmlparser.jericho.HTMLElementName.*;
  * parse quickly a {@link HttpResponse}. Instances are heavyweight&mdash;they
  * should be pooled and shared, since their usage is transitory and CPU-intensive.
  */
-public class HTMLParser<T> implements Parser<T> {
+public final class HTMLParser<T> implements Parser<T> {
   private static final Logger LOGGER = LoggerFactory.getLogger(HTMLParser.class);
 
   static {
@@ -95,7 +95,7 @@ public class HTMLParser<T> implements Parser<T> {
     StartTagType.SERVER_COMMON_ESCAPED.deregister();
   }
 
-  final static HashSet<String> relExcludeList;
+  private final static HashSet<String> relExcludeList;
   static {
     String[] excludeArray = new String[]{"stylesheet",
       "prefetch",
@@ -122,12 +122,10 @@ public class HTMLParser<T> implements Parser<T> {
     relExcludeList = Sets.newHashSet(excludeArray);
   }
 
-
-
   /**
    * The pattern prefixing the URL in a <code>META </code> <code>HTTP-EQUIV </code> element of refresh type.
    */
-  protected static final TextPattern URLEQUAL_PATTERN = new TextPattern("URL=", TextPattern.CASE_INSENSITIVE);
+  private static final TextPattern URLEQUAL_PATTERN = new TextPattern("URL=", TextPattern.CASE_INSENSITIVE);
   /**
    * The size of the internal Jericho buffer.
    */
@@ -135,32 +133,15 @@ public class HTMLParser<T> implements Parser<T> {
   /**
    * The max required amount of page content (without HTML entities) for charset detection
    */
-  protected static final int MAX_CHARSET_PAGE_CONTENT = 5000;
+  private static final int MAX_CHARSET_PAGE_CONTENT = 5000;
   /**
    * The max required amount of text page content (with HTML entities) for language detection
    */
-  protected static final int MAX_LANGUAGE_PAGE_CONTENT = 5000;
+  private static final int MAX_LANGUAGE_PAGE_CONTENT = 5000;
   /**
    * The character buffer. It is set up at construction time, but it can be changed later.
    */
-  protected final char[] buffer;
-  /**
-   * The charset we guessed for the last response.
-   */
-  protected Charset guessedCharset;
-  /**
-   * The charset we guessed for the last response.
-   */
-  protected Locale guessedLanguage;
-  protected String title;
-
-  protected CharsetDetectionInfo charsetDetectionInfo;
-  protected LanguageDetectionInfo languageDetectionInfo;
-
-  /**
-   * The charset we guessed for the last response.
-   */
-  protected Charset finalGuessedCharset;
+  private final char[] buffer;
   /**
    * An object emboding the digest logic, or {@code null} for no digest computation.
    */
@@ -168,43 +149,62 @@ public class HTMLParser<T> implements Parser<T> {
   /**
    * A text processor, or {@code null}.
    */
-  protected final TextProcessor<T> textProcessor;
-  /**
-   * The location URL from headers of the last response, if any, or {@code null}.
-   */
-  protected URI location;
-  /**
-   * The location URL from <code>META</code> elements of the last response, if any, or {@code null}.
-   */
-  protected URI metaLocation;
+  private final TextProcessor<T> textProcessor;
   /**
    * If <code>true</code>, pages with the same content but with different authorities are considered duplicates.
    */
-  protected boolean crossAuthorityDuplicates;
-
-
+  private final boolean crossAuthorityDuplicates;
   /**
    * A charset detector
    */
   private final CharsetDetector charsetDetector;
-
   /**
    * A buffer used for storing raw non-html data and detectCharset
    */
-
-
   private final byte[] charsetDetectionBuffer;
+  /**
+   * The location URL from headers of the last response, if any, or {@code null}.
+   */
+  private URI location;
+  /**
+   * The location URL from <code>META</code> elements of the last response, if any, or {@code null}.
+   */
+  private URI metaLocation;
+  /**
+   * <code>true</code> if parsing detects HTML version >= 5
+   */
+  private Boolean htmlVersionAtLeast5;
+  /**
+   * <code>true</code> if parsing found a <code><meta name="viewport" ...></code> element
+   */
+  private Boolean foundViewPortMeta;
+  /**
+   * The charset we guessed for the last response.
+   */
+  private Charset guessedCharset;
+  /**
+   * The charset we guessed for the last response.
+   */
+  private Charset finalGuessedCharset;
+  /**
+   * The charset we guessed for the last response.
+   */
+  private Locale guessedLanguage;
+  /**
+   * The title of the page, <code>null</code> if none
+   */
+  private String title;
 
-
-  protected Boolean htmlVersionAtLeast5;
-  protected Boolean foundViewPortMeta;
+  private CharsetDetectionInfo charsetDetectionInfo;
+  private LanguageDetectionInfo languageDetectionInfo;
 
   /**
    * The rewritten version of the page
    */
-  protected StringBuilder rewritten;
-  protected StringBuilder currentTextOfInterest;
-  protected boolean captureTextOfInterest;
+  private static final boolean REWRITE = true; // FIXME: should be configurable
+  private final StringBuilder rewritten;
+  private final StringBuilder currentTextOfInterest;
+  private boolean captureTextOfInterest;
   private final PureTextAppendable textContent;
 
   private static final HashSet<String> ENDLINE_SET = Sets.newHashSet(ARTICLE, ASIDE, FOOTER, DETAILS, SECTION, HEADER, HGROUP, NAV, P, H1, H2, H3, H4, H5, H6, UL, OL, DIR, MENU, PRE, DL, DIV, CENTER, NOSCRIPT, NOFRAMES, BLOCKQUOTE, FORM, ISINDEX, HR, TABLE, FIELDSET, ADDRESS, LI, DT, DD, TR, CAPTION, LEGEND, BR);
@@ -238,13 +238,12 @@ public class HTMLParser<T> implements Parser<T> {
     this.charsetDetector = new CharsetDetector();
     this.charsetDetectionInfo = new CharsetDetectionInfo();
     this.languageDetectionInfo = new LanguageDetectionInfo();
-    this.rewritten = new StringBuilder();
+    this.rewritten = REWRITE ? new StringBuilder() : null;
     this.currentTextOfInterest = new StringBuilder();
     this.captureTextOfInterest = false;
     this.textContent = new PureTextAppendable();
     this.htmlVersionAtLeast5 = false;
     this.foundViewPortMeta = false;
-
   }
 
   /**
@@ -334,14 +333,13 @@ public class HTMLParser<T> implements Parser<T> {
    * @param base         the base URL to be used to derelativize the link.
    * @param s            the raw link to be derelativized.
    */
-
-  protected void process(final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
-                         final byte[] schemeAuthority,
-                         final URI base,
-                         final String s,
-                         final String anchorText,
-                         final String linkName,
-                         final boolean isNoFollow, final boolean isNoIndex, final boolean isCanonical) {
+  private void process( final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
+                        final byte[] schemeAuthority,
+                        final URI base,
+                        final String s,
+                        final String anchorText,
+                        final String linkName,
+                        final boolean isNoFollow, final boolean isNoIndex, final boolean isCanonical) {
     if (s == null) return;
     final URI url = BURL.parse(s);
     if (url == null) return;
@@ -554,7 +552,7 @@ public class HTMLParser<T> implements Parser<T> {
         else
           onOtherSegment( segment );
 
-        if (rewrite && (skipping == 0)) {
+        if (rewritten != null && rewrite && skipping == 0) {
           java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
           rewritten.append( cb.array(), cb.position(), cb.remaining() );
         }
@@ -828,7 +826,8 @@ public class HTMLParser<T> implements Parser<T> {
     languageDetectionInfo.cld2Language =
         languageDetectionInfo.htmlLanguage =
             languageDetectionInfo.httpHeaderLanguage = "-";
-    rewritten.setLength(0);
+    if ( rewritten != null )
+      rewritten.setLength(0);
     captureTextOfInterest = false;
     currentTextOfInterest.setLength(0);
 
