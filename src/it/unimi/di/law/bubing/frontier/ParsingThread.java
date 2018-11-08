@@ -13,6 +13,7 @@ import com.exensa.wdl.common.LanguageCodes;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
+import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -308,6 +309,16 @@ public class ParsingThread extends Thread {
     final RuntimeConfiguration rc = frontier.rc;
     final VisitState visitState = fetchData.visitState;
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
+
+    if ( fetchData.robots ) {
+      frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+      if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
+        // We go on getting/creating a workbench entry only if we have robots permissions.
+        visitState.schedulePurge();
+        LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
+      }
+      return;
+    }
 
     final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
 

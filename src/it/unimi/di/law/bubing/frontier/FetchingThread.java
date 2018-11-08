@@ -15,7 +15,6 @@ import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
-import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
@@ -367,22 +366,17 @@ public final class FetchingThread extends Thread implements Closeable {
     return false; // skip to next SchemeAuthority
   }
 
-  private void processFetchData() throws InterruptedException {
-    try {
-      if ( checkAndUpdateFetchData() ) {
-        frontier.results.add( fetchData );
-        fetchData = null;
-      }
-      else {
-        frontier.done.add( fetchData.visitState );
-      }
+  private void processFetchData() {
+    if ( checkAndUpdateFetchData() ) {
+      frontier.results.add( fetchData );
+      fetchData = null;
     }
-    catch ( IOException e ) {
-      LOGGER.error( "While processing fetch data for " + fetchData.uri(), e );
+    else {
+      frontier.done.add( fetchData.visitState );
     }
   }
 
-  private boolean checkAndUpdateFetchData() throws IOException, InterruptedException {
+  private boolean checkAndUpdateFetchData() {
     final RuntimeConfiguration rc = frontier.rc;
     final VisitState visitState = fetchData.visitState;
 
@@ -406,20 +400,20 @@ public final class FetchingThread extends Thread implements Closeable {
 
     if ( fetchData.robots ) {
       frontier.fetchedRobots.incrementAndGet();
-      frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
-
-      if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
-        // We go on getting/creating a workbench entry only if we have robots permissions.
-        visitState.schedulePurge();
-        LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
-      }
-
+      // FIXME: following is done by ParsingThread
+      //frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+      //if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
+      //  // We go on getting/creating a workbench entry only if we have robots permissions.
+      //  visitState.schedulePurge();
+      //  LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
+      //}
       visitState.lastRobotsFetch = fetchData.endTime;
-      return false; // don't parse
+    }
+    else {
+      fetchData.visitState.cookies = getCookies( fetchData.uri(), cookieStore, frontier.rc.cookieMaxByteSize );
+      frontier.fetchedResources.incrementAndGet();
     }
 
-    fetchData.visitState.cookies = getCookies( fetchData.uri(), cookieStore, frontier.rc.cookieMaxByteSize );
-    frontier.fetchedResources.incrementAndGet();
     return true; // do parse
   }
 
