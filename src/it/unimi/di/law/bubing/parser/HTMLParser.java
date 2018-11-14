@@ -331,22 +331,21 @@ public final class HTMLParser<T> implements Parser<T> {
    *
    * @param crawledPageInfoBuilder the link receiver that will receive the resulting URL.
    * @param base         the base URL to be used to derelativize the link.
-   * @param s            the raw link to be derelativized.
+   * @param link         the raw link to be derelativized.
    */
   private void process( final MsgCrawler.FetchInfo.Builder crawledPageInfoBuilder,
                         final byte[] schemeAuthority,
                         final URI base,
-                        final String s,
+                        final String link,
                         final String anchorText,
                         final String linkName,
                         final boolean isNoFollow, final boolean isNoIndex, final boolean isCanonical) {
-    if (s == null) return;
-    final URI url = BURL.parse(s);
+    if (link == null) return;
+    final URI url = BURL.parse(link);
     if (url == null) return;
-    URI targetURI = base.resolve(url);
-    boolean hasSameSchemeAuthority = BURL.sameSchemeAuthority(schemeAuthority,targetURI);
-    MsgCrawler.FetchLinkInfo.Builder fetchLinkInfo = makeLinkInfoFromBasicURI(targetURI);
-    MsgLink.LinkInfo.Builder linkInfo = MsgLink.LinkInfo.newBuilder();
+    final URI targetURI = base.resolve(url);
+
+    final MsgLink.LinkInfo.Builder linkInfo = MsgLink.LinkInfo.newBuilder();
     if (linkName == HTMLElementName.A)
       linkInfo.setLinkType(EnumType.Enum.A);
     else if (linkName == HTMLElementName.AREA)
@@ -372,8 +371,11 @@ public final class HTMLParser<T> implements Parser<T> {
     if (anchorText != null && anchorText.length() > 0)
       linkInfo.setText(anchorText);
     linkInfo.setLinkQuality(1.0f);
+
+    final MsgCrawler.FetchLinkInfo.Builder fetchLinkInfo = makeLinkInfoFromBasicURI(targetURI);
     fetchLinkInfo.setLinkInfo( linkInfo );
-    if (hasSameSchemeAuthority)
+
+    if (BURL.sameSchemeAuthority(schemeAuthority,targetURI))
       crawledPageInfoBuilder.addInternalLinks(fetchLinkInfo.buildPartial());
     else
       crawledPageInfoBuilder.addExternalLinks(fetchLinkInfo.buildPartial());
@@ -434,8 +436,8 @@ public final class HTMLParser<T> implements Parser<T> {
     return false;
   }
 
-  private void tryGuessHtmlVersion( final URI uri, final InspectableFileCachedInputStream inspectableStream ) {
-    String docTypeContent = getDocType(inspectableStream.buffer, Math.min(inspectableStream.inspectable, 50));
+  private void tryGuessHtmlVersion( final URI uri, final byte[] buffer, final int length ) {
+    String docTypeContent = getDocType( buffer, Math.min(length,50) );
     if (docTypeContent != null) {
       htmlVersionAtLeast5 = docTypeContent.toLowerCase().equals("html");
       if (htmlVersionAtLeast5)
@@ -443,8 +445,8 @@ public final class HTMLParser<T> implements Parser<T> {
     }
   }
 
-  private void tryGuessLanguageFromHtml( final URI uri, final InspectableFileCachedInputStream inspectableStream ) {
-    languageDetectionInfo.htmlLanguage = getLanguageName(inspectableStream.buffer, inspectableStream.inspectable);
+  private void tryGuessLanguageFromHtml( final URI uri, final byte[] buffer, final int length ) {
+    languageDetectionInfo.htmlLanguage = getLanguageName( buffer, length );
     if (languageDetectionInfo.htmlLanguage != null) {
       Locale fromHtmlLocal = Locale.forLanguageTag(languageDetectionInfo.htmlLanguage);
       if (!fromHtmlLocal.getLanguage().equals(""))
@@ -454,63 +456,74 @@ public final class HTMLParser<T> implements Parser<T> {
     }
   }
 
-  private void tryGuessCharsetFromICU( final URI uri, final InspectableFileCachedInputStream inspectableStream ) throws IOException {
-    InputStream beginningOfStream = new ByteArrayInputStream(inspectableStream.buffer, 0, inspectableStream.inspectable);
+  private void tryGuessCharsetFromICU( final URI uri, final byte[] buffer, final int length ) throws IOException {
+    final int byteCount = fillCharsetDetectionBuffer( buffer, length );
+    if (byteCount > 0) {
+      charsetDetector.setText(new ByteArrayInputStream(charsetDetectionBuffer, 0, byteCount));
+      CharsetMatch match = charsetDetector.detect();
+      if ( match == null ) return;
+      charsetDetectionInfo.icuCharset = match.getName();
+      if (LOGGER.isDebugEnabled())
+        LOGGER.debug("Found charset {} with ICU {}", charsetDetectionInfo.icuCharset, uri.toString());
+      try {
+        guessedCharset = Charset.forName(charsetDetectionInfo.icuCharset);
+      }
+      catch (UnsupportedCharsetException e) {
+        LOGGER.error("Charset {} found in header is not supported", charsetDetectionInfo.icuCharset);
+      }
+    }
+  }
+
+  private int fillCharsetDetectionBuffer( final byte[] buffer, final int length ) throws IOException {
+    final InputStream beginningOfStream = new ByteArrayInputStream( buffer, 0, length );
     int lastSegmentEnd = 0;
     int inSpecialText = 0;
     int byteCounter = 0;
 
     @SuppressWarnings("resource") final StreamedSource streamedSource = new StreamedSource(new InputStreamReader(beginningOfStream, new NoOpDecoder()));
-    if (buffer != null) streamedSource.setBuffer(buffer);
+    if (this.buffer != null)
+      streamedSource.setBuffer(this.buffer);
+
     for (final Segment segment : streamedSource) {
-      if (byteCounter >= MAX_CHARSET_PAGE_CONTENT)
-        break;
-      if (segment.getEnd() > lastSegmentEnd) {
-        lastSegmentEnd = segment.getEnd();
-        if (segment instanceof StartTag) {
-          final StartTag startTag = (StartTag) segment;
-          final StartTagType startTagType = startTag.getStartTagType();
-          if (startTagType == StartTagType.COMMENT)
-            continue;
-						/*if ( startTagType == StartTagType.DOCTYPE_DECLARATION )
-							docTypeDeclaration( startTag );*/
-          final String name = startTag.getName();
-          if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) && !startTag.isSyntacticalEmptyElementTag())
-            inSpecialText++;
-        }
-        else
-        if (segment instanceof EndTag) {
-          final EndTag endTag = (EndTag) segment;
-          final String name = endTag.getName();
-          if (name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) {
-            inSpecialText = Math.max(0, inSpecialText - 1); // Ignore extra closing tags
-          }
-        }
-        else
-        if ((inSpecialText == 0) && !(segment instanceof CharacterReference)) {
-          java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
-          if (inSpecialText == 0) {
-            for (int i = cb.position(); i < cb.position() + cb.remaining() && (byteCounter < MAX_CHARSET_PAGE_CONTENT); i++, byteCounter++)
-              charsetDetectionBuffer[byteCounter] = (byte) cb.get(i);
-          }
-        }
+      if ( segment.getEnd() <= lastSegmentEnd )
+        continue;
+      lastSegmentEnd = segment.getEnd();
+
+      if (segment instanceof StartTag) {
+        final StartTag startTag = (StartTag) segment;
+        final StartTagType startTagType = startTag.getStartTagType();
+        if (startTagType == StartTagType.COMMENT)
+          continue;
+          /*if ( startTagType == StartTagType.DOCTYPE_DECLARATION )
+            docTypeDeclaration( startTag );*/
+        final String name = startTag.getName();
+        if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) && !startTag.isSyntacticalEmptyElementTag())
+          inSpecialText++;
+      }
+      else
+      if (segment instanceof EndTag) {
+        final EndTag endTag = (EndTag) segment;
+        final String name = endTag.getName();
+        if (name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT)
+          inSpecialText = Math.max(0, inSpecialText - 1); // Ignore extra closing tags
+      }
+      else
+      if (inSpecialText == 0 && !(segment instanceof CharacterReference)) {
+        final java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
+        byteCounter = copyCharArrayToByteArray( cb.array(), cb.position(), cb.remaining(), charsetDetectionBuffer, byteCounter );
+        if ( byteCounter == MAX_CHARSET_PAGE_CONTENT )
+          break;
       }
     }
 
-    if (byteCounter > 0) {
-      charsetDetector.setText(new ByteArrayInputStream(charsetDetectionBuffer, 0, byteCounter));
-      CharsetMatch match = charsetDetector.detect();
-      if (match != null) {
-        charsetDetectionInfo.icuCharset = match.getName();
-        if (LOGGER.isDebugEnabled())
-          LOGGER.debug("Found charset {} with ICU {}", charsetDetectionInfo.icuCharset, uri.toString());
-        try {
-          guessedCharset = Charset.forName(charsetDetectionInfo.icuCharset);
-        } catch (UnsupportedCharsetException e) {
-          LOGGER.error("Charset {} found in header is not supported", charsetDetectionInfo.icuCharset);
-        }
-      }
-    }
+    return byteCounter;
+  }
+
+  private static int copyCharArrayToByteArray( final char[] in, final int inOff, final int inLen, final byte[] out, final int outOff ) {
+    int i,o;
+    for ( i=inOff, o=outOff; i<inOff+inLen && o<out.length; ++i, ++o )
+      out[o] = (byte) in[i];
+    return o;
   }
 
   private final class ParserImpl
@@ -590,20 +603,11 @@ public final class HTMLParser<T> implements Parser<T> {
       if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) && !startTag.isSyntacticalEmptyElementTag())
         inSpecialText++;
 
-      if (digestAppendable != null) digestAppendable.append(startTag);
+      if (digestAppendable != null)
+        digestAppendable.append(startTag);
       // TODO: detect flow breakers
 
-      // IFRAME or FRAME + SRC
-
-      if (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED)
-        linkValue = startTag.getAttributeValue("src");
-      else if (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT)
-        //linkValue = startTag.getAttributeValue("src");
-        linkValue = null;
-      else if (name == HTMLElementName.OBJECT)
-        //linkValue = startTag.getAttributeValue("data");
-        linkValue = null;
-      else if (name == HTMLElementName.A || name == HTMLElementName.AREA)
+      if (name == HTMLElementName.A || name == HTMLElementName.AREA) // most frequent first
         linkValue = startTag.getAttributeValue("href");
       else if (name == HTMLElementName.LINK) {
         String rel = startTag.getAttributeValue("rel");
@@ -616,6 +620,14 @@ public final class HTMLParser<T> implements Parser<T> {
           }
         }
       }
+      else if (name == HTMLElementName.IFRAME || name == HTMLElementName.FRAME || name == HTMLElementName.EMBED)
+        linkValue = startTag.getAttributeValue("src");
+      else if (name == HTMLElementName.IMG || name == HTMLElementName.SCRIPT)
+        //linkValue = startTag.getAttributeValue("src");
+        linkValue = null;
+      else if (name == HTMLElementName.OBJECT)
+        //linkValue = startTag.getAttributeValue("data");
+        linkValue = null;
       else if (name == HTMLElementName.BASE) {
         final String s = startTag.getAttributeValue("href");
         if (s != null) {
@@ -626,77 +638,79 @@ public final class HTMLParser<T> implements Parser<T> {
           }
         }
       }
+      else if (name == HTMLElementName.META) {
+        String metaEquiv = startTag.getAttributeValue("http-equiv");
+        if (metaEquiv != null) {
+          final String metaContent = startTag.getAttributeValue("content");
+          if ( metaContent != null) {
+            metaEquiv = metaEquiv.toLowerCase();
+            if (metaEquiv.equals("refresh"))
+              onMetaEquivRefresh( metaContent );
+            else
+            if (metaEquiv.equals("location"))
+              onMetaEquivLocation( metaContent );
+          }
+        }
+        else {
+          final String metaName = startTag.getAttributeValue("name");
+          final String metaContent = startTag.getAttributeValue("content");
+          if ( metaName != null && metaContent != null && metaName.equalsIgnoreCase("robots") )
+            onMetaRobots( metaContent.toLowerCase() );
+        }
+      }
+
       if (linkValue != null) {
         // isNoFollow = startTag.getAttributeValue("rel").equalsIgnoreCase("nofollow");
         captureTextOfInterest = true;
       }
 
-      // META REFRESH/LOCATION
-      else if (name == HTMLElementName.META) {
-        final String equiv = startTag.getAttributeValue("http-equiv");
-        if (equiv != null) {
-          final String content = startTag.getAttributeValue("content");
-          if (equiv != null && content != null) {
-            equiv.toLowerCase();
+    }
 
-            // http-equiv="refresh" content="0;URL=http://foo.bar/..."
-            if (equiv.equals("refresh")) {
-              final int pos = URLEQUAL_PATTERN.search(content);
-              if (pos != -1) {
-                final String urlPattern = content.substring(pos + URLEQUAL_PATTERN.length());
-                final URI refresh = BURL.parse(urlPattern);
-                if (refresh != null) {
-                  // This shouldn't happen by standard, but people unfortunately does it.
-                  if (!refresh.isAbsolute() && LOGGER.isDebugEnabled())
-                    LOGGER.debug("Found relative META refresh URL: \"{}\"", urlPattern);
-                  fetchInfoBuilder.addExternalLinks(
-                    makeLinkInfoFromBasicURI( base.resolve(refresh) )
-                      .setLinkInfo( MsgLink.LinkInfo.newBuilder()
-                        //.setLinkRel( EnumRel.Enum.REFRESH ) // TODO: probably a link type (kind of redirect), not a rel
-                      )
-                  );
-                }
-              }
-            }
+    private void onMetaEquivRefresh( final String content ) {
+      // http-equiv="refresh" content="0;URL=http://foo.bar/..."
+      final int pos = URLEQUAL_PATTERN.search(content);
+      if ( pos == -1 ) return;
+      final String urlPattern = content.substring(pos + URLEQUAL_PATTERN.length());
+      final URI refresh = BURL.parse(urlPattern);
+      if ( refresh == null ) return;
+      // This shouldn't happen by standard, but people unfortunately does it.
+      if (!refresh.isAbsolute() && LOGGER.isDebugEnabled())
+        LOGGER.debug("Found relative META refresh URL: \"{}\"", urlPattern);
+      // FIXME: no 'metaRefresh' ?
+      fetchInfoBuilder.addExternalLinks(
+        makeLinkInfoFromBasicURI( base.resolve(refresh) )
+          .setLinkInfo( MsgLink.LinkInfo.newBuilder()
+            //.setLinkRel( EnumRel.Enum.REFRESH ) // TODO: probably a link type (kind of redirect), not a rel
+          )
+      );
+    }
 
-            // http-equiv="location" content="http://foo.bar/..."
-            if (equiv.equals("location")) {
-              final URI metaLocation = BURL.parse(content);
-              if (metaLocation != null) {
-                // This shouldn't happen by standard, but people unfortunately does it.
-                if (!metaLocation.isAbsolute() && LOGGER.isDebugEnabled())
-                  LOGGER.debug("Found relative META location URL: \"{}\"", content);
-                HTMLParser.this.metaLocation = base.resolve(metaLocation);
-                fetchInfoBuilder.addExternalLinks(
-                  makeLinkInfoFromBasicURI( HTMLParser.this.metaLocation )
-                    .setLinkInfo( MsgLink.LinkInfo.newBuilder()
-                      //.setLinkRel( EnumRel.Enum.LOCATION ) // TODO: probably a link type (redirect), not a rel
-                    )
-                );
-              }
-            }
-          } else {
-            final String metaName = startTag.getAttributeValue("name");
-            String metaContent = startTag.getAttributeValue("content");
-            if (metaContent == null || metaName == null || !metaName.equalsIgnoreCase("robots"))
-              return;
-            metaContent = metaContent.toLowerCase();
-            if (metaContent != null) {
-              String metaContentLC = metaContent.toLowerCase();
-              if (metaContentLC.contains("noindex"))
-                fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOINDEX(true));
-              if (metaContentLC.contains("nofollow"))
-                fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOFOLLOW(true));
-              if (metaContentLC.contains("noarchive"))
-                fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOARCHIVE(true));
-              if (metaContentLC.contains("nosnippet"))
-                fetchInfoBuilder.setRobotsTag(MsgRobotsTag.RobotsTag.newBuilder().setNOSNIPPET(true));
-            }
+    private void onMetaEquivLocation( final String content ) {
+      // http-equiv="location" content="http://foo.bar/..."
+      final URI metaLocation = BURL.parse(content);
+      if ( metaLocation == null ) return;
+      // This shouldn't happen by standard, but people unfortunately does it.
+      if (!metaLocation.isAbsolute() && LOGGER.isDebugEnabled())
+        LOGGER.debug("Found relative META location URL: \"{}\"", content);
+      HTMLParser.this.metaLocation = base.resolve(metaLocation);
+      fetchInfoBuilder.addExternalLinks(
+        makeLinkInfoFromBasicURI( HTMLParser.this.metaLocation )
+          .setLinkInfo( MsgLink.LinkInfo.newBuilder()
+            //.setLinkRel( EnumRel.Enum.LOCATION ) // TODO: probably a link type (redirect), not a rel
+          )
+      );
+    }
 
-          }
-
-        }
-      }
+    private void onMetaRobots( final String content ) {
+      final MsgRobotsTag.RobotsTag.Builder robotsTagBuilder = fetchInfoBuilder.getRobotsTagBuilder();
+      if (content.contains("noindex"))
+        robotsTagBuilder.setNOINDEX(true);
+      if (content.contains("nofollow"))
+        robotsTagBuilder.setNOFOLLOW(true);
+      if (content.contains("noarchive"))
+        robotsTagBuilder.setNOARCHIVE(true);
+      if (content.contains("nosnippet"))
+        robotsTagBuilder.setNOSNIPPET(true);
     }
 
     private void onEndTag( final EndTag endTag ) {
@@ -706,7 +720,7 @@ public final class HTMLParser<T> implements Parser<T> {
       }
 
       if (digestAppendable != null) {
-        if (endTag.getTagType() != EndTagType.NORMAL)
+        if (endTag.getTagType() != EndTagType.NORMAL) // FIXME: what ?
           return;
         digestAppendable.append(endTag);
       }
@@ -832,9 +846,7 @@ public final class HTMLParser<T> implements Parser<T> {
     currentTextOfInterest.setLength(0);
 
     final HttpEntity entity = httpResponse.getEntity();
-    final InputStream contentStream = entity.getContent();
-    byte[] inspectableEntityContent = ((InspectableFileCachedInputStream) contentStream).buffer;
-    int inspectableEntityContentLength = ((InspectableFileCachedInputStream) contentStream).inspectable;
+    final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) entity.getContent();
 
     tryGuessCharsetFromHeader( uri, httpResponse );
     tryGuessLanguageFromHeader( uri, httpResponse );
@@ -846,7 +858,7 @@ public final class HTMLParser<T> implements Parser<T> {
 
     final Header bubingGuessedCharsetHeader = httpResponse instanceof WarcRecord ? ((WarcRecord) httpResponse).getWarcHeader(WarcHeader.Name.BUBING_GUESSED_CHARSET) : null;
 
-    List<ByteArrayCharSequence> allMetaEntries = getAllMetaEntries(inspectableEntityContent, inspectableEntityContentLength);
+    List<ByteArrayCharSequence> allMetaEntries = getAllMetaEntries( contentStream.buffer, contentStream.inspectable );
 
     tryGetViewportFromMetas( uri, allMetaEntries );
 
@@ -855,13 +867,10 @@ public final class HTMLParser<T> implements Parser<T> {
     else
       charsetValid = tryGuessCharsetFromMetas( uri, allMetaEntries );
 
-    if (contentStream instanceof InspectableFileCachedInputStream) {
-      final InspectableFileCachedInputStream inspectableStream = (InspectableFileCachedInputStream) contentStream;
-      tryGuessHtmlVersion( uri, inspectableStream );
-      tryGuessLanguageFromHtml( uri, inspectableStream );
-      if ( guessedCharset == null || !charsetValid )
-        tryGuessCharsetFromICU( uri, inspectableStream );
-    }
+    tryGuessHtmlVersion( uri, contentStream.buffer, contentStream.inspectable );
+    tryGuessLanguageFromHtml( uri, contentStream.buffer, contentStream.inspectable );
+    if ( guessedCharset == null || !charsetValid )
+      tryGuessCharsetFromICU( uri, contentStream.buffer, contentStream.inspectable );
 
     if (LOGGER.isDebugEnabled())
       LOGGER.debug("Guessing charset \"{}\" for URL {}", guessedCharset, uri);

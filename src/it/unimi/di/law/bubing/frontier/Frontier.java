@@ -218,7 +218,7 @@ public class Frontier {
 	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
 	public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
 
-	/** A queue to quickly buffer to be crawled URLs (as {@link MsgCrawler.FetchInfo} serialized. */
+	/** A queue to quickly buffer URLs to be crawled. */
 	public final ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
 
 	/** The parsing threads. */
@@ -772,17 +772,23 @@ public class Frontier {
 
 		LOGGER.warn( "Frontier closed" );
 	}
+
+	public long getCurrentFrontSize() {
+		return workbench.approximatedSize() + todo.size() - workbench.broken.get();
+	}
+
 		/** Update, if necessary, the {@link #requiredFrontSize}. The current front size is the number of
 	 * visit states present in the workbench and in the {@link #todo} queue. If this quantity is
 	 * larged than the {@linkplain #requiredFrontSize currently-required front size}, the latter is
 	 * increase by {@link #FRONT_INCREASE}, although it will never be set to a value larger than
 	 * half of the workbench (two queries per visit state). */
 	public void updateRequestedFrontSize() {
+		final long currentFrontSize = getCurrentFrontSize();
 		final long currentRequiredFrontSize = requiredFrontSize.get();
+		final long nextRequiredFrontSize = Math.min( currentRequiredFrontSize+FRONT_INCREASE, workbenchSizeInPathQueries/2 );
 		// If compareAndSet() returns false the value has already been updated.
-		if (workbench.approximatedSize() + todo.size() - workbench.broken.get() >= currentRequiredFrontSize
-				&& requiredFrontSize.compareAndSet(currentRequiredFrontSize, Math.min(currentRequiredFrontSize + FRONT_INCREASE, workbenchSizeInPathQueries / 2))) LOGGER
-				.info("Required front size: " + requiredFrontSize.get());
+		if (currentFrontSize >= currentRequiredFrontSize && requiredFrontSize.compareAndSet(currentRequiredFrontSize,nextRequiredFrontSize) )
+			LOGGER.info("Required front size: " + nextRequiredFrontSize);
 	}
 
 	/** Updates the statistics relative to the wait time of {@link FetchingThread}s.
