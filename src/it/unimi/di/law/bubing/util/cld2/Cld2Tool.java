@@ -95,7 +95,7 @@ public class Cld2Tool
             }
             catch ( java.nio.charset.CharacterCodingException e ) {
                 LOGGER.warn( "Failed to encode to UTF-8", e );
-                return new Cld2Result( "UNKNOWN", "UNKNOWN", 0.0 );
+                return new Cld2Result( "Unknown", "Unknown", 0.0 );
             }
         }
 

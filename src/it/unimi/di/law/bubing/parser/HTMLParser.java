@@ -3,8 +3,6 @@ package it.unimi.di.law.bubing.parser;
 import com.google.common.base.Charsets;
 import com.google.common.collect.Sets;
 import com.google.common.hash.HashFunction;
-import com.ibm.icu.text.CharsetDetector;
-import com.ibm.icu.text.CharsetMatch;
 import com.martiansoftware.jsap.*;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
@@ -157,11 +155,12 @@ public final class HTMLParser<T> implements Parser<T> {
   /**
    * A charset detector
    */
-  private final CharsetDetector charsetDetector;
+  //private final CharsetDetector charsetDetector;
+  private final HtmlCharsetDetector charsetDetector;
   /**
    * A buffer used for storing raw non-html data and detectCharset
    */
-  private final byte[] charsetDetectionBuffer;
+  //private final byte[] charsetDetectionBuffer;
   /**
    * The location URL from headers of the last response, if any, or {@code null}.
    */
@@ -234,8 +233,7 @@ public final class HTMLParser<T> implements Parser<T> {
     this.digestAppendable = hashFunction == null ? null : new DigestAppendable( hashFunction );
     this.textProcessor = textProcessor;
     this.crossAuthorityDuplicates = crossAuthorityDuplicates;
-    this.charsetDetectionBuffer = new byte[MAX_CHARSET_PAGE_CONTENT];
-    this.charsetDetector = new CharsetDetector();
+    this.charsetDetector = new HtmlCharsetDetector( MAX_CHARSET_PAGE_CONTENT );
     this.charsetDetectionInfo = new CharsetDetectionInfo();
     this.languageDetectionInfo = new LanguageDetectionInfo();
     this.rewritten = REWRITE ? new StringBuilder() : null;
@@ -457,12 +455,9 @@ public final class HTMLParser<T> implements Parser<T> {
   }
 
   private void tryGuessCharsetFromICU( final URI uri, final byte[] buffer, final int length ) throws IOException {
-    final int byteCount = fillCharsetDetectionBuffer( buffer, length );
-    if (byteCount > 0) {
-      charsetDetector.setText(new ByteArrayInputStream(charsetDetectionBuffer, 0, byteCount));
-      CharsetMatch match = charsetDetector.detect();
-      if ( match == null ) return;
-      charsetDetectionInfo.icuCharset = match.getName();
+    final String charsetName = charsetDetector.detect( buffer, length, this.buffer );
+    if ( charsetName != null ) {
+      charsetDetectionInfo.icuCharset = charsetName;
       if (LOGGER.isDebugEnabled())
         LOGGER.debug("Found charset {} with ICU {}", charsetDetectionInfo.icuCharset, uri.toString());
       try {
@@ -472,58 +467,6 @@ public final class HTMLParser<T> implements Parser<T> {
         LOGGER.error("Charset {} found in header is not supported", charsetDetectionInfo.icuCharset);
       }
     }
-  }
-
-  private int fillCharsetDetectionBuffer( final byte[] buffer, final int length ) throws IOException {
-    final InputStream beginningOfStream = new ByteArrayInputStream( buffer, 0, length );
-    int lastSegmentEnd = 0;
-    int inSpecialText = 0;
-    int byteCounter = 0;
-
-    @SuppressWarnings("resource") final StreamedSource streamedSource = new StreamedSource(new InputStreamReader(beginningOfStream, new NoOpDecoder()));
-    if (this.buffer != null)
-      streamedSource.setBuffer(this.buffer);
-
-    for (final Segment segment : streamedSource) {
-      if ( segment.getEnd() <= lastSegmentEnd )
-        continue;
-      lastSegmentEnd = segment.getEnd();
-
-      if (segment instanceof StartTag) {
-        final StartTag startTag = (StartTag) segment;
-        final StartTagType startTagType = startTag.getStartTagType();
-        if (startTagType == StartTagType.COMMENT)
-          continue;
-          /*if ( startTagType == StartTagType.DOCTYPE_DECLARATION )
-            docTypeDeclaration( startTag );*/
-        final String name = startTag.getName();
-        if ((name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT) && !startTag.isSyntacticalEmptyElementTag())
-          inSpecialText++;
-      }
-      else
-      if (segment instanceof EndTag) {
-        final EndTag endTag = (EndTag) segment;
-        final String name = endTag.getName();
-        if (name == HTMLElementName.STYLE || name == HTMLElementName.SCRIPT)
-          inSpecialText = Math.max(0, inSpecialText - 1); // Ignore extra closing tags
-      }
-      else
-      if (inSpecialText == 0 && !(segment instanceof CharacterReference)) {
-        final java.nio.CharBuffer cb = streamedSource.getCurrentSegmentCharBuffer();
-        byteCounter = copyCharArrayToByteArray( cb.array(), cb.position(), cb.remaining(), charsetDetectionBuffer, byteCounter );
-        if ( byteCounter == MAX_CHARSET_PAGE_CONTENT )
-          break;
-      }
-    }
-
-    return byteCounter;
-  }
-
-  private static int copyCharArrayToByteArray( final char[] in, final int inOff, final int inLen, final byte[] out, final int outOff ) {
-    int i,o;
-    for ( i=inOff, o=outOff; i<inOff+inLen && o<out.length; ++i, ++o )
-      out[o] = (byte) in[i];
-    return o;
   }
 
   private final class ParserImpl
@@ -796,12 +739,13 @@ public final class HTMLParser<T> implements Parser<T> {
   private void tryGuessLanguageFromTextContent( final URI uri ) {
     String tld = uri.getHost().substring(uri.getHost().lastIndexOf('.') + 1);
     String guessedLang = guessedLanguage == null ? null : guessedLanguage.getLanguage();
-    if (textContent.length() > 5) {
+    final CharSequence content = textContent.getContent();
+    if (content.length() > 5) {
       //String textForLangDetect = textContent.subSequence(0, Math.min(textContent.length(), MAX_LANGUAGE_PAGE_CONTENT) - 1).toString() + " "; // +" " is Workaround CLD2 bug (SIGSEGV)
       //Cld2Result result = Cld2Tool.detect(textForLangDetect, tld, guessedLang);
-      Cld2Result result = Cld2Tool.detect( textContent, MAX_LANGUAGE_PAGE_CONTENT, tld, guessedLang );
+      Cld2Result result = Cld2Tool.detect( content, MAX_LANGUAGE_PAGE_CONTENT, tld, guessedLang );
       if (LOGGER.isDebugEnabled())
-        LOGGER.debug("Raw text submitted to language detection is {}", textContent.toString());
+        LOGGER.debug("Raw text submitted to language detection is {}", content.toString());
       //cld2Result.setEncoding_hint(22); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h
       languageDetectionInfo.cld2Language = result.code;
       if (result.language.equals("Unknown")) {
@@ -1014,18 +958,18 @@ public final class HTMLParser<T> implements Parser<T> {
   /**
    * Used by {@link #getCharsetName(byte[], int)}.
    */
-  protected static final Pattern HTTP_EQUIV_PATTERN = Pattern.compile(".*http-equiv\\s*=\\s*('|\")?content-type('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+  public static final Pattern HTTP_EQUIV_PATTERN = Pattern.compile(".*http-equiv\\s*=\\s*('|\")?content-type('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
   /**
    * Used by {@link #getCharsetName(byte[], int)}.
    */
-  protected static final Pattern CONTENT_PATTERN = Pattern.compile(".*content\\s*=\\s*('|\")([^'\"]*)('|\").*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+  public static final Pattern CONTENT_PATTERN = Pattern.compile(".*content\\s*=\\s*('|\")([^'\"]*)('|\").*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
   /**
    * Used by {@link #getCharsetName(byte[], int)}.
    */
-  protected static final Pattern CHARSET_PATTERN = Pattern.compile(".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+  public static final Pattern CHARSET_PATTERN = Pattern.compile(".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
   protected static final Pattern LANG_PATTERN = Pattern.compile(".*lang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-  protected static final Pattern VIEWPORT_PATTERN = Pattern.compile(".*name\\s*=\\s*('|\")?viewport('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+  public static final Pattern VIEWPORT_PATTERN = Pattern.compile(".*name\\s*=\\s*('|\")?viewport('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
   /**
    * Returns the charset name as indicated by a <code>META</code>
@@ -1073,8 +1017,8 @@ public final class HTMLParser<T> implements Parser<T> {
     return null; // no '<meta' found
   }
 
-  private static List<ByteArrayCharSequence> getAllMetaEntries(final byte buffer[], final int length) {
-    ArrayList<ByteArrayCharSequence> metas = new ArrayList<ByteArrayCharSequence>();
+  public static List<ByteArrayCharSequence> getAllMetaEntries(final byte buffer[], final int length) {
+    ArrayList<ByteArrayCharSequence> metas = new ArrayList<>();
     int start = 0;
     while ((start = META_PATTERN.search(buffer, start, length)) != -1) {
       int end = start;
@@ -1125,33 +1069,20 @@ public final class HTMLParser<T> implements Parser<T> {
    * @param allMetaEntries a list of all meta entries found in the buffer.
    * @return true if the viewport meta was found and false otherwise
    */
-  public static Boolean getViewport(final List<ByteArrayCharSequence> allMetaEntries) {
+  public static boolean getViewport(final List<ByteArrayCharSequence> allMetaEntries) {
     for (ByteArrayCharSequence meta : allMetaEntries)
       if (VIEWPORT_PATTERN.matcher(meta).matches())
         return true;
     return false;
   }
 
-  public static String getLanguageName(final byte buffer[], final int length) {
-    int start = 0;
-    while ((start = HTML_PATTERN.search(buffer, start, length)) != -1) {
-
-      /* Look for tag <html with value lang,
-       * return its value. */
-
-      int end = start;
-      while (end < length && buffer[end] != '>') end++; // Look for closing '>'
-      if (end == length) return null; // No closing '>'
-
-      final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(buffer, start + META_PATTERN.length(), end - start - META_PATTERN.length());
-
-      final Matcher mCharset = LANG_PATTERN.matcher(tagContent);
-      if (mCharset.matches())
-        return getLanguageNameFromHTML(mCharset.group(0)); // got it!
-      start = end + 1;
-    }
-
-    return null; // no '<meta' found
+  public static String getLanguageName( final byte buffer[], final int length ) {
+    int start = HTML_PATTERN.search( buffer, 0, length );
+    if ( start == -1 ) return null;
+    int end = start;
+    while (end < length && buffer[end] != '>') end++; // Look for closing '>'
+    final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(buffer, start + HTML_PATTERN.length(), end - start - HTML_PATTERN.length());
+    return getLanguageNameFromHTML( tagContent );
   }
 
   /**
@@ -1162,14 +1093,12 @@ public final class HTMLParser<T> implements Parser<T> {
    * @return the doctype declaration if found, null otherwise
    */
   public static String getDocType(final byte buffer[], final int length) {
-    int start = 0;
-    while ((start = DOCTYPE_PATTERN.search(buffer, 0, length)) != -1) {
-      int end = start;
-      while (end < length && buffer[end] != '>') end++; // Look for closing '>'
-      final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(buffer, start + DOCTYPE_PATTERN.length(), end - start - DOCTYPE_PATTERN.length());
-      return tagContent.toString().trim();
-    }
-    return null;
+    int start = DOCTYPE_PATTERN.search( buffer, 0, length );
+    if ( start == -1 ) return null;
+    int end = start;
+    while (end < length && buffer[end] != '>') end++; // Look for closing '>'
+    final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(buffer, start + DOCTYPE_PATTERN.length(), end - start - DOCTYPE_PATTERN.length());
+    return tagContent.toString().trim();
   }
 
   /**
@@ -1183,7 +1112,7 @@ public final class HTMLParser<T> implements Parser<T> {
    * @return the charset name, or {@code null} if no
    * charset is specified; note that the charset might be not valid or not available.
    */
-  public static String getCharsetNameFromHeader(final String headerValue) {
+  public static String getCharsetNameFromHeader(final CharSequence headerValue) {
     final Matcher m = CHARSET_PATTERN.matcher(headerValue);
     if (m.matches()) {
       final String s = m.group(1);
@@ -1196,7 +1125,7 @@ public final class HTMLParser<T> implements Parser<T> {
     return null;
   }
 
-  public static String getLanguageNameFromHTML(final String headerValue) {
+  public static String getLanguageNameFromHTML(final CharSequence headerValue ) {
     final Matcher m = LANG_PATTERN.matcher(headerValue);
     if (m.matches()) {
       final String s = m.group(1);

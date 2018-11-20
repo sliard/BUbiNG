@@ -1,7 +1,7 @@
 package it.unimi.di.law.bubing.parser;
 
 
-public final class PureTextAppendable implements Appendable, CharSequence
+public final class PureTextAppendable implements Appendable
 {
   private static final int BUFFER_SIZE = 64 * 1024;
 
@@ -37,23 +37,6 @@ public final class PureTextAppendable implements Appendable, CharSequence
     return this;
   }
 
-  // FIXME: Caution - flush() must be called before !
-  @Override
-  public final int length() {
-    return stringBuilder.length();
-  }
-
-  // FIXME: Caution - flush() must be called before !
-  @Override
-  public final char charAt( int index ) {
-    return stringBuilder.charAt( index );
-  }
-
-  @Override
-  public final CharSequence subSequence( int start, int end ) {
-    throw new IndexOutOfBoundsException( "Not supported" );
-  }
-
   public final void append( final char[] buffer, final int offset, final int length ) {
     for ( int i=offset; i<offset+length; ++i )
       appendChar( buffer[i] );
@@ -71,8 +54,8 @@ public final class PureTextAppendable implements Appendable, CharSequence
     lastAppendedWasNewLine = false;
   }
 
-  // FIXME: Caution - flush() must be called before !
   public final StringBuilder getContent() {
+    flush();
     return stringBuilder;
   }
 

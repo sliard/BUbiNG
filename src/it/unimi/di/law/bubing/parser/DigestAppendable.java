@@ -83,6 +83,10 @@ public final class DigestAppendable implements Appendable
     this.result = null;
   }
 
+  public DigestAppendable() {
+    this( null );
+  }
+
   @Override
   public final Appendable append( final CharSequence seq ) {
     return append( seq, 0, seq.length() );
@@ -113,6 +117,16 @@ public final class DigestAppendable implements Appendable
         appendChar( '\"' );
       }
     }
+    lastAppendedWasSpace = false;
+  }
+
+  public final void startTag( final String name ) {
+    append( startTags.get(name) );
+    lastAppendedWasSpace = false;
+  }
+
+  public final void endTag( final String name ) {
+    append( endTags.get(name) );
     lastAppendedWasSpace = false;
   }
 
