@@ -27,6 +27,7 @@ public class XhtmlContentHandler implements ContentHandler
   private final Metadata metadata;
   private final LinksHandler linksHandlerOpt;
   private final StringBuilder title;
+  private int skipLevel;
   private int titleLevel;
   private int bodyLevel;
 
@@ -35,6 +36,7 @@ public class XhtmlContentHandler implements ContentHandler
     this.handler = handler;
     this.linksHandlerOpt = linksHandlerOpt;
     this.title = new StringBuilder();
+    this.skipLevel = 0;
     this.titleLevel = 0;
     this.bodyLevel = 0;
   }
@@ -74,6 +76,11 @@ public class XhtmlContentHandler implements ContentHandler
 
   @Override
   public void startElement( String uri, String localName, String qName, Attributes atts ) throws SAXException {
+    if ( localName == SCRIPT || localName == STYLE )
+      skipLevel += 1;
+    if ( skipLevel > 0 )
+      return;
+
     if ( localName == TITLE || titleLevel > 0 ) {
       titleLevel += 1;
       title.setLength( 0 );
@@ -81,18 +88,25 @@ public class XhtmlContentHandler implements ContentHandler
     else
     if ( localName == BODY /*|| tagName == FRAMESET*/ || bodyLevel > 0 )
       bodyLevel += 1;
-    else
-    if ( /*bodyLevel == 0 &&*/ localName == META )
+
+    if ( localName == META && bodyLevel == 0 )
       startTagMeta( localName, atts );
 
     if ( linksHandlerOpt != null )
       linksHandlerOpt.startTag( localName, atts );
-
     handler.startElement( uri, localName, qName, atts );
   }
 
   @Override
   public void endElement( String uri, String localName, String qName ) throws SAXException {
+    if ( localName == SCRIPT || localName == STYLE ) {
+      skipLevel = Math.max( 0, skipLevel-1 );
+      return;
+    }
+    else
+    if ( skipLevel > 0 )
+      return;
+    else
     if ( bodyLevel > 0 )
       bodyLevel -= 1;
 
@@ -110,6 +124,9 @@ public class XhtmlContentHandler implements ContentHandler
 
   @Override
   public void characters( char[] ch, int start, int length ) throws SAXException {
+    if ( skipLevel > 0 )
+      return;
+
     if ( titleLevel > 0 && bodyLevel == 0 )
       title.append( ch, start, length );
 
@@ -121,6 +138,9 @@ public class XhtmlContentHandler implements ContentHandler
 
   @Override
   public void ignorableWhitespace( char[] ch, int start, int length ) throws SAXException {
+    if ( skipLevel > 0 )
+      return;
+
     if ( linksHandlerOpt != null )
       linksHandlerOpt.ignorableWhitespace( ch, start, length );
 

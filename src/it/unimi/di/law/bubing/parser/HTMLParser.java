@@ -155,12 +155,7 @@ public final class HTMLParser<T> implements Parser<T> {
   /**
    * A charset detector
    */
-  //private final CharsetDetector charsetDetector;
   private final HtmlCharsetDetector charsetDetector;
-  /**
-   * A buffer used for storing raw non-html data and detectCharset
-   */
-  //private final byte[] charsetDetectionBuffer;
   /**
    * The location URL from headers of the last response, if any, or {@code null}.
    */
@@ -181,10 +176,6 @@ public final class HTMLParser<T> implements Parser<T> {
    * The charset we guessed for the last response.
    */
   private Charset guessedCharset;
-  /**
-   * The charset we guessed for the last response.
-   */
-  private Charset finalGuessedCharset;
   /**
    * The charset we guessed for the last response.
    */
@@ -818,11 +809,8 @@ public final class HTMLParser<T> implements Parser<T> {
 
     if (LOGGER.isDebugEnabled())
       LOGGER.debug("Guessing charset \"{}\" for URL {}", guessedCharset, uri);
-    Charset charset = Charsets.UTF_8; // Fallback in case of exception
-    if (guessedCharset != null) {
-      charset = guessedCharset;
-    }
-    finalGuessedCharset = charset;
+    if ( guessedCharset == null )
+      guessedCharset = Charsets.UTF_8; // Fallback in case of exception
 
     //MsgFrontier.CrawlRequest origin = makePageInfoFromURI(uri).buildPartial();
     fetchInfoBuilder.setUrlKey( PulsarHelper.fromURI(uri) );
@@ -852,7 +840,7 @@ public final class HTMLParser<T> implements Parser<T> {
     if (digestAppendable != null)
       digestAppendable.init(crossAuthorityDuplicates ? null : uri);
 
-    final URI base = doParse( uri, contentStream, charset, fetchInfoBuilder );
+    final URI base = doParse( uri, contentStream, guessedCharset, fetchInfoBuilder );
 
     // Find language in rewritten
     tryGuessLanguageFromTextContent( uri );

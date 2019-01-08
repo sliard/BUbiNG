@@ -469,18 +469,14 @@ public final class XHTMLParser implements Parser<Void>
   {
     private final DigestAppendable digestAppendable;
     private final PureTextAppendable pureTextAppendable;
-    private int skip;
 
     HtmlContentHandler( final DigestAppendable digestAppendable, final PureTextAppendable pureTextAppendable ) {
       this.digestAppendable = digestAppendable;
       this.pureTextAppendable = pureTextAppendable;
-      this.skip = 0;
     }
 
     @Override
-    public void startElement( String uri, String localName, String qName, Attributes atts ) throws SAXException {
-      if ( localName == SCRIPT || localName == STYLE )
-        skip += 1;
+    public void startElement( final String uri, final String localName, final String qName, final Attributes atts ) {
       if ( digestAppendable != null ) {
         digestAppendable.startTag( localName );
         if ( localName == IFRAME || localName == FRAME ) {
@@ -495,36 +491,32 @@ public final class XHTMLParser implements Parser<Void>
     }
 
     @Override
-    public void endElement( String uri, String localName, String qName ) throws SAXException {
-      if ( localName == SCRIPT || localName == STYLE )
-        skip = Math.max( 0, skip-1 );
+    public void endElement( final String uri, final String localName, final String qName ) {
       if ( digestAppendable != null ) {
         digestAppendable.endTag( localName );
       }
     }
 
     @Override
-    public void characters( char[] ch, int start, int length ) throws SAXException {
-      if ( skip == 0 ) {
-        if ( digestAppendable != null )
-          digestAppendable.append( ch, start, length );
-        if ( pureTextAppendable != null )
-          pureTextAppendable.append( ch, start, length );
-      }
+    public void characters( final char[] ch, final int start, final int length ) {
+      if ( digestAppendable != null )
+        digestAppendable.append( ch, start, length );
+      if ( pureTextAppendable != null )
+        pureTextAppendable.append( ch, start, length );
     }
 
     @Override
-    public void ignorableWhitespace( char[] ch, int start, int length ) throws SAXException {
+    public void ignorableWhitespace( final char[] ch, final int start, final int length ) {
       characters( ch, start, length );
     }
 
-    @Override public void setDocumentLocator( Locator locator ) { }
-    @Override public void startDocument() throws SAXException { }
-    @Override public void endDocument() throws SAXException { }
-    @Override public void startPrefixMapping( String prefix, String uri ) throws SAXException { }
-    @Override public void endPrefixMapping( String prefix ) throws SAXException { }
-    @Override public void processingInstruction( String target, String data ) throws SAXException { }
-    @Override public void skippedEntity( String name ) throws SAXException { }
+    @Override public void setDocumentLocator( final Locator locator ) { }
+    @Override public void startDocument() { }
+    @Override public void endDocument() { }
+    @Override public void startPrefixMapping( final String prefix, final String uri ) { }
+    @Override public void endPrefixMapping( final String prefix ) { }
+    @Override public void processingInstruction( final String target, final String data ) { }
+    @Override public void skippedEntity( final String name ) { }
   }
 
   private static final class LinksHelper

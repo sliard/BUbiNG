@@ -70,26 +70,21 @@ public class LinksHandler
       }
     }
 
+    void characters( final String text ) {
+      final char[] chars = text.toCharArray();
+      characters( chars, 0, chars.length );
+    }
+
     String getAnchorText( final int maxAnchorTextLength ) {
-      if ( text.length() > 0 )
-        return getAnchorText( text, maxAnchorTextLength );
-      else
-      if ( imgOpt != null && imgOpt.text != null && imgOpt.text.length() > 0 )
-        return getAnchorText( imgOpt.text, maxAnchorTextLength );
-      else
-        return null;
+      return text.length() > 0
+        ? getAnchorText( text, maxAnchorTextLength )
+        : null;
     }
 
     private static String getAnchorText( final StringBuilder sb, final int maxLength ) {
       return sb.length() > maxLength
         ? sb.substring( 0, maxLength )
         : sb.toString();
-    }
-
-    private static String getAnchorText( final String text, final int maxLength ) {
-      return text.length() > maxLength
-        ? text.substring( 0, maxLength )
-        : text;
     }
   }
 
@@ -180,23 +175,6 @@ public class LinksHandler
     addLink( anchor.imgOpt == null ? A : IMG, anchor.uri, anchor.title, anchorText, anchor.rel );
   }
 
-  /*
-  // FIXME: does not work anymore because DUMMY AnchorBuilder have no StringBuilder
-  private void endTagA() {
-    if ( anchors.empty() ) return; // FIXME: should NOT happen
-    final AnchorBuilder anchor = anchors.pop();
-    String anchorText = null;
-    if ( anchor.uri != null ) {
-      anchorText = anchor.text.length() > maxAnchorTextLength
-        ? anchor.text.substring( 0, maxAnchorTextLength )
-        : anchor.text.toString();
-      addLink( A, anchor.uri, anchor.title, anchorText, anchor.rel );
-    }
-    if ( !anchors.empty() && anchorText != null )
-      anchors.peek().text.append( anchorText );
-  }
-  */
-
   private void startTagLink( final Attributes attributes ) {
     final String uri = attributes.getValue( Atts.HREF );
     if ( uri == null ) return;
@@ -248,8 +226,12 @@ public class LinksHandler
     final String uri = attributes.getValue( Atts.SRC );
     if ( uri == null ) return;
     final String title = attributes.getValue( Atts.TITLE );
-    final String text = attributes.getValue( Atts.ALT );
-    anchor.imgOpt = new Link( IMG, uri, title, text, null );
+    final String alt = attributes.getValue( Atts.ALT );
+    if ( anchor.text.length() < maxAnchorTextLength ) {
+      if ( alt != null ) anchor.characters( alt );
+      else if ( title != null ) anchor.characters( title );
+    }
+    anchor.imgOpt = new Link( IMG, uri, title, alt, null );
   }
 
   private void startTagBase( final Attributes attributes ) {
