@@ -230,7 +230,7 @@ public final class XHTMLParser implements Parser<Void>
       this.htmlVersionAtLeast5 = false;
     }
 
-    private void extractFromHttpHeader( final HttpResponse httpResponse ) {
+    void extractFromHttpHeader( final HttpResponse httpResponse ) {
       final boolean dummy =
         tryExtractCharsetFromHeader( httpResponse ) |
         tryExtractLanguageFromHeader( httpResponse ) |
@@ -240,7 +240,7 @@ public final class XHTMLParser implements Parser<Void>
         tryExtractLinksFromHeader( httpResponse );
     }
 
-    private void extractFromMetas( final HttpResponse httpResponse ) throws IOException {
+    void extractFromMetas( final HttpResponse httpResponse ) throws IOException {
       final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
       final List<ByteArrayCharSequence> allMetaEntries = HTMLParser.getAllMetaEntries( contentStream.buffer, contentStream.inspectable );
       for ( final ByteArrayCharSequence meta : allMetaEntries ) {
@@ -252,16 +252,26 @@ public final class XHTMLParser implements Parser<Void>
       }
     }
 
-    private void extractFromHtml( final HttpResponse httpResponse, final char[] buffer ) throws IOException {
+    void extractFromHtml( final HttpResponse httpResponse, final char[] buffer ) throws IOException {
       final boolean dummy =
         tryExtractHtmlVersion( httpResponse ) |
         tryExtractLanguageFromHtml( httpResponse ) |
         tryGuessCharsetFromHtml( httpResponse, buffer );
     }
 
-    private void extractFromContent( final HtmlContentHandler htmlContentHandler ) {
+    void extractFromContent( final HtmlContentHandler htmlContentHandler ) {
       final boolean dummy =
         tryGuessLanguageFromContent( htmlContentHandler );
+    }
+
+    List<Link> getLocationLinks() {
+      return java.util.stream.Stream.of(
+          locationDetectionInfo.httpHeaderLocation,
+          locationDetectionInfo.htmlRefreshLocation,
+          locationDetectionInfo.httpHeaderContentLocation )
+        .filter( Objects::nonNull )
+        .map( (uri) -> new Link( LINK, uri.toString(), null, null, null ) )
+        .collect( java.util.stream.Collectors.toList() );
     }
 
     // internal --------------------------------------------------------------------------------------------------------------------
@@ -533,6 +543,7 @@ public final class XHTMLParser implements Parser<Void>
       final URI contentBase = linksHandler.getBaseOpt() == null ? uri : uri.resolve( linksHandler.getBaseOpt() );
 
       processLinks( uri, headerBase, pageInfo.headerLinks, fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
+      processLinks( uri, headerBase, pageInfo.getLocationLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
       processLinks( uri, contentBase, linksHandler.getLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
     }
 
