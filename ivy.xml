@@ -56,7 +56,7 @@
 		<dependency org="org.cyclopsgroup" name="jmxterm" rev="1.0-alpha-4"/>
 
 		<dependency org="com.martiansoftware" name="jsap" rev="latest.release"/>
-                <dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
+		<dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
 
 		<dependency org="org.softee" name="pojo-mbean" rev="latest.release"/>
 		<!-- <dependency org="org.jgroups" name="jgroups" rev="latest.release"/> -->
