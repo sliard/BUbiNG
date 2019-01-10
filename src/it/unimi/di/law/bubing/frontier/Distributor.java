@@ -252,7 +252,7 @@ public final class Distributor extends Thread {
 	 * @return whether the front is small.
 	 */
 	private boolean frontIsSmall() {
-		return frontier.todo.size() + frontier.workbench.approximatedSize() - frontier.workbench.broken.get() <= frontier.requiredFrontSize.get();
+		return frontier.getCurrentFrontSize() <= frontier.requiredFrontSize.get();
 	}
 
 	private void doLowCostStats() throws IOException {

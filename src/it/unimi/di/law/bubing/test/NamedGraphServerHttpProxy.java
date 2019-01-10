@@ -271,7 +271,11 @@ public class NamedGraphServerHttpProxy extends Thread {
 							else generate(hashCode, content, successors, notescurl);
 							out.println("HTTP/1.1 200 OK");
 							out.println("Connection: close");
-							out.println("Content-Type: text/html; charset=iso-8859-1");
+							ThreadLocalRandom trng = ThreadLocalRandom.current();
+							if ( trng.nextDouble() > 0.8 )
+								out.println("Content-Type: text/html; charset=iso-8859-1");
+							else
+								out.println("Content-Type: text/html");
 							out.println("Content-Length: " + content.length());
 							out.println();
 							//System.err.println("200: pred:"  + (600 * (successors == null ? 1 : successors.length + 1))  + " real: " + content.length());
