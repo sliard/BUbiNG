@@ -332,9 +332,7 @@ public class ParsingThread extends Thread {
 
     final long streamLength = fetchData.response().getEntity().getContentLength();
 
-    final ParseData parseData = streamLength != 0
-      ? parse( fetchData, fetchedPageInfoBuilder )
-      : new ParseData(); // We don't parse zero-length streams
+    final ParseData parseData = parse( fetchData, fetchedPageInfoBuilder );
 
     if ( parseData == null )
       return; // failure while parsing
