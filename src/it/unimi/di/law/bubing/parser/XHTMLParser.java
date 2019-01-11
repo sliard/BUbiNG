@@ -25,7 +25,6 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.Attributes;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.Locator;
-import org.xml.sax.SAXException;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -264,13 +263,12 @@ public final class XHTMLParser implements Parser<Void>
         tryGuessLanguageFromContent( htmlContentHandler );
     }
 
-    List<Link> getLocationLinks() {
+    List<Link> getRedirectLinks() {
       return java.util.stream.Stream.of(
           locationDetectionInfo.httpHeaderLocation,
-          locationDetectionInfo.htmlRefreshLocation,
-          locationDetectionInfo.httpHeaderContentLocation )
+          locationDetectionInfo.htmlRefreshLocation )
         .filter( Objects::nonNull )
-        .map( (uri) -> new Link( LINK, uri.toString(), null, null, null ) )
+        .map( (uri) -> new Link( LinksHelper.REDIRECT, uri.toString(), null, null, null ) )
         .collect( java.util.stream.Collectors.toList() );
     }
 
@@ -531,6 +529,8 @@ public final class XHTMLParser implements Parser<Void>
 
   private static final class LinksHelper
   {
+    static final String REDIRECT = "redirect";
+
     static Link fromHttpHeader( final String header ) {
       return HttpLinksHeaderParser.tryParse( header );
     }
@@ -543,7 +543,7 @@ public final class XHTMLParser implements Parser<Void>
       final URI contentBase = linksHandler.getBaseOpt() == null ? uri : uri.resolve( linksHandler.getBaseOpt() );
 
       processLinks( uri, headerBase, pageInfo.headerLinks, fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-      processLinks( uri, headerBase, pageInfo.getLocationLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
+      processLinks( uri, headerBase, pageInfo.getRedirectLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
       processLinks( uri, contentBase, linksHandler.getLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
     }
 
@@ -592,6 +592,10 @@ public final class XHTMLParser implements Parser<Void>
         if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Links) )
           return false;
         linkInfoBuilder.setLinkType( EnumType.Enum.LINK );
+      }
+      else
+      if ( type == REDIRECT ) {
+        linkInfoBuilder.setLinkType( EnumType.Enum.REDIRECT );
       }
       else
         return false;

@@ -614,7 +614,7 @@ public final class HTMLParser<T> implements Parser<T> {
       fetchInfoBuilder.addExternalLinks(
         makeLinkInfoFromBasicURI( base.resolve(refresh) )
           .setLinkInfo( MsgLink.LinkInfo.newBuilder()
-            //.setLinkRel( EnumRel.Enum.REFRESH ) // TODO: probably a link type (kind of redirect), not a rel
+            .setLinkType( EnumType.Enum.REDIRECT )
           )
       );
     }
@@ -630,7 +630,7 @@ public final class HTMLParser<T> implements Parser<T> {
       fetchInfoBuilder.addExternalLinks(
         makeLinkInfoFromBasicURI( HTMLParser.this.metaLocation )
           .setLinkInfo( MsgLink.LinkInfo.newBuilder()
-            //.setLinkRel( EnumRel.Enum.LOCATION ) // TODO: probably a link type (redirect), not a rel
+            .setLinkType( EnumType.Enum.REDIRECT )
           )
       );
     }
@@ -831,8 +831,7 @@ public final class HTMLParser<T> implements Parser<T> {
         this.location = uri.resolve(location);
         final MsgCrawler.FetchLinkInfo.Builder linkInfo = makeLinkInfoFromBasicURI(this.location);
         linkInfo.getLinkInfoBuilder()
-          .setLinkType(EnumType.Enum.LINK);
-          //.setLinkRel(EnumRel.Enum.LOCATION); // TODO: probably a link type (redirect), not a rel
+          .setLinkType( EnumType.Enum.REDIRECT );
         fetchInfoBuilder.addExternalLinks( linkInfo );
       }
     }

@@ -31,7 +31,7 @@ public class PulsarHelper
   }
 
   public static MsgURL.Key fromURI( final URI uri ) {
-    return Serializer.URL.Key.from(uri).build();
+    return Serializer.URL.Key.from( uri );
   }
 
   public static URI toURI( final MsgURL.URL url ) {
