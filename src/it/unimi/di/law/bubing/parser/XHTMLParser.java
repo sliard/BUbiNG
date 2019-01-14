@@ -30,8 +30,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
-import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -443,7 +443,7 @@ public final class XHTMLParser implements Parser<Void>
         guessedCharset = Charset.forName( charsetName );
         return true;
       }
-      catch ( UnsupportedCharsetException e ) {
+      catch ( IllegalCharsetNameException e ) {
         if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Charset {} found {} is not supported", charsetName, from );
         return false;
       }
@@ -540,7 +540,8 @@ public final class XHTMLParser implements Parser<Void>
       final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
 
       final URI headerBase = uri; // FIXME: should we use Content-Location
-      final URI contentBase = linksHandler.getBaseOpt() == null ? uri : uri.resolve( linksHandler.getBaseOpt() );
+      final URI baseOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
+      final URI contentBase = baseOpt == null ? uri : uri.resolve( baseOpt );
 
       processLinks( uri, headerBase, pageInfo.headerLinks, fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
       processLinks( uri, headerBase, pageInfo.getRedirectLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
