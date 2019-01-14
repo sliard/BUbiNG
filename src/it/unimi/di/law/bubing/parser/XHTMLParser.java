@@ -540,7 +540,8 @@ public final class XHTMLParser implements Parser<Void>
       final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
 
       final URI headerBase = uri; // FIXME: should we use Content-Location
-      final URI contentBase = linksHandler.getBaseOpt() == null ? uri : uri.resolve( linksHandler.getBaseOpt() );
+      final URI baseOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
+      final URI contentBase = baseOpt == null ? uri : uri.resolve( baseOpt );
 
       processLinks( uri, headerBase, pageInfo.headerLinks, fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
       processLinks( uri, headerBase, pageInfo.getRedirectLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
