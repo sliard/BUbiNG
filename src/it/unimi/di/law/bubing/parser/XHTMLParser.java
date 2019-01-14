@@ -600,7 +600,9 @@ public final class XHTMLParser implements Parser<Void>
       }
       else
         return false;
-
+      // Completely ignores NOFOLLOW links (TODO: ideally, should be done in Frontier Manager)
+      if ((linkInfoBuilder.getLinkRel() & EnumRel.Enum.NOFOLLOW_VALUE) != 0)
+        return false;
       if ( link.text != null )
         linkInfoBuilder.setText( link.text );
       else
