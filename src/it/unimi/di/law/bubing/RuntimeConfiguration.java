@@ -248,6 +248,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#pulsarFrontierTopicNumber */
 	public volatile int pulsarFrontierTopicNumber;
 
+	/** @see StartupConfiguration#pulsarFrontierNodeNumber */
+	public volatile int pulsarFrontierNodeNumber;
+
+	/** @see StartupConfiguration#pulsarFrontierNodeId */
+	public volatile int pulsarFrontierNodeId;
+
 	/** @see StartupConfiguration#pulsarFrontierDiscoveredURLsTopic */
 	public volatile String pulsarFrontierDiscoveredURLsTopic;
 
@@ -492,6 +498,8 @@ public class RuntimeConfiguration {
 			pulsarWARCTopic = startupConfiguration.pulsarWARCTopic;
 			pulsarPlainTextTopic = startupConfiguration.pulsarPlainTextTopic;
 			pulsarFrontierTopicNumber = startupConfiguration.pulsarFrontierTopicNumber;
+			pulsarFrontierNodeNumber = startupConfiguration.pulsarFrontierNodeNumber;
+			pulsarFrontierNodeId = startupConfiguration.pulsarFrontierNodeId;
 			pulsarFrontierDiscoveredURLsTopic = startupConfiguration.pulsarFrontierDiscoveredURLsTopic;
 			pulsarFrontierToCrawlURLsTopic = startupConfiguration.pulsarFrontierToCrawlURLsTopic;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;

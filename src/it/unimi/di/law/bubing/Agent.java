@@ -778,6 +778,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 					new FlaggedOption("rootDir", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.NOT_REQUIRED, 'r', "root-dir", "The root directory."),
 					new Switch("new", 'n', "new", "Start a new crawl"),
 					new FlaggedOption("properties", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.REQUIRED, 'P', "properties", "The properties used to configure the agent."),
+					new FlaggedOption("id", JSAP.INTEGER_PARSER, "0", JSAP.REQUIRED, 'i', "id", "The agent id."),
 					new UnflaggedOption("name", JSAP.STRING_PARSER, JSAP.REQUIRED, "The agent name (an identifier that must be unique across the group).")
 			});
 
@@ -790,6 +791,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 		final String name = jsapResult.getString("name");
 		final int weight = jsapResult.getInt("weight");
+		final int id = jsapResult.getInt("id");
 		final String group = jsapResult.getString("group");
 		final String host = jsapResult.getString("jmxHost");
 		final int port = Integer.parseInt(portProperty);
@@ -797,6 +799,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		final BaseConfiguration additional = new BaseConfiguration();
 		additional.addProperty("name", name);
 		additional.addProperty("group", group);
+		additional.addProperty("pulsarFrontierNodeId", Integer.toString(id));
 		additional.addProperty("weight", Integer.toString(weight));
 		additional.addProperty("crawlIsNew", Boolean.valueOf(jsapResult.getBoolean("new")));
 		if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));
