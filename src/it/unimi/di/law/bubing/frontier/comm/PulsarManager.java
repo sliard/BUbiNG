@@ -281,7 +281,7 @@ public final class PulsarManager implements AutoCloseable
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
         .subscriptionInitialPosition( SubscriptionInitialPosition.Latest )
         .subscriptionName( "toCrawlSubscription" )
-        .consumerName( java.util.UUID.randomUUID().toString() + rc.name )
+        .consumerName( String.format("%06d-%s", ((rc.pulsarFrontierTopicNumber/rc.pulsarFrontierNodeNumber)*rc.pulsarFrontierNodeId+topic)%rc.pulsarFrontierTopicNumber, rc.name ))
         .topic(String.format( "%s-%d", rc.pulsarFrontierToCrawlURLsTopic, topic ))
         .subscribeAsync();
     }

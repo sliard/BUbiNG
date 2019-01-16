@@ -368,6 +368,14 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="512")
 	public int pulsarFrontierTopicNumber;
 
+	/** For PulsarFrontier : pulsar frontier node number */
+	@OptionalSpecification(value="16")
+	public int pulsarFrontierNodeNumber;
+
+	/** For PulsarFrontier : pulsar frontier node id */
+	@OptionalSpecification(value="0")
+	public int pulsarFrontierNodeId;
+
 	/** For Pulsar Frontier : discoveredURLs topic. */
 	@OptionalSpecification(value="persistent://sample/standalone/crawling/discoveredURLs")
 	public String pulsarFrontierDiscoveredURLsTopic;

@@ -45,6 +45,8 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 	private final Frontier frontier;
 	private final int topic;
 
+	private long messageCount;
+
 	/** Creates the thread.
 	 *
 	 * @param frontier the frontier instantiating this thread.
@@ -52,6 +54,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 	public CrawlRequestsReceiver( final Frontier frontier, final int topic ) {
 		this.frontier = frontier;
 		this.topic = topic;
+		this.messageCount = 0;
 	}
 
 	@Override
@@ -61,6 +64,9 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 			if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
 			frontier.quickReceivedCrawlRequests.put( crawlRequest ); // Will block until not full
 			frontier.numberOfReceivedURLs.addAndGet( 1 );
+			messageCount++;
+			if (messageCount == 1000)
+				LOGGER.warn("PULSAR Consumer for topic {} is active", topic);
 			consumer.acknowledge( message );
 		}
 		catch ( InvalidProtocolBufferException e ) {
