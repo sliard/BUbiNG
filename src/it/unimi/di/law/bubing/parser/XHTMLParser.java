@@ -16,6 +16,7 @@ import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import it.unimi.dsi.util.TextPattern;
 import net.htmlparser.jericho.StreamedSource;
 import org.apache.http.*;
 import org.apache.http.message.BasicHeaderValueParser;
@@ -32,6 +33,7 @@ import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -196,6 +198,13 @@ public final class XHTMLParser implements Parser<Void>
     private static final Pattern REFRESH_PATTERN = Pattern.compile( "['\"]?refresh['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
     private static final Pattern ROBOTS_PATTERN = Pattern.compile( "['\"]?robots['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
     private static final Pattern REFRESH_CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]?(?:\\d+;\\s*)URL\\s*=\\s*['\"]?([^'\"]+)", Pattern.CASE_INSENSITIVE );
+    private static final Pattern CHARSET_PATTERN = Pattern.compile( ".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
+    private static final Pattern VIEWPORT_PATTERN = Pattern.compile( ".*name\\s*=\\s*('|\")?viewport('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
+    private static final Pattern LANG_PATTERN = Pattern.compile( ".*lang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
+
+    private static final TextPattern DOCTYPE_PATTERN = new TextPattern( "<!doctype", TextPattern.CASE_INSENSITIVE );
+    private static final TextPattern HTML_PATTERN = new TextPattern( "<html", TextPattern.CASE_INSENSITIVE );
+    private static final TextPattern META_PATTERN = new TextPattern( "<meta", TextPattern.CASE_INSENSITIVE );
 
     private final URI baseUri;
     private final HtmlCharsetDetector charsetDetector;
@@ -241,8 +250,8 @@ public final class XHTMLParser implements Parser<Void>
 
     void extractFromMetas( final HttpResponse httpResponse ) throws IOException {
       final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final List<ByteArrayCharSequence> allMetaEntries = HTMLParser.getAllMetaEntries( contentStream.buffer, contentStream.inspectable );
-      for ( final ByteArrayCharSequence meta : allMetaEntries ) {
+      final List<CharSequence> allMetaEntries = getAllMetaEntries( contentStream.buffer, contentStream.inspectable );
+      for ( final CharSequence meta : allMetaEntries ) {
         final boolean dummy =
           tryExtractHttpEquivFromMeta( meta ) ||
           tryExtractCharsetFromMeta( meta ) ||
@@ -278,7 +287,7 @@ public final class XHTMLParser implements Parser<Void>
       // TODO: check if it will make sense to use httpResponse.getLocale()
       final Header contentTypeHeader = httpResponse.getEntity().getContentType();
       if ( contentTypeHeader == null ) return false;
-      final String charsetName = HTMLParser.getCharsetNameFromHeader( contentTypeHeader.getValue() );
+      final String charsetName = getCharsetNameFromHeader( contentTypeHeader.getValue() );
       if ( charsetName == null ) return false;
       charsetDetectionInfo.httpHeaderCharset = charsetName;
       return true; // FIXME: as original code, do not set guessedCharset from HTTP HEADER
@@ -331,7 +340,7 @@ public final class XHTMLParser implements Parser<Void>
       return true;
     }
 
-    private boolean tryExtractHttpEquivFromMeta( final ByteArrayCharSequence meta ) {
+    private boolean tryExtractHttpEquivFromMeta( final CharSequence meta ) {
       final Matcher mHttpEquiv = HTTP_EQUIV_PATTERN.matcher( meta );
       if ( !mHttpEquiv.matches() ) return false;
       final String httpEquiv = mHttpEquiv.group(1);
@@ -341,22 +350,22 @@ public final class XHTMLParser implements Parser<Void>
         tryExtractRefreshFromHttpEquiv( httpEquiv );
     }
 
-    private boolean tryExtractCharsetFromMeta( final ByteArrayCharSequence meta ) {
-      final String charsetName = HTMLParser.getCharsetNameFromHeader( meta );
+    private boolean tryExtractCharsetFromMeta( final CharSequence meta ) {
+      final String charsetName = getCharsetNameFromHeader( meta );
       if ( charsetName == null ) return false;
       charsetDetectionInfo.htmlMetaCharset = charsetName;
       return trySetGuessedCharsetFrom( charsetName, "in META CHARSET" );
     }
 
-    private boolean tryExtractViewportFromMeta( final ByteArrayCharSequence meta ) {
-      if ( !HTMLParser.VIEWPORT_PATTERN.matcher(meta).matches() )
+    private boolean tryExtractViewportFromMeta( final CharSequence meta ) {
+      if ( !VIEWPORT_PATTERN.matcher(meta).matches() )
         return false;
       if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found viewport in META of {}", baseUri.toString() );
       hasViewportMeta = true;
       return true;
     }
 
-    private boolean tryExtractRobotsFromMeta( final ByteArrayCharSequence meta ) {
+    private boolean tryExtractRobotsFromMeta( final CharSequence meta ) {
       final Matcher mRobots = ROBOTS_PATTERN.matcher( meta );
       if ( !mRobots.matches() ) return false;
       final Matcher mContent = CONTENT_PATTERN.matcher( mRobots.group(1) );
@@ -372,7 +381,7 @@ public final class XHTMLParser implements Parser<Void>
       if ( !mContentType.matches() ) return false;
       final Matcher mContent = CONTENT_PATTERN.matcher( mContentType.group(1) );
       if ( !mContent.matches() ) return false;
-      final String charsetName = HTMLParser.getCharsetNameFromHeader( mContent.group(1) );
+      final String charsetName = getCharsetNameFromHeader( mContent.group(1) );
       if ( charsetName == null ) return false;
       charsetDetectionInfo.htmlMetaCharset = charsetName;
       return trySetGuessedCharsetFrom( charsetName, "in META HTTP-EQUIV" );
@@ -400,7 +409,7 @@ public final class XHTMLParser implements Parser<Void>
 
     private boolean tryExtractHtmlVersion( final HttpResponse httpResponse ) throws IOException {
       final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final String docType = HTMLParser.getDocType( contentStream.buffer, contentStream.inspectable );
+      final String docType = getDocType( contentStream.buffer, contentStream.inspectable );
       if ( docType == null ) return false;
       htmlVersionAtLeast5 = docType.equalsIgnoreCase( "html" );
       return htmlVersionAtLeast5;
@@ -408,7 +417,7 @@ public final class XHTMLParser implements Parser<Void>
 
     private boolean tryExtractLanguageFromHtml( final HttpResponse httpResponse ) throws IOException {
       final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final String languageName = HTMLParser.getLanguageName( contentStream.buffer, contentStream.inspectable );
+      final String languageName = getLanguageName( contentStream.buffer, contentStream.inspectable );
       if ( languageName == null ) return false;
       return trySetGuessedLanguageFrom( languageName, "in HTML TAG" );
     }
@@ -443,7 +452,7 @@ public final class XHTMLParser implements Parser<Void>
         guessedCharset = Charset.forName( charsetName );
         return true;
       }
-      catch ( IllegalCharsetNameException e ) {
+      catch ( IllegalCharsetNameException|UnsupportedCharsetException e ) {
         if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Charset {} found {} is not supported", charsetName, from );
         return false;
       }
@@ -470,6 +479,77 @@ public final class XHTMLParser implements Parser<Void>
       }
       guessedLocation = baseUri.resolve( validUri );
       return guessedLocation;
+    }
+
+    // tools -----------------------------------------------------------------------------------------------------------------------
+
+    private static String getDocType( final byte buffer[], final int length ) {
+      int start = DOCTYPE_PATTERN.search( buffer, 0, length );
+      if ( start == -1 ) return null;
+      int end = start;
+      while ( end < length && buffer[end] != '>' ) end += 1; // Look for closing '>'
+      final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(
+        buffer,
+        start + DOCTYPE_PATTERN.length(),
+        end-start - DOCTYPE_PATTERN.length()
+      );
+      return tagContent.toString().trim();
+    }
+
+    private static String getLanguageName( final byte buffer[], final int length ) {
+      int start = HTML_PATTERN.search( buffer, 0, length );
+      if ( start == -1 ) return null;
+      int end = start;
+      while ( end < length && buffer[end] != '>' ) end += 1; // Look for closing '>'
+      final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(
+        buffer,
+        start + HTML_PATTERN.length(),
+        end-start - HTML_PATTERN.length()
+      );
+      return getLanguageNameFromHTML( tagContent );
+    }
+
+    private static List<CharSequence> getAllMetaEntries( final byte buffer[], final int length ) {
+      final ArrayList<CharSequence> metas = new ArrayList<>();
+      int start = 0;
+      while ( (start=META_PATTERN.search(buffer,start,length)) != -1 ) {
+        int end = start;
+        while ( end < length && buffer[end] != '>' ) end += 1; // Look for closing '>'
+        if ( end == length ) return metas; // No closing '>'
+        metas.add( new ByteArrayCharSequence(
+          buffer,
+          start + META_PATTERN.length(),
+          end-start - META_PATTERN.length()
+        ) );
+        start = end + 1;
+      }
+      return metas;
+    }
+
+    private static String getCharsetNameFromHeader( final CharSequence headerValue ) {
+      final Matcher m = CHARSET_PATTERN.matcher( headerValue );
+      if ( m.matches() ) {
+        final String s = m.group(1);
+        int start = 0, end = s.length();
+        // TODO: we discard delimiting single/double quotes; is it necessary?
+        if ( end > 0 && (s.charAt(0) == '\"' || s.charAt(0) == '\'') ) start = 1;
+        if ( end > 0 && (s.charAt(end-1) == '\"' || s.charAt(end-1) == '\'') ) end -= 1;
+        if ( start < end ) return s.substring( start, end );
+      }
+      return null;
+    }
+
+    private static String getLanguageNameFromHTML( final CharSequence headerValue ) {
+      final Matcher m = LANG_PATTERN.matcher(headerValue);
+      if ( m.matches() ) {
+        final String s = m.group(1);
+        int start = 0, end = s.length();
+        // TODO: we discard delimiting single/double quotes; is it necessary?
+        if ( end > 0 && (s.charAt(0) == '\"' || s.charAt(0) == '\'') ) start = 1;
+        if ( end > 0 && (s.charAt(end-1) == '\"' || s.charAt(end-1) == '\'')) end -= 1;
+        if ( start < end ) return s.substring( start, end );
+      }
+      return null;
     }
   }
 
