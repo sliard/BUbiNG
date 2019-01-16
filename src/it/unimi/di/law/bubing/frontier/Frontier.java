@@ -25,7 +25,6 @@ import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import it.unimi.dsi.fastutil.io.BinIO;
 import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -33,7 +32,6 @@ import it.unimi.dsi.jai4j.Job;
 import it.unimi.dsi.jai4j.JobManager;
 import it.unimi.dsi.stat.SummaryStats;
 import it.unimi.dsi.sux4j.mph.AbstractHashFunction;
-import it.unimi.dsi.util.BloomFilter;
 import it.unimi.dsi.util.Properties;
 
 import java.io.*;
@@ -43,7 +41,6 @@ import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 
@@ -255,9 +252,6 @@ public class Frontier {
 	 * {@linkplain #distributor} and emptied by the {@linkplain #dnsThreads DNS threads}. */
 	public final LinkedBlockingQueue<VisitState> newVisitStates;
 
-	/** A Bloom filter storing page digests for duplicate detection. */
-	public BloomFilter<Void> digests;
-
 	private final FetchInfoSendThread fetchInfoSendThread;
 
 	/** The threads resolving DNS for new {@linkplain VisitState visit states}. */
@@ -355,9 +349,6 @@ public class Frontier {
 
 	/** The overall number of transferred bytes. */
 	public final AtomicLong transferredBytes;
-
-	/** A synchronized, highly concurrent map from scheme+authorities to number of stored URLs. */
-	public IntCountMinSketchUnsafe schemeAuthority2Count;
 
 	/** The logarithmically binned statistics of download speed in bits/s. */
 	public final AtomicLongArray speedDist;
@@ -457,8 +448,8 @@ public class Frontier {
 				.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
 				.build();
 
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>(64 * 1024);
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 1024);
 
 		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
@@ -479,10 +470,6 @@ public class Frontier {
 
 	public void init() throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException, InterruptedException {
 		if (rc.crawlIsNew) {
-			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
-
-			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
-
 			distributor.statsThread.start(0);
 		}
 		else {
@@ -868,13 +855,6 @@ public class Frontier {
 
 		scalarData.save(new File(snapDir, "frontier.data"));
 
-		// TODO makes this optional
-		LOGGER.info("Storing digests");
-		BinIO.storeObject(digests, new File(snapDir, "digests"));
-
-		LOGGER.info("Storing counts");
-		BinIO.storeObject(schemeAuthority2Count, new File(snapDir, "schemeAuthority2Count"));
-
 		LOGGER.info("Storing visit states");
 		final ObjectOutputStream workbenchStream = new ObjectOutputStream(new FastBufferedOutputStream(new FileOutputStream(new File(snapDir, "workbench"))));
 
@@ -938,10 +918,6 @@ public class Frontier {
 		distributor.schemeAuthority2VisitState.ensureCapacity(scalarData.getInt(PropertyKeys.VISITSTATESETSIZE));
 		workbench.address2WorkbenchEntry.ensureCapacity(scalarData.getInt(PropertyKeys.WORKBENCHENTRYSETSIZE));
 
-		// TODO makes this optional
-		LOGGER.info("Restoring digests");
-		digests = (BloomFilter<Void>)BinIO.loadObject(new File(snapDir, "digests"));
-
 		/* LOGGER.info("Restoring virtualizer states and defreezing virtual queues");
 		 * virtualizer.currentQueue = scalarData.getInt(PropertyKeys.CURRENTQUEUE); String[]
 		 * virtualQueueSizes = scalarData.getStringArray(PropertyKeys.VIRTUALQUEUESIZES); final
@@ -952,13 +928,6 @@ public class Frontier {
 		 *); virtualizer.virtualQueue[i] = virtualQueueSize == -1? null :
 		 * WorkbenchVirtualizer.createOrOpenQueue(this, virtualizer.virtualQueuesBirthTime, i,
 		 * numVirtualQueues, false, virtualQueueSize); } */
-
-		LOGGER.info("Restoring counts");
-		if (!rc.reinitCounts)
-			schemeAuthority2Count = (IntCountMinSketchUnsafe) BinIO.loadObject(new File(snapDir, "schemeAuthority2Count"));
-		else
-			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
-
 
 		LOGGER.info("Restoring workbench");
 		final ObjectInputStream workbenchStream = new ObjectInputStream(new FastBufferedInputStream(new FileInputStream(new File(snapDir, "workbench"))));

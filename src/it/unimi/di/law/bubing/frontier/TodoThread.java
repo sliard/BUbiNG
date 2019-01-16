@@ -56,7 +56,6 @@ public final class TodoThread extends Thread {
 		try {
 			while(! Thread.currentThread().isInterrupted()) {
 				VisitState visitState = frontier.workbench.acquire();
-				assert frontier.schemeAuthority2Count.get(visitState.schemeAuthority) <= frontier.rc.maxUrlsPerSchemeAuthority : frontier.schemeAuthority2Count.get(visitState.schemeAuthority) + " > " + frontier.rc.maxUrlsPerSchemeAuthority;
 				frontier.todo.add(visitState);
 			}
 		}
