@@ -19,6 +19,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.http.conn.DnsResolver;
@@ -299,6 +300,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#spamDetectionPeriodicity */
 	public final int spamDetectionPeriodicity;
 
+	/** @see StartupConfiguration#classifierClass */
+	public final Class<? extends TextClassifier> classifierClass;
+
+	/** @see StartupConfiguration#textClassifierThreshold */
+	public final float textClassifierThreshold;
+
 	/** The parser, instantiated. Parsers used by {@link ParsingThread} instances are obtained by {@linkplain FlyweightPrototype#copy() copying this parsers}. */
 	public final ArrayList<Parser<?>> parsers;
 
@@ -511,6 +518,7 @@ public class RuntimeConfiguration {
 			dnsCacheMaxSize = startupConfiguration.dnsCacheMaxSize;
 			dnsPositiveTtl = startupConfiguration.dnsPositiveTtl;
 			dnsNegativeTtl = startupConfiguration.dnsNegativeTtl;
+			classifierClass = startupConfiguration.classifierClass;
 
 			try {
 				dnsResolver = startupConfiguration.dnsResolverClass.getConstructor().newInstance();
@@ -528,6 +536,8 @@ public class RuntimeConfiguration {
 
 			spamDetectionThreshold = startupConfiguration.spamDetectionThreshold;
 			spamDetectionPeriodicity = startupConfiguration.spamDetectionPeriodicity;
+
+			textClassifierThreshold = startupConfiguration.textClassifierThreshold;
 
 			final List<Iterator<URI>> seedSequence = getSeedSequence(startupConfiguration.seed);
 

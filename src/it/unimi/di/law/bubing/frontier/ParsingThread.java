@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import com.exensa.wdl.common.LanguageCodes;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
@@ -211,6 +212,9 @@ public class ParsingThread extends Thread {
   private final FrontierEnqueuer frontierLinkReceiver;
   /** A counter for java.nio.BufferOverflowException from Jericho */
   private static int overflowCounter = 0;
+  /** A reference to the classifier. */
+  private final TextClassifier classifier;
+
   /** Creates a thread.
    *
    * @param frontier the frontier instantiating the thread.
@@ -220,6 +224,7 @@ public class ParsingThread extends Thread {
     setName(this.getClass().getSimpleName() + '-' + index);
     this.frontier = frontier;
     this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
+    this.classifier = frontier.rc.classifierClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
     this.rng = new Random(index);
     this.frontierLinkReceiver = new FrontierEnqueuer(frontier, frontier.rc);
     this.parsers = new ArrayList<>(frontier.rc.parsers.size());
@@ -349,6 +354,10 @@ public class ParsingThread extends Thread {
     final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", fetchData.uri(), isNotDuplicate);
     fetchData.isDuplicate(!isNotDuplicate);
+
+    MsgCrawler.Categorization categorization = classifier.predict(parseData.textContent.toString(), parseData.guessedLanguage, rc.textClassifierThreshold);
+    if (categorization != null)
+      fetchedPageInfoBuilder.setCategorisation(categorization);
 
     if (isNotDuplicate && rc.followFilter.apply(fetchData)) {
       frontierLinkReceiver.process(fetchedPageInfoBuilder);
