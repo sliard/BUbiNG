@@ -277,8 +277,8 @@ public final class PulsarManager implements AutoCloseable
     private CompletableFuture<Consumer<byte[]>> requestConsumer( final PulsarClient client, final Frontier frontier, final int topic ) {
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
-        .receiverQueueSize(512)
-        .maxTotalReceiverQueueSizeAcrossPartitions(4096)
+        //.receiverQueueSize(512)
+        //.maxTotalReceiverQueueSizeAcrossPartitions(4096)
         .acknowledgmentGroupTime( 500, TimeUnit.MILLISECONDS )
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
         .subscriptionInitialPosition( SubscriptionInitialPosition.Latest )

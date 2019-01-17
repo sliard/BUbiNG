@@ -448,8 +448,8 @@ public class Frontier {
 				.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
 				.build();
 
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 1024);
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 8 * 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 32 * 1024);
 
 		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
