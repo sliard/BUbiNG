@@ -228,28 +228,6 @@ public class ParsingThread extends Thread {
     setPriority((Thread.NORM_PRIORITY + Thread.MIN_PRIORITY) / 2); // Below main threads
   }
 
-  private void incrementCountAndPurge(boolean success, VisitState visitState, RuntimeConfiguration rc) {
-    int count = 0;
-    if (success) {
-      count = frontier.schemeAuthority2Count.increment(visitState.schemeAuthority);
-    } else {
-      double w = (double)rc.maxUrlsPerSchemeAuthority / (double)rc.maxRequestsPerSchemeAuthority;
-      int toAdd = 0;
-      int floorW = (int)w;
-      if (floorW > 0)
-        toAdd = floorW;
-      double p = w - floorW;
-      if (rng.nextDouble() < p)
-        toAdd ++;
-      if (toAdd > 0)
-        count = frontier.schemeAuthority2Count.increment(visitState.schemeAuthority);
-    }
-    if (count >= rc.maxUrlsPerSchemeAuthority - 1) {
-      LOGGER.info("Reached maximum number of URLs for scheme+authority " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
-      visitState.schedulePurge();
-    }
-  }
-
   @Override
   public void run() {
     try {
@@ -346,10 +324,10 @@ public class ParsingThread extends Thread {
       parseData.digest = fetchData.binaryParser.parse(fetchData.uri(), fetchData.response(), null);
     }
 
-    final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
+    //final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
+    final boolean isNotDuplicate = true;
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", fetchData.uri(), isNotDuplicate);
     fetchData.isDuplicate(!isNotDuplicate);
-
     if (isNotDuplicate && rc.followFilter.apply(fetchData)) {
       frontierLinkReceiver.process(fetchedPageInfoBuilder);
       frontierLinkReceiver.flush();
@@ -485,8 +463,6 @@ public class ParsingThread extends Thread {
     final String result;
     if (mustBeStored) {
       if (isNotDuplicate) {
-        // Soft, so we can change maxUrlsPerSchemeAuthority at runtime sensibly.
-        incrementCountAndPurge(true, visitState, rc);
         final int code = fetchData.response().getStatusLine().getStatusCode() / 100;
         if (code > 0 && code < 6) frontier.archetypesStatus[code].incrementAndGet();
         else frontier.archetypesStatus[0].incrementAndGet();
@@ -506,7 +482,6 @@ public class ParsingThread extends Thread {
       }
       else {
         frontier.duplicates.incrementAndGet();
-        incrementCountAndPurge(false, visitState, rc);
         result = "duplicate";
       }
       fetchData.extraMap.put("BUbiNG-Fetching-Duration", Long.toString(fetchData.endTime - fetchData.startTime));
@@ -517,7 +492,6 @@ public class ParsingThread extends Thread {
     }
     else {
       result = "not stored";
-      incrementCountAndPurge(false, visitState, rc);
     }
 
     return result;

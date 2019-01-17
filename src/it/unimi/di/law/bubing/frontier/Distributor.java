@@ -112,53 +112,47 @@ public final class Distributor extends Thread {
 				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
 			VisitState visitState;
 			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrlKey());
-			final int currentlyInStore = frontier.schemeAuthority2Count.get(schemeAuthority, 0, schemeAuthority.length);
-			if (currentlyInStore < frontier.rc.maxUrlsPerSchemeAuthority) { // We have space for this scheme+authority
-				visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
-				if (visitState == null) {
-					// Test if we can add it to the newVisitState list or if we must hold it back !
-					// Todo : if maxVisitStates reached, send url to pulsar topic
-					// if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
-						if (LOGGER.isTraceEnabled())
-							LOGGER.trace("New scheme+authority {} with path+query {}",
-									it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
-									new String(HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray())));
-						visitState = new VisitState(schemeAuthority);
-						visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
-						visitState.enqueueRobots();
-						visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
-						synchronized (schemeAuthority2VisitState) {
-							schemeAuthority2VisitState.add(visitState);
-						}
-						// Send the visit state to the DNS threads
-						frontier.newVisitStates.add(visitState);
-						movedFromSieveToWorkbench++;
-				}
-				else {
-					if (frontier.virtualizer.count(visitState) > 0) {
-						// Safe: there are URLs on disk, and this fact cannot change concurrently.
-						movedFromSieveToVirtualizer++;
-            frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
+
+			visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
+			if (visitState == null) {
+				// Test if we can add it to the newVisitState list or if we must hold it back !
+				// Todo : if maxVisitStates reached, send url to pulsar topic
+				// if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
+					if (LOGGER.isTraceEnabled())
+						LOGGER.trace("New scheme+authority {} with path+query {}",
+								it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
+								new String(HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray())));
+					visitState = new VisitState(schemeAuthority);
+					visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
+					visitState.enqueueRobots();
+					visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
+					synchronized (schemeAuthority2VisitState) {
+						schemeAuthority2VisitState.add(visitState);
 					}
-					else
-					if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
-						/* Safe: we are enqueueing to a sane (modulo race conditions)
-						 * visit state, which will be necessarily go through the DoneThread later. */
-						visitState.checkRobots(now);
-            visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
-						movedFromSieveToWorkbench++;
-					}
-					else { // visitState.urlsOnDisk == 0
-            // FIXME: we are here not only because visitState.urlsOnDisk == 0
-						movedFromSieveToVirtualizer++;
-            frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
-					}
-				}
+					// Send the visit state to the DNS threads
+					frontier.newVisitStates.add(visitState);
+					movedFromSieveToWorkbench++;
 			}
 			else {
-			  deletedFromSieve++;
-			  // FIXME: why return true ? we haven't added anything !
-      }
+				if (frontier.virtualizer.count(visitState) > 0) {
+					// Safe: there are URLs on disk, and this fact cannot change concurrently.
+					movedFromSieveToVirtualizer++;
+					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
+				}
+				else
+				if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
+					/* Safe: we are enqueueing to a sane (modulo race conditions)
+					 * visit state, which will be necessarily go through the DoneThread later. */
+					visitState.checkRobots(now);
+					visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
+					movedFromSieveToWorkbench++;
+				}
+				else { // visitState.urlsOnDisk == 0
+					// FIXME: we are here not only because visitState.urlsOnDisk == 0
+					movedFromSieveToVirtualizer++;
+					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
+				}
+			}
 		}
 		catch (Throwable t) {
 			LOGGER.error("Unexpected exception", t);
