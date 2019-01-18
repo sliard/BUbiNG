@@ -489,8 +489,10 @@ public class StartupConfiguration {
 		if (rootDirChecked) return;
 		final File d = new File(rootDir);
 		if (crawlIsNew) {
-			if (d.exists()) throw new ConfigurationException("Root directory " + d + " exists");
-			if (! d.mkdirs()) throw new ConfigurationException("Cannot create root directory " + d);
+			if (!d.exists())
+				if (! d.mkdirs()) throw new ConfigurationException("Cannot create root directory " + d);
+			else
+				LOGGER.warn("Root directory " + d + " exists");
 		}
 		else if (! d.exists()) throw new ConfigurationException("Cannot find root directory " + rootDir + " for the crawl");
 		rootDirChecked = true;
@@ -517,8 +519,10 @@ public class StartupConfiguration {
 	private void chkSubDir(final String dir) throws ConfigurationException {
 		final File d = subDir(rootDir, dir);
 		if (crawlIsNew) {
-			if (d.exists()) throw new ConfigurationException("Directory " + d + " exists");
-			if (! d.mkdirs()) throw new ConfigurationException("Cannot create directory " + d);
+			if (!d.exists())
+			  if (! d.mkdirs()) throw new ConfigurationException("Cannot create directory " + d);
+			else
+			  LOGGER.warn("Directory " + d + " exists");
 		}
 		else if (! d.exists()) throw new ConfigurationException("Directory " + d + " does not exist");
 	}

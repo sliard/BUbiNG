@@ -59,7 +59,7 @@ public final class PureTextAppendable implements Appendable
     return stringBuilder;
   }
 
-  private void appendChar( final char c) {
+  private void appendChar( final char c ) {
     if ( !Character.isWhitespace(c) ) {
       lastAppendedWasSpace = false;
       lastAppendedWasNewLine = false;

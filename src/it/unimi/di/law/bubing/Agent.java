@@ -785,6 +785,10 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		final JSAPResult jsapResult = jsap.parse(arg);
 		if (jsap.messagePrinted()) System.exit(1);
 
+		// Safety : long running process wiht ssl connection get OOM because SSL cache is unbounded, this ensure that the cache is bounded
+		if (System.getProperty("javax.net.ssl.sessionCacheSize") == null)
+			System.setProperty("javax.net.ssl.sessionCacheSize","8192");
+
 		// JMX *must* be set up.
 		final String portProperty = System.getProperty(JMX_REMOTE_PORT_SYSTEM_PROPERTY);
 		if (portProperty == null) throw new IllegalArgumentException("You must specify a JMX service port using the property " + JMX_REMOTE_PORT_SYSTEM_PROPERTY);
