@@ -7,7 +7,7 @@ public class NullClassifier implements TextClassifier
 {
   public NullClassifier(RuntimeConfiguration rc) {}
 
-  public MsgCrawler.Categorization predict(String textContent, String lang, float threshold) {
+  public MsgCrawler.Categorization predict(String textContent, String lang) {
     return null;
   }
 

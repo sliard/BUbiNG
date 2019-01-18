@@ -355,9 +355,21 @@ public class ParsingThread extends Thread {
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", fetchData.uri(), isNotDuplicate);
     fetchData.isDuplicate(!isNotDuplicate);
 
-    MsgCrawler.Categorization categorization = classifier.predict(parseData.textContent.toString(), parseData.guessedLanguage, rc.textClassifierThreshold);
-    if (categorization != null)
+    MsgCrawler.Categorization categorization = classifier.predict(parseData.textContent.toString(), parseData.guessedLanguage);
+    //LOGGER.info("content [" + parseData.textContent.toString() + "] lang: [" + parseData.guessedLanguage + "]");
+    if (categorization != null) {
+      /*StringBuilder sb  = new StringBuilder("categorization: [");
+      for (MsgCrawler.Topic topic : categorization.getTopicList()) {
+        sb.append('(');
+        sb.append(topic.getId());
+        sb.append(", ");
+        sb.append(topic.getScore());
+        sb.append(")");
+      }
+      sb.append(']');
+      LOGGER.info(sb.toString());*/
       fetchedPageInfoBuilder.setCategorisation(categorization);
+    }
 
     if (isNotDuplicate && rc.followFilter.apply(fetchData)) {
       frontierLinkReceiver.process(fetchedPageInfoBuilder);

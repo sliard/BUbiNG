@@ -11,7 +11,7 @@ public interface TextClassifier extends Closeable
 	 *
 	 * @return A set of topic which match the text content along with a normalized score.
 	 */
-	MsgCrawler.Categorization predict(String textContent, String lang, float threshold);
+	MsgCrawler.Categorization predict(String textContent, String lang);
 
 	void close() throws IOException;
 }
