@@ -6,17 +6,14 @@ import com.exensa.wdl.protobuf.link.EnumRel;
 import com.exensa.wdl.protobuf.link.EnumType;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.parser.html.*;
-import it.unimi.di.law.bubing.parser.html.LinksHandler.Link;
+import it.unimi.di.law.bubing.parser.PageInfo.Link;
 import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.ByteArrayCharSequence;
-import it.unimi.di.law.bubing.util.cld2.Cld2Result;
-import it.unimi.di.law.bubing.util.cld2.Cld2Tool;
 import it.unimi.di.law.bubing.util.detection.*;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import it.unimi.dsi.util.TextPattern;
+import net.htmlparser.jericho.HTMLElementName;
 import net.htmlparser.jericho.StreamedSource;
 import org.apache.http.*;
 import org.apache.http.message.BasicHeaderValueParser;
@@ -31,14 +28,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.Charset;
-import java.nio.charset.IllegalCharsetNameException;
-import java.nio.charset.StandardCharsets;
-import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static net.htmlparser.jericho.HTMLElementName.*;
 
 
 public final class XHTMLParser implements Parser<Void>
@@ -46,8 +38,6 @@ public final class XHTMLParser implements Parser<Void>
   private static final Logger LOGGER = LoggerFactory.getLogger( XHTMLParser.class );
   private static final int CHAR_BUFFER_SIZE = 1024 * 1024; // The size of the internal Jericho buffer.
   private static final int MAX_CHARSET_PAGE_CONTENT = 5000; // The max required amount of page content (without HTML entities) for charset detection
-  private static final int MIN_CLD2_PAGE_CONTENT = 6;
-  private static final int MAX_CLD2_PAGE_CONTENT = 5000;
   private static final int REWRITTEN_INITIAL_CAPACITY = 128 * 1024;
   private static final int MAX_ANCHOR_TEXT_LENGTH = 1024;
 
@@ -82,12 +72,12 @@ public final class XHTMLParser implements Parser<Void>
     fetchInfoBuilder.setUrlKey( PulsarHelper.fromURI(uri) );
 
     final HtmlContentHandler htmlContentHandler = new HtmlContentHandler( digestAppendable, pureTextAppendable );
-    final LinksHandler linksHandler = new LinksHandler( MAX_ANCHOR_TEXT_LENGTH );
+    final LinksHandler linksHandler = new LinksHandler( pageInfo.getLinks(), MAX_ANCHOR_TEXT_LENGTH );
     final XhtmlContentHandler xhtmlContentHandler = new XhtmlContentHandler( metadata, htmlContentHandler, linksHandler );
     final JerichoToXhtml jerichoToXhtml = new JerichoToXhtml( xhtmlContentHandler );
     final JerichoHtmlBackup jerichoHtmlBackup = new JerichoHtmlBackup( rewritten );
 
-    final StreamedSource streamedSource = new StreamedSource(new InputStreamReader( contentStream, pageInfo.guessedCharset ));
+    final StreamedSource streamedSource = new StreamedSource(new InputStreamReader( contentStream, pageInfo.getGuessedCharset() ));
     streamedSource.setBuffer( buffer );
     final JerichoParser jerichoParser = new JerichoParser( streamedSource, new JerichoParser.TeeHandler(jerichoToXhtml,jerichoHtmlBackup) );
 
@@ -99,11 +89,11 @@ public final class XHTMLParser implements Parser<Void>
       return null;
     }
 
-    pageInfo.extractFromContent( htmlContentHandler );
-    LinksHelper.processLinks( uri, pageInfo, linksHandler, fetchInfoBuilder );
+    pageInfo.extractFromContent( htmlContentHandler.pureTextAppendable.getContent() );
+    fillFetchInfo( uri, linksHandler, fetchInfoBuilder );
     updateDigestForRedirection( httpResponse );
 
-    LOGGER.info( "Finished parsing {}, outlinks : {}/{} ", uri, fetchInfoBuilder.getExternalLinksCount(), fetchInfoBuilder.getInternalLinksCount() );
+    LOGGER.info( "Finished parsing {}, outlinks (e:{}, i:{})", uri, fetchInfoBuilder.getExternalLinksCount(), fetchInfoBuilder.getInternalLinksCount() );
     return digestAppendable.digest();
   }
 
@@ -115,37 +105,46 @@ public final class XHTMLParser implements Parser<Void>
     rewritten.setLength( 0 );
   }
 
+  private void fillFetchInfo( final URI uri, final LinksHandler linksHandler, final MsgCrawler.FetchInfo.Builder fetchInfoBuilder ) {
+    fetchInfoBuilder.getRobotsTagBuilder()
+      .setNOINDEX( pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
+      .setNOFOLLOW( pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
+      .setNOARCHIVE( pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
+      .setNOSNIPPET( pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
+    LinksHelper.processLinks( uri, pageInfo, linksHandler, fetchInfoBuilder );
+  }
+
   private void updateDigestForRedirection( final HttpResponse httpResponse ) {
     // This is to avoid collapsing 3xx pages with boilerplate content (as opposed to 0-length content).
     if ( httpResponse.getStatusLine().getStatusCode()/100 == 3 ) {
       digestAppendable.append( (char)0 );
-      if ( pageInfo.locationDetectionInfo.httpHeaderLocation != null )
-        digestAppendable.append( pageInfo.locationDetectionInfo.httpHeaderLocation.toString() );
+      if ( pageInfo.getLocationDetectionInfo().httpHeaderLocation != null )
+        digestAppendable.append( pageInfo.getLocationDetectionInfo().httpHeaderLocation.toString() );
       digestAppendable.append( (char)0 );
-      if ( pageInfo.locationDetectionInfo.htmlRefreshLocation != null )
-        digestAppendable.append( pageInfo.locationDetectionInfo.htmlRefreshLocation.toString() );
+      if ( pageInfo.getLocationDetectionInfo().htmlRefreshLocation != null )
+        digestAppendable.append( pageInfo.getLocationDetectionInfo().htmlRefreshLocation.toString() );
       digestAppendable.append( (char)0 );
     }
   }
 
   @Override
   public Charset guessedCharset() {
-    return pageInfo.guessedCharset;
+    return pageInfo.getGuessedCharset();
   }
 
   @Override
   public Locale guessedLanguage() {
-    return pageInfo.guessedLanguage;
+    return pageInfo.getGuessedLanguage();
   }
 
   @Override
   public CharsetDetectionInfo getCharsetDetectionInfo() {
-    return pageInfo.charsetDetectionInfo;
+    return pageInfo.getCharsetDetectionInfo();
   }
 
   @Override
   public LanguageDetectionInfo getLanguageDetectionInfo() {
-    return pageInfo.languageDetectionInfo;
+    return pageInfo.getLanguageDetectionInfo();
   }
 
   @Override
@@ -165,12 +164,12 @@ public final class XHTMLParser implements Parser<Void>
 
   @Override
   public Boolean responsiveDesign() {
-    return pageInfo.hasViewportMeta;
+    return pageInfo.hasViewportMeta();
   }
 
   @Override
   public Boolean html5() {
-    return pageInfo.htmlVersionAtLeast5;
+    return pageInfo.isHtmlVersionAtLeast5();
   }
 
   @Override
@@ -189,371 +188,7 @@ public final class XHTMLParser implements Parser<Void>
     return contentType != null && contentType.getValue().startsWith("text/");
   }
 
-  private static final class PageInfo
-  {
-    private static final Pattern HTTP_EQUIV_PATTERN = Pattern.compile( ".*http-equiv\\s*=\\s*(.+)", Pattern.CASE_INSENSITIVE );
-    private static final Pattern CONTENT_TYPE_PATTERN = Pattern.compile( "['\"]?content-type['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-    private static final Pattern CONTENT_LANGUAGE_PATTERN = Pattern.compile( "['\"]?content-language['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-    private static final Pattern CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]([^'\"]+)['\"]", Pattern.CASE_INSENSITIVE );
-    private static final Pattern REFRESH_PATTERN = Pattern.compile( "['\"]?refresh['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-    private static final Pattern ROBOTS_PATTERN = Pattern.compile( "['\"]?robots['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-    private static final Pattern REFRESH_CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]?(?:\\d+;\\s*)URL\\s*=\\s*['\"]?([^'\"]+)", Pattern.CASE_INSENSITIVE );
-    private static final Pattern CHARSET_PATTERN = Pattern.compile( ".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
-    private static final Pattern VIEWPORT_PATTERN = Pattern.compile( ".*name\\s*=\\s*('|\")?viewport('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
-    private static final Pattern LANG_PATTERN = Pattern.compile( ".*lang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
-
-    private static final TextPattern DOCTYPE_PATTERN = new TextPattern( "<!doctype", TextPattern.CASE_INSENSITIVE );
-    private static final TextPattern HTML_PATTERN = new TextPattern( "<html", TextPattern.CASE_INSENSITIVE );
-    private static final TextPattern META_PATTERN = new TextPattern( "<meta", TextPattern.CASE_INSENSITIVE );
-
-    private final URI baseUri;
-    private final HtmlCharsetDetector charsetDetector;
-    private final CharsetDetectionInfo charsetDetectionInfo;
-    private final LanguageDetectionInfo languageDetectionInfo;
-    private final LocationDetectionInfo locationDetectionInfo;
-    private final RobotsTagState robotsTagState;
-    private final ArrayList<Link> headerLinks;
-    private Charset guessedCharset;
-    private Locale guessedLanguage;
-    private URI guessedLocation;
-    private boolean hasViewportMeta;
-    private boolean htmlVersionAtLeast5;
-
-    PageInfo( final URI baseUri ) {
-      this( baseUri, new HtmlCharsetDetector(MAX_CHARSET_PAGE_CONTENT) );
-    }
-
-    PageInfo( final URI baseUri, final HtmlCharsetDetector charsetDetector ) {
-      this.baseUri = baseUri;
-      this.charsetDetector = charsetDetector;
-      this.charsetDetectionInfo = new CharsetDetectionInfo();
-      this.languageDetectionInfo = new LanguageDetectionInfo();
-      this.locationDetectionInfo = new LocationDetectionInfo();
-      this.robotsTagState = new RobotsTagState();
-      this.headerLinks = new ArrayList<>();
-      this.guessedCharset = StandardCharsets.UTF_8;
-      this.guessedLanguage = null;
-      this.guessedLocation = baseUri;
-      this.hasViewportMeta = false;
-      this.htmlVersionAtLeast5 = false;
-    }
-
-    void extractFromHttpHeader( final HttpResponse httpResponse ) {
-      final boolean dummy =
-        tryExtractCharsetFromHeader( httpResponse ) |
-        tryExtractLanguageFromHeader( httpResponse ) |
-        tryExtractLocationFromHeader( httpResponse ) |
-        tryExtractContentLocationFromHeader( httpResponse ) |
-        tryExtractRobotstagFromHeader( httpResponse ) |
-        tryExtractLinksFromHeader( httpResponse );
-    }
-
-    void extractFromMetas( final HttpResponse httpResponse ) throws IOException {
-      final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final List<CharSequence> allMetaEntries = getAllMetaEntries( contentStream.buffer, contentStream.inspectable );
-      for ( final CharSequence meta : allMetaEntries ) {
-        final boolean dummy =
-          tryExtractHttpEquivFromMeta( meta ) ||
-          tryExtractCharsetFromMeta( meta ) ||
-          tryExtractViewportFromMeta( meta ) ||
-          tryExtractRobotsFromMeta( meta );
-      }
-    }
-
-    void extractFromHtml( final HttpResponse httpResponse, final char[] buffer ) throws IOException {
-      final boolean dummy =
-        tryExtractHtmlVersion( httpResponse ) |
-        tryExtractLanguageFromHtml( httpResponse ) |
-        tryGuessCharsetFromHtml( httpResponse, buffer );
-    }
-
-    void extractFromContent( final HtmlContentHandler htmlContentHandler ) {
-      final boolean dummy =
-        tryGuessLanguageFromContent( htmlContentHandler );
-    }
-
-    List<Link> getRedirectLinks() {
-      return java.util.stream.Stream.of(
-          locationDetectionInfo.httpHeaderLocation,
-          locationDetectionInfo.htmlRefreshLocation )
-        .filter( Objects::nonNull )
-        .map( (uri) -> new Link( LinksHelper.REDIRECT, uri.toString(), null, null, null ) )
-        .collect( java.util.stream.Collectors.toList() );
-    }
-
-    // internal --------------------------------------------------------------------------------------------------------------------
-
-    private boolean tryExtractCharsetFromHeader( final HttpResponse httpResponse ) {
-      // TODO: check if it will make sense to use httpResponse.getLocale()
-      final Header contentTypeHeader = httpResponse.getEntity().getContentType();
-      if ( contentTypeHeader == null ) return false;
-      final String charsetName = getCharsetNameFromHeader( contentTypeHeader.getValue() );
-      if ( charsetName == null ) return false;
-      charsetDetectionInfo.httpHeaderCharset = charsetName;
-      return true; // FIXME: as original code, do not set guessedCharset from HTTP HEADER
-      //return trySetGuessedCharsetFrom( charsetName, "in HTTP HEADER" );
-    }
-
-    private boolean tryExtractLanguageFromHeader( final HttpResponse httpResponse ) {
-      final Header contentLanguageHeader = httpResponse.getFirstHeader( "Content-Language" );
-      if ( contentLanguageHeader == null ) return false;
-      final String languageTag = contentLanguageHeader.getValue();
-      if ( languageTag == null ) return false;
-      languageDetectionInfo.httpHeaderLanguage = languageTag;
-      return trySetGuessedLanguageFrom( languageTag, "in HTTP HEADER" );
-    }
-
-    private boolean tryExtractLocationFromHeader( final HttpResponse httpResponse ) {
-      final Header locationHeader = httpResponse.getFirstHeader( "Location" );
-      if ( locationHeader == null ) return false;
-      final String location = locationHeader.getValue();
-      if ( location == null ) return false;
-      locationDetectionInfo.httpHeaderLocation = trySetGuessedLocationFrom( "Location", location, "in HTTP HEADER" );
-      return locationDetectionInfo.httpHeaderLocation != null;
-    }
-
-    private boolean tryExtractContentLocationFromHeader( final HttpResponse httpResponse ) {
-      final Header contentLocationHeader = httpResponse.getFirstHeader( "Content-Location" );
-      if ( contentLocationHeader == null ) return false;
-      final String location = contentLocationHeader.getValue();
-      if ( location == null ) return false;
-      locationDetectionInfo.httpHeaderContentLocation = trySetGuessedLocationFrom( "Content-Location", location, "in HTTP HEADER" );
-      return locationDetectionInfo.httpHeaderContentLocation != null;
-    }
-
-    private boolean tryExtractRobotstagFromHeader( final HttpResponse httpResponse ) {
-      final Header[] headers = httpResponse.getHeaders( "X-Robots-Tag" );
-      if ( headers.length == 0 ) return false;
-      for ( final Header h : headers )
-        robotsTagState.add( h.getValue() );
-      return true;
-    }
-
-    private boolean tryExtractLinksFromHeader( final HttpResponse httpResponse ) {
-      final Header[] headers = httpResponse.getHeaders( "Link" );
-      if ( headers.length == 0 ) return false;
-      for ( final Header h : headers ) {
-        final Link link = LinksHelper.fromHttpHeader( h.getValue() );
-        if ( link != null )
-          headerLinks.add( link );
-      }
-      return true;
-    }
-
-    private boolean tryExtractHttpEquivFromMeta( final CharSequence meta ) {
-      final Matcher mHttpEquiv = HTTP_EQUIV_PATTERN.matcher( meta );
-      if ( !mHttpEquiv.matches() ) return false;
-      final String httpEquiv = mHttpEquiv.group(1);
-      if ( httpEquiv == null ) return false;
-      return tryExtractCharsetFromHttpEquiv( httpEquiv ) ||
-        tryExtractLanguageFromHttpEquiv( httpEquiv ) ||
-        tryExtractRefreshFromHttpEquiv( httpEquiv );
-    }
-
-    private boolean tryExtractCharsetFromMeta( final CharSequence meta ) {
-      final String charsetName = getCharsetNameFromHeader( meta );
-      if ( charsetName == null ) return false;
-      charsetDetectionInfo.htmlMetaCharset = charsetName;
-      return trySetGuessedCharsetFrom( charsetName, "in META CHARSET" );
-    }
-
-    private boolean tryExtractViewportFromMeta( final CharSequence meta ) {
-      if ( !VIEWPORT_PATTERN.matcher(meta).matches() )
-        return false;
-      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found viewport in META of {}", baseUri.toString() );
-      hasViewportMeta = true;
-      return true;
-    }
-
-    private boolean tryExtractRobotsFromMeta( final CharSequence meta ) {
-      final Matcher mRobots = ROBOTS_PATTERN.matcher( meta );
-      if ( !mRobots.matches() ) return false;
-      final Matcher mContent = CONTENT_PATTERN.matcher( mRobots.group(1) );
-      if ( !mContent.matches() ) return false;
-      final String robotsTags = mContent.group(1);
-      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found robots {} in META of {}", robotsTags, baseUri.toString() );
-      robotsTagState.add( robotsTags );
-      return true;
-    }
-
-    private boolean tryExtractCharsetFromHttpEquiv( final String httpEquiv ) {
-      final Matcher mContentType = CONTENT_TYPE_PATTERN.matcher( httpEquiv );
-      if ( !mContentType.matches() ) return false;
-      final Matcher mContent = CONTENT_PATTERN.matcher( mContentType.group(1) );
-      if ( !mContent.matches() ) return false;
-      final String charsetName = getCharsetNameFromHeader( mContent.group(1) );
-      if ( charsetName == null ) return false;
-      charsetDetectionInfo.htmlMetaCharset = charsetName;
-      return trySetGuessedCharsetFrom( charsetName, "in META HTTP-EQUIV" );
-    }
-
-    private boolean tryExtractLanguageFromHttpEquiv( final String httpEquiv ) {
-      final Matcher mContentLanguage = CONTENT_LANGUAGE_PATTERN.matcher( httpEquiv );
-      if ( !mContentLanguage.matches() ) return false;
-      final Matcher mContent = CONTENT_PATTERN.matcher( mContentLanguage.group(1) );
-      if ( !mContent.matches() ) return false;
-      final String languageTag = mContent.group(1);
-      languageDetectionInfo.htmlLanguage = languageTag;
-      return trySetGuessedLanguageFrom( languageTag, "in META HTTP-EQUIV" );
-    }
-
-    private boolean tryExtractRefreshFromHttpEquiv( final String httpEquiv ) {
-      final Matcher mRefresh = REFRESH_PATTERN.matcher( httpEquiv );
-      if ( !mRefresh.matches() ) return false;
-      final Matcher mContent = REFRESH_CONTENT_PATTERN.matcher( mRefresh.group(1) );
-      if ( !mContent.matches() ) return false;
-      final String location = mContent.group(1);
-      locationDetectionInfo.htmlRefreshLocation = trySetGuessedLocationFrom( "Refresh", location, "in META HTTP-EQUIV" );
-      return locationDetectionInfo.htmlRefreshLocation != null;
-    }
-
-    private boolean tryExtractHtmlVersion( final HttpResponse httpResponse ) throws IOException {
-      final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final String docType = getDocType( contentStream.buffer, contentStream.inspectable );
-      if ( docType == null ) return false;
-      htmlVersionAtLeast5 = docType.equalsIgnoreCase( "html" );
-      return htmlVersionAtLeast5;
-    }
-
-    private boolean tryExtractLanguageFromHtml( final HttpResponse httpResponse ) throws IOException {
-      final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final String languageName = getLanguageName( contentStream.buffer, contentStream.inspectable );
-      if ( languageName == null ) return false;
-      return trySetGuessedLanguageFrom( languageName, "in HTML TAG" );
-    }
-
-    private boolean tryGuessCharsetFromHtml( final HttpResponse httpResponse, final char[] buffer ) throws IOException {
-      if ( guessedCharset != null ) return false; // FIXME: see tryExtractCharsetFromHeader
-      final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) httpResponse.getEntity().getContent();
-      final String charsetName = charsetDetector.detect( contentStream.buffer, contentStream.inspectable, buffer );
-      if ( charsetName == null ) return false;
-      charsetDetectionInfo.icuCharset = charsetName;
-      return trySetGuessedCharsetFrom( charsetName, "with ICU" );
-    }
-
-    private boolean tryGuessLanguageFromContent( final HtmlContentHandler htmlContentHandler ) {
-      final CharSequence content = htmlContentHandler.pureTextAppendable.getContent();
-      if ( content.length() < MIN_CLD2_PAGE_CONTENT )
-        return false;
-      final String tld = baseUri.getHost().substring( baseUri.getHost().lastIndexOf('.') + 1 );
-      final String hint = guessedLanguage == null ? null : guessedLanguage.getLanguage();
-      final Cld2Result result = Cld2Tool.detect( content, MAX_CLD2_PAGE_CONTENT, tld, hint ); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h
-      if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Raw text submitted to language detection is {}", content.toString() );
-      languageDetectionInfo.cld2Language = result.code;
-      if ( !result.language.equals("Unknown") )
-        return trySetGuessedLanguageFrom( result.code, "from CONTENT" );
-      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Unable to guess language for {}", baseUri );
-      return false;
-    }
-
-    private boolean trySetGuessedCharsetFrom( final String charsetName, final String from ) {
-      if ( LOGGER.isDebugEnabled() ) LOGGER.debug("Found charset {} {} of {}", charsetName, from, baseUri.toString() );
-      try {
-        guessedCharset = Charset.forName( charsetName );
-        return true;
-      }
-      catch ( IllegalCharsetNameException|UnsupportedCharsetException e ) {
-        if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Charset {} found {} is not supported", charsetName, from );
-        return false;
-      }
-    }
-
-    private boolean trySetGuessedLanguageFrom( final String languageTag, final String from ) {
-      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found language {} {} of {}", languageTag, from, baseUri.toString() );
-      try {
-        guessedLanguage = new Locale.Builder().setLanguageTag( languageTag ).build();
-        return true;
-      }
-      catch ( IllformedLocaleException e ) {
-        if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Language {} found {} is not supported", languageTag, from );
-        return false;
-      }
-    }
-
-    private URI trySetGuessedLocationFrom( final String that, final String value, final String from ) {
-      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found {} {} {} of {}", that, value, from, baseUri.toString() );
-      final URI validUri = BURL.parse( value );
-      if ( validUri == null ) {
-        if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "{} {} found {} is not valid", that, value, from );
-        return null;
-      }
-      guessedLocation = baseUri.resolve( validUri );
-      return guessedLocation;
-    }
-
-    // tools -----------------------------------------------------------------------------------------------------------------------
-
-    private static String getDocType( final byte buffer[], final int length ) {
-      int start = DOCTYPE_PATTERN.search( buffer, 0, length );
-      if ( start == -1 ) return null;
-      int end = start;
-      while ( end < length && buffer[end] != '>' ) end += 1; // Look for closing '>'
-      final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(
-        buffer,
-        start + DOCTYPE_PATTERN.length(),
-        end-start - DOCTYPE_PATTERN.length()
-      );
-      return tagContent.toString().trim();
-    }
-
-    private static String getLanguageName( final byte buffer[], final int length ) {
-      int start = HTML_PATTERN.search( buffer, 0, length );
-      if ( start == -1 ) return null;
-      int end = start;
-      while ( end < length && buffer[end] != '>' ) end += 1; // Look for closing '>'
-      final ByteArrayCharSequence tagContent = new ByteArrayCharSequence(
-        buffer,
-        start + HTML_PATTERN.length(),
-        end-start - HTML_PATTERN.length()
-      );
-      return getLanguageNameFromHTML( tagContent );
-    }
-
-    private static List<CharSequence> getAllMetaEntries( final byte buffer[], final int length ) {
-      final ArrayList<CharSequence> metas = new ArrayList<>();
-      int start = 0;
-      while ( (start=META_PATTERN.search(buffer,start,length)) != -1 ) {
-        int end = start;
-        while ( end < length && buffer[end] != '>' ) end += 1; // Look for closing '>'
-        if ( end == length ) return metas; // No closing '>'
-        metas.add( new ByteArrayCharSequence(
-          buffer,
-          start + META_PATTERN.length(),
-          end-start - META_PATTERN.length()
-        ) );
-        start = end + 1;
-      }
-      return metas;
-    }
-
-    private static String getCharsetNameFromHeader( final CharSequence headerValue ) {
-      final Matcher m = CHARSET_PATTERN.matcher( headerValue );
-      if ( m.matches() ) {
-        final String s = m.group(1);
-        int start = 0, end = s.length();
-        // TODO: we discard delimiting single/double quotes; is it necessary?
-        if ( end > 0 && (s.charAt(0) == '\"' || s.charAt(0) == '\'') ) start = 1;
-        if ( end > 0 && (s.charAt(end-1) == '\"' || s.charAt(end-1) == '\'') ) end -= 1;
-        if ( start < end ) return s.substring( start, end );
-      }
-      return null;
-    }
-
-    private static String getLanguageNameFromHTML( final CharSequence headerValue ) {
-      final Matcher m = LANG_PATTERN.matcher(headerValue);
-      if ( m.matches() ) {
-        final String s = m.group(1);
-        int start = 0, end = s.length();
-        // TODO: we discard delimiting single/double quotes; is it necessary?
-        if ( end > 0 && (s.charAt(0) == '\"' || s.charAt(0) == '\'') ) start = 1;
-        if ( end > 0 && (s.charAt(end-1) == '\"' || s.charAt(end-1) == '\'')) end -= 1;
-        if ( start < end ) return s.substring( start, end );
-      }
-      return null;
-    }
-  }
-
-  private static final class HtmlContentHandler implements ContentHandler
+  public static final class HtmlContentHandler implements ContentHandler
   {
     private final DigestAppendable digestAppendable;
     private final PureTextAppendable pureTextAppendable;
@@ -567,7 +202,7 @@ public final class XHTMLParser implements Parser<Void>
     public void startElement( final String uri, final String localName, final String qName, final Attributes atts ) {
       if ( digestAppendable != null ) {
         digestAppendable.startTag( localName );
-        if ( localName == IFRAME || localName == FRAME ) {
+        if ( localName == HTMLElementName.IFRAME || localName == HTMLElementName.FRAME ) {
           final String src = atts.getValue( "src" );
           if ( src != null ) {
             digestAppendable.append( '\"' );
@@ -607,11 +242,9 @@ public final class XHTMLParser implements Parser<Void>
     @Override public void skippedEntity( final String name ) { }
   }
 
-  private static final class LinksHelper
+  public static final class LinksHelper
   {
-    static final String REDIRECT = "redirect";
-
-    static Link fromHttpHeader( final String header ) {
+    static PageInfo.Link fromHttpHeader( final String header ) {
       return HttpLinksHeaderParser.tryParse( header );
     }
 
@@ -623,7 +256,7 @@ public final class XHTMLParser implements Parser<Void>
       final URI baseOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
       final URI contentBase = baseOpt == null ? uri : uri.resolve( baseOpt );
 
-      processLinks( uri, headerBase, pageInfo.headerLinks, fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
+      processLinks( uri, headerBase, pageInfo.getHeaderLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
       processLinks( uri, headerBase, pageInfo.getRedirectLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
       processLinks( uri, contentBase, linksHandler.getLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
     }
@@ -663,19 +296,19 @@ public final class XHTMLParser implements Parser<Void>
 
     private static boolean trySetLinkInfos( final Link link, final MsgLink.LinkInfo.Builder linkInfoBuilder ) {
       final String type = link.type;
-      if ( type == A || type == IMG ) {
+      if ( type == Link.Type.A || type == Link.Type.IMG ) {
         if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
           return false;
         linkInfoBuilder.setLinkType( EnumType.Enum.A );
       }
       else
-      if ( type == LINK ) {
+      if ( type == Link.Type.LINK ) {
         if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Links) )
           return false;
         linkInfoBuilder.setLinkType( EnumType.Enum.LINK );
       }
       else
-      if ( type == REDIRECT ) {
+      if ( type == Link.Type.REDIRECT ) {
         linkInfoBuilder.setLinkType( EnumType.Enum.REDIRECT );
       }
       else
@@ -801,7 +434,7 @@ public final class XHTMLParser implements Parser<Void>
       private static final Logger LOGGER = LoggerFactory.getLogger( HttpLinksHeaderParser.class );
       private static final Pattern PATTERN = Pattern.compile( "\\s*<(.+)>\\s*(.*)" );
 
-      static Link tryParse( final String header ) {
+      static PageInfo.Link tryParse( final String header ) {
         final Matcher m = PATTERN.matcher( header );
         if ( !m.matches() ) {
           if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "failed to parse '{}'", header );
@@ -817,7 +450,7 @@ public final class XHTMLParser implements Parser<Void>
           map.putIfAbsent( name, value );
         }
 
-        return new Link( LINK, href, map.get("title"), null, map.get("rel") );
+        return new PageInfo.Link( Link.Type.LINK, href, map.get("title"), null, map.get("rel") );
       }
 
       private static NameValuePair[] parseParameters( final String parameters ) {

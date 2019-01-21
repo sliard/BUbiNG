@@ -122,7 +122,7 @@ public class ParsingThread extends Thread {
                FetchData fetchData,
                char[][] robotsFilter ) {
       this.schemeAuthority = schemeAuthority;
-      this.crawledPageInfoBuilder = crawledPageInfoBuilder.setUrlKey( crawlRequest.getUrlKey() );
+      this.crawledPageInfoBuilder = crawledPageInfoBuilder;
       this.fetchData = fetchData;
       this.robotsFilter = robotsFilter;
       this.uri = PulsarHelper.toURI( crawlRequest.getUrlKey() );
@@ -298,7 +298,8 @@ public class ParsingThread extends Thread {
       return;
     }
 
-    final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
+    final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder()
+      .setUrlKey( fetchData.getCrawlRequest().getUrlKey() );
 
     frontierLinkReceiver.init(
       visitState.schemeAuthority,
