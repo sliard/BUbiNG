@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>none</groupId>
+  <artifactId>deployer</artifactId>
+  <version>1</version>
+  <packaging>jar</packaging>
+  <name>Deployer</name>
+     <distributionManagement>
+        <repository>
+            <id>exensa_local</id>
+            <url>scpexe://maven.exensa.loc/var/http/maven-repository/releases</url>
+            <uniqueVersion>false</uniqueVersion>
+        </repository>
+    </distributionManagement>
+    <build>
+        <extensions>
+            <extension>
+                <groupId>org.apache.maven.wagon</groupId>
+                <artifactId>wagon-ssh-external</artifactId>
+                <version>2.4</version>
+            </extension>
+        </extensions>
+    </build>
+</project>
+

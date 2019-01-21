@@ -46,6 +46,8 @@ import com.martiansoftware.jsap.stringparsers.LongSizeStringParser;
  * limitations under the License.
  */
 
+
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.DNSThread;
 import it.unimi.di.law.bubing.frontier.FetchingThread;
 import it.unimi.di.law.bubing.frontier.Frontier;
@@ -152,6 +154,11 @@ public class StartupConfiguration {
 	@Retention(RetentionPolicy.RUNTIME)
 	@Target(ElementType.FIELD)
 	public @interface DnsResolverSpecification{}
+
+	/** A marker for the classifier class specification. */
+	@Retention(RetentionPolicy.RUNTIME)
+	@Target(ElementType.FIELD)
+	public @interface ClassifierSpecification{}
 
 	/** The name of this agent; it must be unique within its group. */
 	public String name;
@@ -444,6 +451,14 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="2147483647")
 	public int spamDetectionPeriodicity;
 
+	/** The class used to classify page content. */
+	@ClassifierSpecification
+	@OptionalSpecification(value="it.unimi.di.law.bubing.categories.NullClassifier")
+	public Class<? extends TextClassifier> classifierClass;
+
+	/** The threshold to assign a category to a text (default 0.5f) */
+	@OptionalSpecification(value="0.5f")
+	public float textClassifierThreshold;
 
 	/* Checks */
 
@@ -593,6 +608,8 @@ public class StartupConfiguration {
 					else if (type == String[].class)
 						f.set(this, configuration.getStringArray(name));
 					else if (f.getAnnotation(StoreSpecification.class) != null)
+						f.set(this, Class.forName(value));
+					else if (f.getAnnotation(ClassifierSpecification.class) != null)
 						f.set(this, Class.forName(value));
 					else if (f.getAnnotation(DnsResolverSpecification.class) != null)
 						f.set(this, Class.forName(value));
