@@ -41,6 +41,7 @@ import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 
@@ -221,11 +222,22 @@ public class Frontier {
 	/** The parsing threads. */
 	public final ObjectArrayList<ParsingThread> parsingThreads;
 
+	/** Thread activity metrics. */
+	public final AtomicInteger runningParsingThreads;
+	public final AtomicInteger runningFetchingThreads;
+	public final AtomicInteger runningDnsThreads;
+
+	public final AtomicInteger workingParsingThreads;
+	public final AtomicInteger workingFetchingThreads;
+	public final AtomicInteger workingDnsThreads;
+
+
 	/** The Warc file where to write (if so requested) the downloaded <code>robots.txt</code> files. */
 	public final ThreadLocal<WarcWriter> robotsWarcParallelOutputStream;
 
 	/** The overall number of path+queries stored in {@link VisitState} queues. */
 	public final AtomicLong pathQueriesInQueues;
+	public final AtomicLong pathQueriesInDiskQueues;
 
 	/** The overall {@linkplain BURL#memoryUsageOf(byte[]) memory} (in bytes) used by path+queries
 	 * stored in {@link VisitState} queues. */
@@ -280,7 +292,7 @@ public class Frontier {
 
 	/** A queue of visit states ready to be reilled; it is filled by {@linkplain DoneThread fetching
 	 * threads} and emptied by the {@link Distributor}. */
-	protected final LockFreeQueue<VisitState> refill;
+	public final LockFreeQueue<VisitState> refill;
 
 	/** The current estimation for the size of the front in IP addresses. It is adaptively increased
 	 * when a {@link FetchingThread} has to wait to retrieve a {@link VisitState} from the
@@ -352,6 +364,20 @@ public class Frontier {
 
 	/** The logarithmically binned statistics of download speed in bits/s. */
 	public final AtomicLongArray speedDist;
+	public final AtomicLong fetchingDurationTotal;
+	public final AtomicLong fetchingCount;
+	public final AtomicLong fetchingTimeoutCount;
+
+	public final AtomicLong parsingDurationTotal;
+	public final AtomicLong parsingCount;
+	public final AtomicLong parsingExceptionCount;
+
+
+	/** The number of received new visit states (i.e. new hosts) */
+	public final AtomicLong receivedVisitStates;
+
+	/** The number of successfully resolved new visit states (i.e. new hosts resolved) */
+	public final AtomicLong resolvedVisitStates;
 
 	/** The average speeds of all visit states. */
 	protected double averageSpeed;
@@ -405,13 +431,31 @@ public class Frontier {
 		this.unknownHosts = new DelayQueue<>();
 		this.virtualizer = new WorkbenchVirtualizer(this);
 
+		receivedVisitStates = new AtomicLong();
+		resolvedVisitStates = new AtomicLong();
+
+		runningFetchingThreads = new AtomicInteger();
+		runningParsingThreads = new AtomicInteger();
+		runningDnsThreads = new AtomicInteger();
+		workingFetchingThreads = new AtomicInteger();
+		workingParsingThreads = new AtomicInteger();
+		workingDnsThreads = new AtomicInteger();
+
 		pathQueriesInQueues = new AtomicLong();
+		pathQueriesInDiskQueues = new AtomicLong();
+
 		weightOfpathQueriesInQueues = new AtomicLong();
 		brokenVisitStates = new AtomicLong();
 		fetchedResources = new AtomicLong();
 		fetchedRobots = new AtomicLong();
 		transferredBytes = new AtomicLong();
 		speedDist = new AtomicLongArray(40);
+		fetchingDurationTotal = new AtomicLong();
+		fetchingCount = new AtomicLong();
+		fetchingTimeoutCount = new AtomicLong();
+		parsingDurationTotal = new AtomicLong();
+		parsingCount = new AtomicLong();
+		parsingExceptionCount = new AtomicLong();
 		archetypesStatus = new AtomicLong[6];
 		for (int i = 0; i < 6; i++) archetypesStatus[i] = new AtomicLong();
 		outdegree = new SummaryStats();
@@ -424,7 +468,7 @@ public class Frontier {
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
 		numberOfSentURLs = new AtomicLong();
-		requiredFrontSize = new AtomicLong(1000);
+		requiredFrontSize = new AtomicLong(10000);
 		fetchingThreadWaits = new AtomicLong();
 		fetchingThreadWaitingTimeSum = new AtomicLong();
 
@@ -788,8 +832,8 @@ public class Frontier {
 
 	/** Resets the statistics relative to the wait time of {@link FetchingThread}s. */
 	public void resetFetchingThreadsWaitingStats() {
-		fetchingThreadWaits.set(0);
-		fetchingThreadWaitingTimeSum.set(0);
+		//fetchingThreadWaits.set(0);
+		//fetchingThreadWaitingTimeSum.set(0);
 	}
 
 	/** Snaps fields to files in the given directory. Fields that are of scalar are written into a

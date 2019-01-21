@@ -8,6 +8,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 
 import com.exensa.util.compression.HuffmanModel;
@@ -256,10 +257,13 @@ public final class FetchingThread extends Thread implements Closeable {
   public void run() {
     try {
       LOGGER.warn( "thread [started]" );
+      frontier.runningParsingThreads.addAndGet(1);
       while ( !stop ) {
         final VisitState visitState = getNextVisitState();
+        frontier.workingFetchingThreads.incrementAndGet();
         if ( visitState != null && processVisitState(visitState) )
           processFetchData();
+        frontier.workingFetchingThreads.decrementAndGet();
       }
     }
     catch ( InterruptedException e ) {
@@ -270,6 +274,7 @@ public final class FetchingThread extends Thread implements Closeable {
     }
     finally {
       LOGGER.warn( "thread [stopped]" );
+      frontier.runningParsingThreads.addAndGet(-1);
     }
   }
 
@@ -513,11 +518,21 @@ public final class FetchingThread extends Thread implements Closeable {
       visitState.workbenchEntry.nextFetch = endTime + frontier.rc.ipDelay;
       visitState.nextFetch = endTime + frontier.rc.schemeAuthorityDelay;
       return false;
+    } finally {
+      frontier.fetchingCount.incrementAndGet();
+      frontier.fetchingDurationTotal.addAndGet(fetchData.endTime - fetchData.startTime);
     }
+
+    if (fetchData.exception != null && (
+        fetchData.exception instanceof java.net.SocketException
+            || fetchData.exception instanceof java.net.SocketTimeoutException
+            || fetchData.exception instanceof org.apache.http.conn.ConnectTimeoutException))
+      frontier.fetchingTimeoutCount.incrementAndGet();
 
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Fetched {} in {} ms", url.toString(), fetchData.endTime - fetchData.startTime);
     frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
     frontier.transferredBytes.addAndGet(fetchData.length());
+
     return true;
   }
 }

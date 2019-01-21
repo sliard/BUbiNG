@@ -232,10 +232,18 @@ public class ParsingThread extends Thread {
   public void run() {
     try {
       LOGGER.warn( "thread [started]" );
+      frontier.runningParsingThreads.incrementAndGet();
       while ( !stop ) {
         final FetchData fetchData = getNextFetchData();
-        if ( fetchData != null )
-          processFetchData( fetchData );
+        if ( fetchData != null ) {
+          frontier.workingParsingThreads.incrementAndGet();
+          long startTime = System.currentTimeMillis();
+          processFetchData(fetchData);
+          long endTime = System.currentTimeMillis();
+          frontier.parsingCount.incrementAndGet();
+          frontier.parsingDurationTotal.addAndGet(endTime-startTime);
+          frontier.workingParsingThreads.decrementAndGet();
+        }
       }
     }
     catch ( InterruptedException e ) {
@@ -246,6 +254,7 @@ public class ParsingThread extends Thread {
     }
     finally {
       close();
+      frontier.runningParsingThreads.decrementAndGet();
       LOGGER.warn( "thread [stopped]" );
     }
   }
@@ -358,11 +367,13 @@ public class ParsingThread extends Thread {
     }
     catch ( final BufferOverflowException e ) {
       LOGGER.warn( "Overflow while parsing {} ({})", fetchData.uri(), ++overflowCounter );
+      frontier.parsingExceptionCount.incrementAndGet();
       return null;
     }
     catch ( final Exception e ) {
       // This mainly catches Jericho and network problems
       LOGGER.warn( "Exception while parsing " + fetchData.uri() + " with " + parser, e );
+      frontier.parsingExceptionCount.incrementAndGet();
       return null;
     }
   }

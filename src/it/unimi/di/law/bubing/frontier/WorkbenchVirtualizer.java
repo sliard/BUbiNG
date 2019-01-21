@@ -87,7 +87,10 @@ public class WorkbenchVirtualizer implements Closeable {
 	public int dequeueCrawlRequests(final VisitState visitState, final int maxUrls) throws IOException {
 		if (maxUrls == 0) return 0;
 		final int dequeued = (int)Math.min(maxUrls, byteArrayDiskQueues.count(visitState));
-		for(int i = dequeued; i-- != 0;) visitState.enqueueCrawlRequest(byteArrayDiskQueues.dequeue(visitState));
+		for(int i = dequeued; i-- != 0;) {
+			visitState.enqueueCrawlRequest(byteArrayDiskQueues.dequeue(visitState));
+			frontier.pathQueriesInDiskQueues.decrementAndGet();
+		}
 		return dequeued;
 	}
 
@@ -127,6 +130,7 @@ public class WorkbenchVirtualizer implements Closeable {
 	 */
 	public void enqueueCrawlRequest(VisitState visitState, final byte[] crawlRequest) throws IOException {
 		byteArrayDiskQueues.enqueue(visitState,  crawlRequest, 0, crawlRequest.length);
+		frontier.pathQueriesInDiskQueues.incrementAndGet();
 	}
 
 	/** Performs a garbage collection if the space used is below a given threshold, reaching a given target ratio.
