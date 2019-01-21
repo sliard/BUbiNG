@@ -112,12 +112,9 @@ public final class Distributor extends Thread {
 				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
 			VisitState visitState;
 			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrlKey());
-
+			boolean addedNewVisitState = false;
 			visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
 			if (visitState == null) {
-				// Test if we can add it to the newVisitState list or if we must hold it back !
-				// Todo : if maxVisitStates reached, send url to pulsar topic
-				// if (schemeAuthority2VisitState.size() < frontier.rc.maxVisitStates) {
 					if (LOGGER.isTraceEnabled())
 						LOGGER.trace("New scheme+authority {} with path+query {}",
 								it.unimi.di.law.bubing.util.Util.toString(schemeAuthority),
@@ -131,7 +128,9 @@ public final class Distributor extends Thread {
 					}
 					// Send the visit state to the DNS threads
 					frontier.newVisitStates.add(visitState);
+					frontier.receivedVisitStates.incrementAndGet();
 					movedFromSieveToWorkbench++;
+					addedNewVisitState = true;
 			}
 			else {
 				if (frontier.virtualizer.count(visitState) > 0) {
@@ -143,6 +142,8 @@ public final class Distributor extends Thread {
 				if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 					/* Safe: we are enqueueing to a sane (modulo race conditions)
 					 * visit state, which will be necessarily go through the DoneThread later. */
+					if (visitState.size() == 0)
+						addedNewVisitState = true;
 					visitState.checkRobots(now);
 					visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
 					movedFromSieveToWorkbench++;
@@ -193,7 +194,7 @@ public final class Distributor extends Thread {
 							movedFromQueues += dequeuedURLs;
 						}
 					}
-					else
+
 					if ( frontIsSmall ) {
 						// It is necessary to enrich the workbench picking up URLs from the sieve
             int toAdd = Math.min( 100, frontier.quickReceivedCrawlRequests.size() );

@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import com.exensa.wdl.common.LanguageCodes;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
@@ -211,6 +212,9 @@ public class ParsingThread extends Thread {
   private final FrontierEnqueuer frontierLinkReceiver;
   /** A counter for java.nio.BufferOverflowException from Jericho */
   private static int overflowCounter = 0;
+  /** A reference to the classifier. */
+  private final TextClassifier classifier;
+
   /** Creates a thread.
    *
    * @param frontier the frontier instantiating the thread.
@@ -220,6 +224,7 @@ public class ParsingThread extends Thread {
     setName(this.getClass().getSimpleName() + '-' + index);
     this.frontier = frontier;
     this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
+    this.classifier = frontier.rc.classifierClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
     this.rng = new Random(index);
     this.frontierLinkReceiver = new FrontierEnqueuer(frontier, frontier.rc);
     this.parsers = new ArrayList<>(frontier.rc.parsers.size());
@@ -232,10 +237,18 @@ public class ParsingThread extends Thread {
   public void run() {
     try {
       LOGGER.warn( "thread [started]" );
+      frontier.runningParsingThreads.incrementAndGet();
       while ( !stop ) {
         final FetchData fetchData = getNextFetchData();
-        if ( fetchData != null )
-          processFetchData( fetchData );
+        if ( fetchData != null ) {
+          frontier.workingParsingThreads.incrementAndGet();
+          long startTime = System.currentTimeMillis();
+          processFetchData(fetchData);
+          long endTime = System.currentTimeMillis();
+          frontier.parsingCount.incrementAndGet();
+          frontier.parsingDurationTotal.addAndGet(endTime-startTime);
+          frontier.workingParsingThreads.decrementAndGet();
+        }
       }
     }
     catch ( InterruptedException e ) {
@@ -246,6 +259,7 @@ public class ParsingThread extends Thread {
     }
     finally {
       close();
+      frontier.runningParsingThreads.decrementAndGet();
       LOGGER.warn( "thread [stopped]" );
     }
   }
@@ -329,6 +343,23 @@ public class ParsingThread extends Thread {
     final boolean isNotDuplicate = true;
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", fetchData.uri(), isNotDuplicate);
     fetchData.isDuplicate(!isNotDuplicate);
+
+    MsgCrawler.Categorization categorization = classifier.predict(parseData.textContent.toString(), parseData.guessedLanguage);
+    //LOGGER.info("content [" + parseData.textContent.toString() + "] lang: [" + parseData.guessedLanguage + "]");
+    if (categorization != null) {
+      /*StringBuilder sb  = new StringBuilder("categorization: [");
+      for (MsgCrawler.Topic topic : categorization.getTopicList()) {
+        sb.append('(');
+        sb.append(topic.getId());
+        sb.append(", ");
+        sb.append(topic.getScore());
+        sb.append(")");
+      }
+      sb.append(']');
+      LOGGER.info(sb.toString());*/
+      fetchedPageInfoBuilder.setCategorisation(categorization);
+    }
+
     if (isNotDuplicate && rc.followFilter.apply(fetchData)) {
       frontierLinkReceiver.process(fetchedPageInfoBuilder);
       frontierLinkReceiver.flush();
@@ -359,11 +390,13 @@ public class ParsingThread extends Thread {
     }
     catch ( final BufferOverflowException e ) {
       LOGGER.warn( "Overflow while parsing {} ({})", fetchData.uri(), ++overflowCounter );
+      frontier.parsingExceptionCount.incrementAndGet();
       return null;
     }
     catch ( final Exception e ) {
       // This mainly catches Jericho and network problems
       LOGGER.warn( "Exception while parsing " + fetchData.uri() + " with " + parser, e );
+      frontier.parsingExceptionCount.incrementAndGet();
       return null;
     }
   }
