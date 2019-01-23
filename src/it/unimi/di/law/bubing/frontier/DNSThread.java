@@ -66,6 +66,7 @@ public final class DNSThread extends Thread {
 	@Override
 	public void run() {
 		Random rng = new Random();
+		frontier.runningDnsThreads.incrementAndGet();
 		while(! stop) {
 			try {
 				frontier.rc.ensureNotPaused();
@@ -77,6 +78,7 @@ public final class DNSThread extends Thread {
 				// If none after one second, try again.
 				if (visitState == null) continue;
 
+				frontier.workingDnsThreads.incrementAndGet();
 				final String host = BURL.hostFromSchemeAndAuthority(visitState.schemeAuthority);
 
 				try {
@@ -120,6 +122,7 @@ public final class DNSThread extends Thread {
 						overflowCounter++;
 					} while (entry.size() > frontier.rc.maxInstantSchemeAuthorityPerIP);
 					visitState.setWorkbenchEntry(entry);
+					frontier.resolvedVisitStates.incrementAndGet();
 				}
 				catch(UnknownHostException e) {
 					LOGGER.info("Unknown host " + host + " for visit state " + visitState);
@@ -141,12 +144,13 @@ public final class DNSThread extends Thread {
 						LOGGER.debug("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
 					}
 				}
+				frontier.workingDnsThreads.decrementAndGet();
 			}
 			catch(Throwable t) {
 				LOGGER.error("Unexpected exception", t);
 			}
 		}
-
+		frontier.runningDnsThreads.decrementAndGet();
 		if (LOGGER.isDebugEnabled()) LOGGER.debug("Completed");
 	}
 

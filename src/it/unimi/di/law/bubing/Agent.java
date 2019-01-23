@@ -320,6 +320,36 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return rc.fetchingThreads;
 	}
 
+	@ManagedAttribute @Description("Number of running fetching threads")
+	public int getRunningFetchingThreads() {
+		return frontier.runningFetchingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of working fetching threads")
+	public int getWorkingFetchingThreads() {
+		return frontier.workingFetchingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of running parsing threads")
+	public int getRunningParsingThreads() {
+		return frontier.runningParsingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of working parsing threads")
+	public int getWorkingParsingThreads() {
+		return frontier.workingParsingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of running DNS threads")
+	public int getRunningDnsThreads() {
+		return frontier.runningDnsThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of working DNS threads")
+	public int getWorkingDnsThreads() {
+		return frontier.workingDnsThreads.get();
+	}
+
 	@ManagedAttribute
 	public void setParsingThreads(final int parsingThreads) throws IllegalArgumentException, NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException, IOException, NoSuchAlgorithmException {
 		frontier.parsingThreads(rc.parsingThreads = parsingThreads);
@@ -642,6 +672,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.pathQueriesInQueues.get();
 	}
 
+	@ManagedAttribute @Description("URLs in VisitState queues")
+	public long getURLsInDiskQueues() {
+		return frontier.pathQueriesInDiskQueues.get();
+	}
+
 	@ManagedAttribute @Description("Percentage of workbench maximum size in used")
 	public double getURLsInQueuesPercentage() {
 		return 100.0 * frontier.weightOfpathQueriesInQueues.get() / frontier.rc.workbenchMaxByteSize;
@@ -687,10 +722,12 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.getStatsThread().getVisitStates();
 	}
 
+
+	@ManagedAttribute @Description("Number of received VisitState instances")
+	public long getReceivedVisitStates() {return frontier.receivedVisitStates.get(); }
+
 	@ManagedAttribute @Description("Number of resolved VisitState instances")
-	public long getResolvedVisitStates() {
-		return frontier.getStatsThread().resolvedVisitStates;
-	}
+	public long getResolvedVisitStates() {return frontier.resolvedVisitStates.get(); }
 
 	@ManagedAttribute @Description("Number of entries on the workbench")
 	public long getIPOnWorkbench() {
@@ -707,10 +744,36 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.todo.size();
 	}
 
+	@ManagedAttribute @Description("Number of VisitState instances on the refill list")
+	public long getRefillSize() {
+		return frontier.refill.size();
+	}
+
 	@ManagedAttribute @Description("Number of FetchingThread instances downloading data")
 	public int getActiveFetchingThreads() {
 		return  (int)(frontier.rc.fetchingThreads - frontier.results.size());
 	}
+
+
+	@ManagedAttribute @Description("Time spent in fetches")
+	public long getFetchingDurationTotalMs() {
+		return (frontier.fetchingDurationTotal.get());
+	}
+
+	@ManagedAttribute @Description("Number of fetches done so far")
+	public long getFetchingCount() { return  frontier.fetchingCount.get();	}
+
+	@ManagedAttribute @Description("Number of fetches finished with a timeout")
+	public long getFetchingTimeoutCount() { return  frontier.fetchingTimeoutCount.get(); }
+
+	@ManagedAttribute @Description("Time spent in parsing")
+	public long getParsingDurationTotal() { return  frontier.parsingDurationTotal.get(); }
+
+	@ManagedAttribute @Description("Number of parsing done")
+	public long getParsingCount() { return  frontier.parsingCount.get(); }
+
+	@ManagedAttribute @Description("Number of parsing failed with an exception")
+	public long getParsingExceptionCount() { return  frontier.parsingExceptionCount.get(); }
 
 	@ManagedAttribute @Description("Number of FetchingThread instances waiting for parsing")
 	public int getReadyToParse() {
@@ -745,6 +808,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute @Description("Current required front size")
 	public long getRequiredFrontSize() {
 		return frontier.requiredFrontSize.get();
+	}
+
+	@ManagedAttribute @Description("Current required front size")
+	public long getFrontSize() {
+		return frontier.getCurrentFrontSize();
 	}
 
 	/**
