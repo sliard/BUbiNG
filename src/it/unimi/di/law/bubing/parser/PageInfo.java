@@ -10,7 +10,6 @@ import it.unimi.di.law.bubing.util.detection.LanguageDetectionInfo;
 import it.unimi.di.law.bubing.util.detection.LocationDetectionInfo;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
 import it.unimi.dsi.util.TextPattern;
-import net.htmlparser.jericho.HTMLElementName;
 import org.apache.http.Header;
 import org.apache.http.HttpResponse;
 import org.slf4j.Logger;
@@ -48,14 +47,14 @@ public final class PageInfo
   private static final TextPattern HTML_PATTERN = new TextPattern( "<html", TextPattern.CASE_INSENSITIVE );
   private static final TextPattern META_PATTERN = new TextPattern( "<meta", TextPattern.CASE_INSENSITIVE );
 
-  private final URI baseUri;
+  private final URI uri;
   private final HtmlCharsetDetector charsetDetector;
   private final CharsetDetectionInfo charsetDetectionInfo;
   private final LanguageDetectionInfo languageDetectionInfo;
   private final LocationDetectionInfo locationDetectionInfo;
   private final RobotsTagState robotsTagState;
-  private final ArrayList<Link> headerLinks;
-  private final ArrayList<Link> links;
+  private final ArrayList<HTMLLink> headerLinks;
+  private final ArrayList<HTMLLink> links;
   private Charset guessedCharset;
   private Locale guessedLanguage;
   private URI guessedLocation;
@@ -80,11 +79,11 @@ public final class PageInfo
     return robotsTagState;
   }
 
-  public List<Link> getHeaderLinks() {
+  public List<HTMLLink> getHeaderLinks() {
     return headerLinks;
   }
 
-  public List<Link> getLinks() {
+  public List<HTMLLink> getLinks() {
     return links;
   }
 
@@ -108,19 +107,23 @@ public final class PageInfo
     return htmlVersionAtLeast5;
   }
 
-  public List<Link> getRedirectLinks() {
+  public List<HTMLLink> getRedirectLinks() {
     return java.util.stream.Stream.of(
       locationDetectionInfo.httpHeaderLocation,
       locationDetectionInfo.htmlRefreshLocation )
       .filter( Objects::nonNull )
-      .map( (uri) -> new Link( Link.Type.REDIRECT, uri.toString(), null, null, null ) )
+      .map( (uri) -> new HTMLLink( HTMLLink.Type.REDIRECT, uri.toString(), null, null, null ) )
       .collect( java.util.stream.Collectors.toList() );
   }
 
   // contructor --------------------------------------------------------------------------------------------------------------------
 
-  public PageInfo( final URI baseUri, final HtmlCharsetDetector charsetDetector ) {
-    this.baseUri = baseUri;
+  public PageInfo( final URI uri ) {
+    this( uri, new HtmlCharsetDetector(0) );
+  }
+
+  public PageInfo( final URI uri, final HtmlCharsetDetector charsetDetector ) {
+    this.uri = uri;
     this.charsetDetector = charsetDetector;
     this.charsetDetectionInfo = new CharsetDetectionInfo();
     this.languageDetectionInfo = new LanguageDetectionInfo();
@@ -130,7 +133,7 @@ public final class PageInfo
     this.links = new ArrayList<>();
     this.guessedCharset = StandardCharsets.UTF_8;
     this.guessedLanguage = null;
-    this.guessedLocation = baseUri;
+    this.guessedLocation = uri;
     this.hasViewportMeta = false;
     this.htmlVersionAtLeast5 = false;
   }
@@ -223,7 +226,7 @@ public final class PageInfo
     final Header[] headers = httpResponse.getHeaders( "Link" );
     if ( headers.length == 0 ) return false;
     for ( final Header h : headers ) {
-      final Link link = XHTMLParser.LinksHelper.fromHttpHeader( h.getValue() );
+      final HTMLLink link = LinksHelper.fromHttpHeader( h.getValue() );
       if ( link != null )
         headerLinks.add( link );
     }
@@ -250,7 +253,7 @@ public final class PageInfo
   private boolean tryExtractViewportFromMeta( final CharSequence meta ) {
     if ( !VIEWPORT_PATTERN.matcher(meta).matches() )
       return false;
-    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found viewport in META of {}", baseUri.toString() );
+    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found viewport in META of {}", uri.toString() );
     hasViewportMeta = true;
     return true;
   }
@@ -261,7 +264,7 @@ public final class PageInfo
     final Matcher mContent = CONTENT_PATTERN.matcher( mRobots.group(1) );
     if ( !mContent.matches() ) return false;
     final String robotsTags = mContent.group(1);
-    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found robots {} in META of {}", robotsTags, baseUri.toString() );
+    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found robots {} in META of {}", robotsTags, uri.toString() );
     robotsTagState.add( robotsTags );
     return true;
   }
@@ -324,19 +327,19 @@ public final class PageInfo
   private boolean tryGuessLanguageFromContent( final CharSequence content ) {
     if ( content.length() < MIN_CLD2_PAGE_CONTENT )
       return false;
-    final String tld = baseUri.getHost().substring( baseUri.getHost().lastIndexOf('.') + 1 );
+    final String tld = uri.getHost().substring( uri.getHost().lastIndexOf('.') + 1 );
     final String hint = guessedLanguage == null ? null : guessedLanguage.getLanguage();
     final Cld2Result result = Cld2Tool.detect( content, MAX_CLD2_PAGE_CONTENT, tld, hint ); // TODO : use encoding hints see https://github.com/CLD2Owners/cld2/blob/master/public/encodings.h
     if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Raw text submitted to language detection is {}", content.toString() );
     languageDetectionInfo.cld2Language = result.code;
     if ( !result.language.equals("Unknown") )
       return trySetGuessedLanguageFrom( result.code, "from CONTENT" );
-    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Unable to guess language for {}", baseUri );
+    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Unable to guess language for {}", uri );
     return false;
   }
 
   private boolean trySetGuessedCharsetFrom( final String charsetName, final String from ) {
-    if ( LOGGER.isDebugEnabled() ) LOGGER.debug("Found charset {} {} of {}", charsetName, from, baseUri.toString() );
+    if ( LOGGER.isDebugEnabled() ) LOGGER.debug("Found charset {} {} of {}", charsetName, from, uri.toString() );
     try {
       guessedCharset = Charset.forName( charsetName );
       return true;
@@ -348,7 +351,7 @@ public final class PageInfo
   }
 
   private boolean trySetGuessedLanguageFrom( final String languageTag, final String from ) {
-    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found language {} {} of {}", languageTag, from, baseUri.toString() );
+    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found language {} {} of {}", languageTag, from, uri.toString() );
     try {
       guessedLanguage = new Locale.Builder().setLanguageTag( languageTag ).build();
       return true;
@@ -360,13 +363,13 @@ public final class PageInfo
   }
 
   private URI trySetGuessedLocationFrom( final String that, final String value, final String from ) {
-    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found {} {} {} of {}", that, value, from, baseUri.toString() );
+    if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found {} {} {} of {}", that, value, from, uri.toString() );
     final URI validUri = BURL.parse( value );
     if ( validUri == null ) {
       if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "{} {} found {} is not valid", that, value, from );
       return null;
     }
-    guessedLocation = baseUri.resolve( validUri );
+    guessedLocation = uri.resolve( validUri );
     return guessedLocation;
   }
 
@@ -441,6 +444,7 @@ public final class PageInfo
     return null;
   }
 
+  /*
   public static final class Link
   {
     public final String type;
@@ -469,4 +473,5 @@ public final class PageInfo
       public static final String REDIRECT = "redirect";
     }
   }
+  */
 }

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 
 import it.unimi.di.law.bubing.util.detection.CharsetDetectionInfo;
@@ -73,11 +74,10 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 * Parses a response.
 	 *
 	 * @param response a response to parse.
-	 * @param linkReceiver a link receiver.
 	 * @return a digest of the page content, or {@code null} if no digest has been
 	 * computed.
 	 */
-	public byte[] parse(final URI uri, final HttpResponse response, final MsgCrawler.FetchInfo.Builder linkReceiver) throws IOException;
+	public ParseData parse(final URI uri, final HttpResponse response) throws IOException;
 
 	/**
 	 * Returns a guessed charset for the document, or {@code null} if the charset could not be
@@ -85,44 +85,48 @@ public interface Parser<T> extends Filter<URIResponse> {
 	 *
 	 * @return a charset or {@code null}.
 	 */
-	public Charset guessedCharset();
-
-	public Locale guessedLanguage();
-
-	public CharsetDetectionInfo getCharsetDetectionInfo();
-
-	public LanguageDetectionInfo getLanguageDetectionInfo();
-
-	/**
-	 * Return raw content (without scripts etc. & html entities) in byte form in order to detect encoding when none is provided
-	 *
-	 * @return the cleaned page content or {@code null}.
-	 */
-	public StringBuilder getRewrittenContent();
-
-	/**
-	 * Return text content (without html tags & html entities)
-	 *
-	 * @return the cleaned page content or {@code null}.
-	 */
-	public StringBuilder getTextContent();
-
-	public String getTitle();
-
-
-	/**
-	 *
-	 *
-	 * @return a boolean which indicate if the html contains a rendering mode for narrow screen
-	 */
-	public Boolean responsiveDesign();
-
-	/**
-	 *
-	 *
-	 * @return a boolean which indicates if the html version is at least 5. Return false if the page can't be parse.
-	 */
-	public Boolean html5();
+	//public Charset guessedCharset();
+  //
+	//public Locale guessedLanguage();
+  //
+	//public CharsetDetectionInfo getCharsetDetectionInfo();
+  //
+	//public LanguageDetectionInfo getLanguageDetectionInfo();
+  //
+	//public URI getBase();
+  //
+	//public List<HTMLLink> getLinks();
+  //
+	///**
+	// * Return raw content (without scripts etc. & html entities) in byte form in order to detect encoding when none is provided
+	// *
+	// * @return the cleaned page content or {@code null}.
+	// */
+	//public StringBuilder getRewrittenContent();
+  //
+	///**
+	// * Return text content (without html tags & html entities)
+	// *
+	// * @return the cleaned page content or {@code null}.
+	// */
+	//public StringBuilder getTextContent();
+  //
+	//public String getTitle();
+  //
+  //
+	///**
+	// *
+	// *
+	// * @return a boolean which indicate if the html contains a rendering mode for narrow screen
+	// */
+	//public Boolean responsiveDesign();
+  //
+	///**
+	// *
+	// *
+	// * @return a boolean which indicates if the html version is at least 5. Return false if the page can't be parse.
+	// */
+	//public Boolean html5();
 
 
 	/**

@@ -1,22 +1,13 @@
 package it.unimi.di.law.bubing.parser;
 
-import com.exensa.wdl.protobuf.crawler.MsgCrawler;
-import com.exensa.wdl.protobuf.link.MsgLink;
-import com.exensa.wdl.protobuf.link.EnumRel;
-import com.exensa.wdl.protobuf.link.EnumType;
-import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.parser.html.*;
-import it.unimi.di.law.bubing.parser.PageInfo.Link;
 import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.detection.*;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.htmlparser.jericho.HTMLElementName;
+import net.htmlparser.jericho.StartTagType;
 import net.htmlparser.jericho.StreamedSource;
 import org.apache.http.*;
-import org.apache.http.message.BasicHeaderValueParser;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,14 +18,20 @@ import org.xml.sax.Locator;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
-import java.nio.charset.Charset;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 public final class XHTMLParser implements Parser<Void>
 {
+  static {
+    /* As suggested by Martin Jericho. This should speed up things and avoid problems with
+     * server tags embedded in weird places (e.g., JavaScript string literals). Server tags
+     * should not appear in generated HTML anyway. */
+    StartTagType.SERVER_COMMON.deregister();
+    StartTagType.SERVER_COMMON_COMMENT.deregister();
+    StartTagType.SERVER_COMMON_ESCAPED.deregister();
+  }
+
   private static final Logger LOGGER = LoggerFactory.getLogger( XHTMLParser.class );
   private static final int CHAR_BUFFER_SIZE = 1024 * 1024; // The size of the internal Jericho buffer.
   private static final int MAX_CHARSET_PAGE_CONTENT = 5000; // The max required amount of page content (without HTML entities) for charset detection
@@ -60,7 +57,7 @@ public final class XHTMLParser implements Parser<Void>
   }
 
   @Override
-  public byte[] parse( final URI uri, final HttpResponse httpResponse, final MsgCrawler.FetchInfo.Builder fetchInfoBuilder ) throws IOException {
+  public ParseData parse( final URI uri, final HttpResponse httpResponse ) throws IOException {
     init( uri );
 
     pageInfo.extractFromHttpHeader( httpResponse );
@@ -69,7 +66,6 @@ public final class XHTMLParser implements Parser<Void>
 
     final HttpEntity entity = httpResponse.getEntity();
     final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) entity.getContent();
-    fetchInfoBuilder.setUrlKey( PulsarHelper.fromURI(uri) );
 
     final HtmlContentHandler htmlContentHandler = new HtmlContentHandler( digestAppendable, pureTextAppendable );
     final LinksHandler linksHandler = new LinksHandler( pageInfo.getLinks(), MAX_ANCHOR_TEXT_LENGTH );
@@ -90,43 +86,28 @@ public final class XHTMLParser implements Parser<Void>
     }
 
     pageInfo.extractFromContent( htmlContentHandler.pureTextAppendable.getContent() );
-    fillFetchInfo( uri, linksHandler, fetchInfoBuilder );
     updateDigestForRedirection( httpResponse );
 
-    LOGGER.info( "Finished parsing {}, outlinks (e:{}, i:{})", uri, fetchInfoBuilder.getExternalLinksCount(), fetchInfoBuilder.getInternalLinksCount() );
-    return digestAppendable.digest();
+    final List<HTMLLink> allLinks = new ArrayList<>();
+    allLinks.addAll( pageInfo.getHeaderLinks() );
+    allLinks.addAll( pageInfo.getRedirectLinks() );
+    allLinks.addAll( pageInfo.getLinks() );
+
+    final URI baseUriOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
+    final URI baseUri = baseUriOpt == null ? uri : uri.resolve( baseUriOpt );
+
+    return new ParseData(
+      baseUri,
+      metadata.get( "title" ),
+      pageInfo,
+      digestAppendable.digest(),
+      pureTextAppendable.getContent(),
+      rewritten,
+      allLinks
+    );
   }
 
-  private void init( final URI uri ) {
-    metadata.clear();
-    pageInfo = new PageInfo( uri, charsetDetector );
-    digestAppendable.init( uri );
-    pureTextAppendable.init();
-    rewritten.setLength( 0 );
-  }
-
-  private void fillFetchInfo( final URI uri, final LinksHandler linksHandler, final MsgCrawler.FetchInfo.Builder fetchInfoBuilder ) {
-    fetchInfoBuilder.getRobotsTagBuilder()
-      .setNOINDEX( pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
-      .setNOFOLLOW( pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
-      .setNOARCHIVE( pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
-      .setNOSNIPPET( pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
-    LinksHelper.processLinks( uri, pageInfo, linksHandler, fetchInfoBuilder );
-  }
-
-  private void updateDigestForRedirection( final HttpResponse httpResponse ) {
-    // This is to avoid collapsing 3xx pages with boilerplate content (as opposed to 0-length content).
-    if ( httpResponse.getStatusLine().getStatusCode()/100 == 3 ) {
-      digestAppendable.append( (char)0 );
-      if ( pageInfo.getLocationDetectionInfo().httpHeaderLocation != null )
-        digestAppendable.append( pageInfo.getLocationDetectionInfo().httpHeaderLocation.toString() );
-      digestAppendable.append( (char)0 );
-      if ( pageInfo.getLocationDetectionInfo().htmlRefreshLocation != null )
-        digestAppendable.append( pageInfo.getLocationDetectionInfo().htmlRefreshLocation.toString() );
-      digestAppendable.append( (char)0 );
-    }
-  }
-
+  /*
   @Override
   public Charset guessedCharset() {
     return pageInfo.getGuessedCharset();
@@ -145,6 +126,15 @@ public final class XHTMLParser implements Parser<Void>
   @Override
   public LanguageDetectionInfo getLanguageDetectionInfo() {
     return pageInfo.getLanguageDetectionInfo();
+  }
+
+  @Override
+  public URI getBase() {
+  }
+
+  @Override
+  public List<HTMLLink> getLinks() {
+
   }
 
   @Override
@@ -171,6 +161,7 @@ public final class XHTMLParser implements Parser<Void>
   public Boolean html5() {
     return pageInfo.isHtmlVersionAtLeast5();
   }
+  */
 
   @Override
   public Void result() {
@@ -187,6 +178,31 @@ public final class XHTMLParser implements Parser<Void>
     final Header contentType = uriResponse.response().getEntity().getContentType();
     return contentType != null && contentType.getValue().startsWith("text/");
   }
+
+  // implementation ----------------------------------------------------------------------------------------------------------------
+
+  private void init( final URI uri ) {
+    metadata.clear();
+    pageInfo = new PageInfo( uri, charsetDetector );
+    digestAppendable.init( uri );
+    pureTextAppendable.init();
+    rewritten.setLength( 0 );
+  }
+
+  private void updateDigestForRedirection( final HttpResponse httpResponse ) {
+    // This is to avoid collapsing 3xx pages with boilerplate content (as opposed to 0-length content).
+    if ( httpResponse.getStatusLine().getStatusCode()/100 == 3 ) {
+      digestAppendable.append( (char)0 );
+      if ( pageInfo.getLocationDetectionInfo().httpHeaderLocation != null )
+        digestAppendable.append( pageInfo.getLocationDetectionInfo().httpHeaderLocation.toString() );
+      digestAppendable.append( (char)0 );
+      if ( pageInfo.getLocationDetectionInfo().htmlRefreshLocation != null )
+        digestAppendable.append( pageInfo.getLocationDetectionInfo().htmlRefreshLocation.toString() );
+      digestAppendable.append( (char)0 );
+    }
+  }
+
+  // inner classes -----------------------------------------------------------------------------------------------------------------
 
   public static final class HtmlContentHandler implements ContentHandler
   {
@@ -240,228 +256,5 @@ public final class XHTMLParser implements Parser<Void>
     @Override public void endPrefixMapping( final String prefix ) { }
     @Override public void processingInstruction( final String target, final String data ) { }
     @Override public void skippedEntity( final String name ) { }
-  }
-
-  public static final class LinksHelper
-  {
-    static PageInfo.Link fromHttpHeader( final String header ) {
-      return HttpLinksHeaderParser.tryParse( header );
-    }
-
-    static void processLinks( final URI uri, final PageInfo pageInfo, final LinksHandler linksHandler, final MsgCrawler.FetchInfo.Builder fetchInfoBuilder ) {
-      final MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
-      final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-
-      final URI headerBase = uri; // FIXME: should we use Content-Location
-      final URI baseOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
-      final URI contentBase = baseOpt == null ? uri : uri.resolve( baseOpt );
-
-      processLinks( uri, headerBase, pageInfo.getHeaderLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-      processLinks( uri, headerBase, pageInfo.getRedirectLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-      processLinks( uri, contentBase, linksHandler.getLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-    }
-
-    private static void processLinks( final URI uri, final URI base,
-                                      final List<Link> links,
-                                      final MsgCrawler.FetchInfo.Builder fetchInfoBuilder,
-                                      final MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder,
-                                      final MsgLink.LinkInfo.Builder linkInfoBuilder ) {
-      for ( final Link link : links ) {
-        final URI targetURI = getTargetURI( link.uri, base );
-
-        if ( targetURI == null )
-          continue;
-        if ( !trySetLinkInfos(link,linkInfoBuilder) )
-          continue;
-
-        fetchLinkInfoBuilder.setTarget( PulsarHelper.fromURI(targetURI) );
-        fetchLinkInfoBuilder.setLinkInfo( linkInfoBuilder );
-
-        if ( isSameSchemeAndHost(uri,targetURI) ) // FIXME: was isSameSchemeAndAuthority
-          fetchInfoBuilder.addInternalLinks( fetchLinkInfoBuilder );
-        else
-          fetchInfoBuilder.addExternalLinks( fetchLinkInfoBuilder );
-      }
-    }
-
-    private static boolean isSameSchemeAndHost( final URI left, final URI right ) {
-      return left.getScheme().equals( right.getScheme() ) &&
-        left.getHost().equals( right.getHost() );
-    }
-
-    private static URI getTargetURI( final String href, final URI base ) {
-      final URI url = BURL.parse( href );
-      return url == null ? null : base.resolve( url );
-    }
-
-    private static boolean trySetLinkInfos( final Link link, final MsgLink.LinkInfo.Builder linkInfoBuilder ) {
-      final String type = link.type;
-      if ( type == Link.Type.A || type == Link.Type.IMG ) {
-        if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
-          return false;
-        linkInfoBuilder.setLinkType( EnumType.Enum.A );
-      }
-      else
-      if ( type == Link.Type.LINK ) {
-        if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Links) )
-          return false;
-        linkInfoBuilder.setLinkType( EnumType.Enum.LINK );
-      }
-      else
-      if ( type == Link.Type.REDIRECT ) {
-        linkInfoBuilder.setLinkType( EnumType.Enum.REDIRECT );
-      }
-      else
-        return false;
-      // Completely ignores NOFOLLOW links (TODO: ideally, should be done in Frontier Manager)
-      if ((linkInfoBuilder.getLinkRel() & EnumRel.Enum.NOFOLLOW_VALUE) != 0)
-        return false;
-      if ( link.text != null )
-        linkInfoBuilder.setText( link.text );
-      else
-        linkInfoBuilder.clearText();
-      linkInfoBuilder.setLinkQuality( 1.0f );
-      return true;
-    }
-
-    private static boolean processRels( final MsgLink.LinkInfo.Builder linkInfoBuilder, final String rel, final Object2IntOpenHashMap<String> map ) {
-      int relValue = 0;
-      if ( rel != null ) {
-        final String[] rels = SPLIT_PATTERN.split( rel.toLowerCase().trim() );
-        for ( final String r : rels ) {
-          if ( excludeRels.contains(r) )
-            return false;
-          relValue |= map.getInt(r);
-        }
-      }
-      linkInfoBuilder.setLinkRel( relValue );
-      return true;
-    }
-
-    private static final Pattern SPLIT_PATTERN = Pattern.compile( "\\s+|,\\s*" );
-
-    private static final Set<String> excludeRels = makeSet(
-      "stylesheet",
-      "prefetch",
-      "dns-prefetch",
-      "preconnect",
-      "preload",
-      "prerender",
-      "shortcut",
-      "icon",
-      "mask-icon",
-      "meta",
-      "apple-touch-icon",
-      "apple-touch-icon-precomposed",
-      "apple-touch-startup-image",
-      "image_src",
-      "edituri",
-      "https://api.w.org/",
-      "manifest",
-      "wlwmanifest",
-      "profile",
-      "publisher",
-      "enclosure",
-      "pingback"
-    );
-    
-    private static final Object2IntOpenHashMap<String> allowedRelsMap_Links = makeMap(
-      E( "canonical", EnumRel.Enum.CANONICAL_VALUE ),
-      E( "shortlink", EnumRel.Enum.SHORTLINK_VALUE ),
-      E( "index",     EnumRel.Enum.INDEX_VALUE ),
-      E( "search",    EnumRel.Enum.SEARCH_VALUE ),
-      E( "alternate", EnumRel.Enum.ALTERNATE_VALUE ),
-      E( "start",     EnumRel.Enum.FIRST_VALUE ),
-      E( "first",     EnumRel.Enum.FIRST_VALUE ),
-      E( "begin",     EnumRel.Enum.FIRST_VALUE ),
-      E( "prev",      EnumRel.Enum.PREV_VALUE ),
-      E( "previous",  EnumRel.Enum.PREV_VALUE ),
-      E( "next",      EnumRel.Enum.NEXT_VALUE ),
-      E( "last",      EnumRel.Enum.LAST_VALUE ),
-      E( "end",       EnumRel.Enum.LAST_VALUE ),
-      E( "home",      EnumRel.Enum.HOME_VALUE ),
-      E( "author",    EnumRel.Enum.AUTHOR_VALUE ),
-      E( "license",   EnumRel.Enum.LICENSE_VALUE ),
-      E( "archives",  EnumRel.Enum.ARCHIVES_VALUE ),
-      E( "archive",   EnumRel.Enum.ARCHIVES_VALUE )
-    );
-
-    private static final Object2IntOpenHashMap<String> allowedRelsMap_Anchors = makeMap(
-      E( "nofollow",   EnumRel.Enum.NOFOLLOW_VALUE ),
-      E( "noopener",   EnumRel.Enum.NOOPENER_VALUE ),
-      E( "noreferrer", EnumRel.Enum.NOREFERRER_VALUE ),
-      E( "canonical",  EnumRel.Enum.CANONICAL_VALUE ),
-      E( "bookmark",   EnumRel.Enum.BOOKMARK_VALUE ),
-      E( "shortlink",  EnumRel.Enum.SHORTLINK_VALUE ),
-      E( "tag",        EnumRel.Enum.TAG_VALUE ),
-      E( "category",   EnumRel.Enum.TAG_VALUE ),
-      E( "index",      EnumRel.Enum.INDEX_VALUE ),
-      E( "search",     EnumRel.Enum.SEARCH_VALUE ),
-      E( "alternate",  EnumRel.Enum.ALTERNATE_VALUE ),
-      E( "start",      EnumRel.Enum.FIRST_VALUE ),
-      E( "first",      EnumRel.Enum.FIRST_VALUE ),
-      E( "begin",      EnumRel.Enum.FIRST_VALUE ),
-      E( "prev",       EnumRel.Enum.PREV_VALUE ),
-      E( "previous",   EnumRel.Enum.PREV_VALUE ),
-      E( "next",       EnumRel.Enum.NEXT_VALUE ),
-      E( "last",       EnumRel.Enum.LAST_VALUE ),
-      E( "end",        EnumRel.Enum.LAST_VALUE ),
-      E( "home",       EnumRel.Enum.HOME_VALUE ),
-      E( "author",     EnumRel.Enum.AUTHOR_VALUE ),
-      E( "license",    EnumRel.Enum.LICENSE_VALUE ),
-      E( "archives",   EnumRel.Enum.ARCHIVES_VALUE ),
-      E( "archive",    EnumRel.Enum.ARCHIVES_VALUE ),
-      E( "external",   EnumRel.Enum.EXTERNAL_VALUE )
-    );
-
-    private static <T> ObjectOpenHashSet<T> makeSet( T... elements ) {
-      return new ObjectOpenHashSet<>( elements );
-    }
-
-    private static <K> Map.Entry<K,Integer> E( final K key, final int value ) {
-      return new java.util.AbstractMap.SimpleImmutableEntry<>( key, value );
-    }
-
-    private static <K> Object2IntOpenHashMap<K> makeMap( Map.Entry<K,Integer>... entries ) {
-      final Object2IntOpenHashMap<K> map = new Object2IntOpenHashMap<>();
-      for ( final Map.Entry<K,Integer> e : entries )
-        map.put( e.getKey(), (int)e.getValue() );
-      return map;
-    }
-
-    private static final class HttpLinksHeaderParser
-    {
-      private static final Logger LOGGER = LoggerFactory.getLogger( HttpLinksHeaderParser.class );
-      private static final Pattern PATTERN = Pattern.compile( "\\s*<(.+)>\\s*(.*)" );
-
-      static PageInfo.Link tryParse( final String header ) {
-        final Matcher m = PATTERN.matcher( header );
-        if ( !m.matches() ) {
-          if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "failed to parse '{}'", header );
-          return null;
-        }
-
-        final String href = m.group(1);
-        final NameValuePair[] parameters = parseParameters( m.group(2) );
-        final HashMap<String, String> map = new HashMap<>();
-        for ( final NameValuePair nvp : parameters ) {
-          final String name = nvp.getName().toLowerCase( Locale.ENGLISH );
-          final String value = nvp.getValue();
-          map.putIfAbsent( name, value );
-        }
-
-        return new PageInfo.Link( Link.Type.LINK, href, map.get("title"), null, map.get("rel") );
-      }
-
-      private static NameValuePair[] parseParameters( final String parameters ) {
-        try {
-          return BasicHeaderValueParser.parseParameters( parameters, null ); // thread-safe
-        }
-        catch ( ParseException e ) {
-          if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "failed to parse parameters '{}'", parameters );
-          return new NameValuePair[0];
-        }
-      }
-    }
   }
 }

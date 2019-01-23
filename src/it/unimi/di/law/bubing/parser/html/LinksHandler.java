@@ -12,7 +12,7 @@
 
 package it.unimi.di.law.bubing.parser.html;
 
-import it.unimi.di.law.bubing.parser.PageInfo.Link;
+import it.unimi.di.law.bubing.parser.HTMLLink;
 import net.htmlparser.jericho.HTMLElementName;
 import org.xml.sax.Attributes;
 
@@ -41,7 +41,7 @@ public class LinksHandler
     final String rel;
     final StringBuilder text;
     final WhiteCharsCleaner whiteCharsCleaner;
-    Link imgOpt;
+    HTMLLink imgOpt;
 
     private AnchorBuilder() {
       this.uri = null;
@@ -87,12 +87,12 @@ public class LinksHandler
     }
   }
 
-  private final List<Link> links;
+  private final List<HTMLLink> links;
   private final int maxAnchorTextLength;
   private final Stack<AnchorBuilder> anchors;
   private String baseOpt;
 
-  public LinksHandler( final List<Link> links, final int maxAnchorTextLength ) {
+  public LinksHandler( final List<HTMLLink> links, final int maxAnchorTextLength ) {
     this.links = links;
     this.maxAnchorTextLength = maxAnchorTextLength;
     this.anchors = new Stack<>();
@@ -130,7 +130,7 @@ public class LinksHandler
     return baseOpt;
   }
 
-  public List<Link> getLinks() {
+  public List<HTMLLink> getLinks() {
     return links;
   }
 
@@ -150,7 +150,7 @@ public class LinksHandler
     final AnchorBuilder anchor = anchors.pop();
     if ( anchor == AnchorBuilder.DUMMY ) return;
     final String anchorText = anchor.getAnchorText( maxAnchorTextLength );
-    addLink( anchor.imgOpt == null ? Link.Type.A : Link.Type.IMG, anchor.uri, anchor.title, anchorText, anchor.rel );
+    addLink( anchor.imgOpt == null ? HTMLLink.Type.A : HTMLLink.Type.IMG, anchor.uri, anchor.title, anchorText, anchor.rel );
   }
 
   private void startTagLink( final Attributes attributes ) {
@@ -158,13 +158,13 @@ public class LinksHandler
     if ( uri == null ) return;
     final String rel = attributes.getValue( Atts.REL );
     //if ( "canonical".equalsIgnoreCase(rel) )
-    addLink( Link.Type.LINK, uri, null, null, rel );
+    addLink( HTMLLink.Type.LINK, uri, null, null, rel );
   }
 
   private void startTagScript( final Attributes attributes ) {
     final String uri = attributes.getValue( Atts.SRC );
     if ( uri == null ) return;
-    addLink( Link.Type.SCRIPT, uri, null, null, null );
+    addLink( HTMLLink.Type.SCRIPT, uri, null, null, null );
   }
 
   private void startTagEmbed( final Attributes attributes ) {
@@ -172,20 +172,20 @@ public class LinksHandler
     if ( uri == null ) return;
     final String title = attributes.getValue( Atts.TITLE );
     final String rel = attributes.getValue( Atts.TYPE );
-    addLink( Link.Type.EMBED, uri, title, null, rel );
+    addLink( HTMLLink.Type.EMBED, uri, title, null, rel );
   }
 
   private void startTagIframe( final Attributes attributes ) {
     final String uri = attributes.getValue( Atts.SRC );
     if ( uri == null ) return;
     final String title = attributes.getValue( Atts.TITLE );
-    addLink( Link.Type.IFRAME, uri, title, null, null );
+    addLink( HTMLLink.Type.IFRAME, uri, title, null, null );
   }
 
   private void startTagFrame( final Attributes attributes ) {
     final String uri = attributes.getValue( Atts.SRC );
     if ( uri == null ) return;
-    addLink( Link.Type.FRAME, uri, null, null, null );
+    addLink( HTMLLink.Type.FRAME, uri, null, null, null );
   }
 
   private void startTagArea( final Attributes attributes ) {
@@ -194,7 +194,7 @@ public class LinksHandler
     final String title = attributes.getValue( Atts.TITLE );
     final String text = attributes.getValue( Atts.ALT );
     final String rel = attributes.getValue( Atts.REL );
-    addLink( Link.Type.IMG, uri, title, text, rel );
+    addLink( HTMLLink.Type.IMG, uri, title, text, rel );
   }
 
   private void startTagImg( final Attributes attributes ) {
@@ -209,7 +209,7 @@ public class LinksHandler
       if ( alt != null ) anchor.characters( alt );
       else if ( title != null ) anchor.characters( title );
     }
-    anchor.imgOpt = new Link( Link.Type.IMG, uri, title, alt, null );
+    anchor.imgOpt = new HTMLLink( HTMLLink.Type.IMG, uri, title, alt, null );
   }
 
   private void startTagBase( final Attributes attributes ) {
@@ -218,6 +218,6 @@ public class LinksHandler
   }
 
   private void addLink( final String type, final String uri, final String title, final String text, final String rel ) {
-    links.add( new Link(type,uri,title,text,rel) );
+    links.add( new HTMLLink(type,uri,title,text,rel) );
   }
 }
