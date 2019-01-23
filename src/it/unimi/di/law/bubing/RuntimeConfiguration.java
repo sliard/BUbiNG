@@ -306,6 +306,10 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#textClassifierThreshold */
 	public final float textClassifierThreshold;
 
+	/** @see StartupConfiguration#textClassifierMinNbResults */
+	public final int textClassifierMinNbResults;
+
+
 	/** The parser, instantiated. Parsers used by {@link ParsingThread} instances are obtained by {@linkplain FlyweightPrototype#copy() copying this parsers}. */
 	public final ArrayList<Parser<?>> parsers;
 
@@ -538,6 +542,7 @@ public class RuntimeConfiguration {
 			spamDetectionPeriodicity = startupConfiguration.spamDetectionPeriodicity;
 
 			textClassifierThreshold = startupConfiguration.textClassifierThreshold;
+			textClassifierMinNbResults = startupConfiguration.textClassifierMinNbResults;
 
 			final List<Iterator<URI>> seedSequence = getSeedSequence(startupConfiguration.seed);
 
