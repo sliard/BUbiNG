@@ -58,6 +58,8 @@ import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 
 import java.util.List;
 import java.util.Random;
+
+import static java.lang.System.nanoTime;
 //RELEASE-STATUS: DIST
 
 /** A thread parsing pages retrieved by a {@link FetchingThread}.
@@ -430,10 +432,14 @@ public class ParsingThread extends Thread {
   private MsgCrawler.Categorization categorize( final FetchData fetchData, final ParseData parseData ) {
     try {
       if ( classifier != null ) {
+
+        long startClassifTime = System.nanoTime();
         MsgCrawler.Categorization categorization = classifier.predict( parseData.textContent.toString(), parseData.getLanguageName() );
-        //LOGGER.info("content [" + parseData.textContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
-        if (categorization != null) {
-          /*StringBuilder sb  = new StringBuilder("categorization: [");
+        long endClassifTime = System.nanoTime();
+        LOGGER.trace("content [" + parseData.textContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
+        LOGGER.debug("Predict time: " + (double)(endClassifTime - startClassifTime) / 1000000000.0 + "s");
+        if (categorization != null && LOGGER.isDebugEnabled()) {
+          StringBuilder sb  = new StringBuilder("categorization: [");
           for (MsgCrawler.Topic topic : categorization.getTopicList()) {
             sb.append('(');
             sb.append(topic.getId());
@@ -442,7 +448,7 @@ public class ParsingThread extends Thread {
             sb.append(")");
           }
           sb.append(']');
-          LOGGER.info(sb.toString());*/
+          LOGGER.debug(sb.toString());
         }
         return categorization;
       }
