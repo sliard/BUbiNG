@@ -461,7 +461,7 @@ public class StartupConfiguration {
 	public float textClassifierThreshold;
 
 	/** The threshold to assign a category to a text (default 0.5f) */
-	@OptionalSpecification(value="1")
+	@OptionalSpecification(value="0")
 	public int textClassifierMinNbResults;
 
 	/* Checks */
