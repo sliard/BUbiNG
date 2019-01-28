@@ -1,12 +1,8 @@
 package it.unimi.di.law.bubing.parser;
 
-import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.link.EnumRel;
 import com.exensa.wdl.protobuf.link.EnumType;
 import com.exensa.wdl.protobuf.link.MsgLink;
-import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
-import it.unimi.di.law.bubing.parser.html.LinksHandler;
-import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import org.apache.http.NameValuePair;
@@ -15,7 +11,6 @@ import org.apache.http.message.BasicHeaderValueParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,60 +20,6 @@ public final class LinksHelper
 {
   static HTMLLink fromHttpHeader( final String header ) {
     return HttpLinksHeaderParser.tryParse( header );
-  }
-
-  /*
-  static List<HTMLLink> getLinks( final URI uri, final PageInfo pageInfo, final LinksHandler linksHandler ) {
-    final URI headerBase = uri; // FIXME: should we use Content-Location
-    final URI baseOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
-    final URI contentBase = baseOpt == null ? uri : uri.resolve( baseOpt );
-  }
-
-  static void processLinks( final URI uri, final PageInfo pageInfo, final LinksHandler linksHandler, final MsgCrawler.FetchInfo.Builder fetchInfoBuilder ) {
-    final MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
-    final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-
-    final URI headerBase = uri; // FIXME: should we use Content-Location
-    final URI baseOpt = linksHandler.getBaseOpt() == null ? null : BURL.parse( linksHandler.getBaseOpt() );
-    final URI contentBase = baseOpt == null ? uri : uri.resolve( baseOpt );
-
-    processLinks( uri, headerBase, pageInfo.getHeaderLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-    processLinks( uri, headerBase, pageInfo.getRedirectLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-    processLinks( uri, contentBase, linksHandler.getLinks(), fetchInfoBuilder, fetchLinkInfoBuilder, linkInfoBuilder );
-  }
-  */
-
-  private static void processLinks( final URI uri, final URI base,
-                                    final List<HTMLLink> links,
-                                    final MsgCrawler.FetchInfo.Builder fetchInfoBuilder,
-                                    final MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder,
-                                    final MsgLink.LinkInfo.Builder linkInfoBuilder ) {
-    for ( final HTMLLink link : links ) {
-      final URI targetURI = getTargetURI( link.uri, base );
-
-      if ( targetURI == null )
-        continue;
-      if ( !trySetLinkInfos(link,linkInfoBuilder) )
-        continue;
-
-      fetchLinkInfoBuilder.setTarget( PulsarHelper.fromURI(targetURI) );
-      fetchLinkInfoBuilder.setLinkInfo( linkInfoBuilder );
-
-      if ( isSameSchemeAndHost(uri,targetURI) ) // FIXME: was isSameSchemeAndAuthority
-        fetchInfoBuilder.addInternalLinks( fetchLinkInfoBuilder );
-      else
-        fetchInfoBuilder.addExternalLinks( fetchLinkInfoBuilder );
-    }
-  }
-
-  private static boolean isSameSchemeAndHost( final URI left, final URI right ) {
-    return left.getScheme().equals( right.getScheme() ) &&
-      left.getHost().equals( right.getHost() );
-  }
-
-  private static URI getTargetURI( final String href, final URI base ) {
-    final URI url = BURL.parse( href );
-    return url == null ? null : base.resolve( url );
   }
 
   public static boolean trySetLinkInfos( final HTMLLink link, final MsgLink.LinkInfo.Builder linkInfoBuilder ) {

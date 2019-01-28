@@ -434,11 +434,11 @@ public class ParsingThread extends Thread {
       if ( classifier != null ) {
 
         long startClassifTime = System.nanoTime();
-        MsgCrawler.Categorization categorization = classifier.predict( parseData.textContent.toString(), parseData.getLanguageName() );
+        MsgCrawler.Categorization categorization = classifier.predict( parseData.boilerpipedContent.toString(), parseData.getLanguageName() );
         long endClassifTime = System.nanoTime();
-        LOGGER.trace("content [" + parseData.textContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
+        if ( LOGGER.isTraceEnabled() ) LOGGER.trace("content [" + parseData.boilerpipedContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
         LOGGER.debug("Predict time: " + (double)(endClassifTime - startClassifTime) / 1000000000.0 + "s");
-        if (categorization != null && LOGGER.isDebugEnabled()) {
+        if (LOGGER.isDebugEnabled() && categorization != null ) {
           StringBuilder sb  = new StringBuilder("categorization: [");
           for (MsgCrawler.Topic topic : categorization.getTopicList()) {
             sb.append('(');

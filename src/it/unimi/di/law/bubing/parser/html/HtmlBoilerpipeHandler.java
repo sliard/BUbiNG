@@ -9,7 +9,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*
+
 package it.unimi.di.law.bubing.parser.html;
 
 import com.kohlschutter.boilerpipe.document.TextBlock;
@@ -22,9 +22,9 @@ import org.xml.sax.SAXException;
 import net.htmlparser.jericho.HTMLElementName;
 
 
-public class BoilerpipeHandler extends BoilerpipeHTMLContentHandler
+public final class HtmlBoilerpipeHandler extends BoilerpipeHTMLContentHandler
 {
-  public static class WriteLimitReachedException extends SAXException
+  public static final class WriteLimitReachedException extends SAXException
   {
     WriteLimitReachedException( final int capacity ) {
       super( String.format("The write limit capacity of %d has been reached",capacity) );
@@ -36,11 +36,15 @@ public class BoilerpipeHandler extends BoilerpipeHTMLContentHandler
   private final StringBuilder stringBuilder;
   private boolean inAnchor;
 
-  public BoilerpipeHandler( final BoilerpipeExtractor extractor, final int capacity ) {
+  public HtmlBoilerpipeHandler( final BoilerpipeExtractor extractor, final int capacity ) {
     this.extractor = extractor;
     this.capacity = capacity;
     this.stringBuilder = new StringBuilder( capacity );
     this.inAnchor = false;
+  }
+
+  public StringBuilder getContent() {
+    return stringBuilder;
   }
 
   @Override
@@ -76,12 +80,18 @@ public class BoilerpipeHandler extends BoilerpipeHTMLContentHandler
     }
 
     for ( TextBlock block : document.getTextBlocks() ) {
+      if ( stringBuilder.length() >= capacity )
+        break;
       if ( block.isContent() ) {
         final String text = block.getText();
-        if ( stringBuilder.length()+text.length() > capacity )
-          throw new WriteLimitReachedException( capacity );
-        stringBuilder.append( text );
-        stringBuilder.append( '\n' );
+        if ( text.length() > 0 ) {
+          if ( stringBuilder.length()+text.length()+1 > capacity )
+            stringBuilder.append( text.substring(0,capacity-stringBuilder.length()) );
+          else {
+            stringBuilder.append( text );
+            stringBuilder.append( '\n' );
+          }
+        }
       }
     }
   }
@@ -91,4 +101,3 @@ public class BoilerpipeHandler extends BoilerpipeHTMLContentHandler
     return stringBuilder.toString();
   }
 }
-*/

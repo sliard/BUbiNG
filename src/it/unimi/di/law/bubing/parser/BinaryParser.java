@@ -95,13 +95,14 @@ public class BinaryParser implements Parser<Void> {
 		final Hasher hasher = init(crossAuthorityDuplicates? null : uri);
 		for(int length; (length = is.read(buffer, 0, buffer.length)) > 0;) hasher.putBytes(buffer, 0, length);
 		return new ParseData(
-			uri,
-			null,
-			new PageInfo(uri),
-			hasher.hash().asBytes(),
-			new StringBuilder(0),
-			null,
-			new ArrayList<>(0)
+      uri,
+      null,
+      new PageInfo(uri),
+      hasher.hash().asBytes(),
+      new StringBuilder(0),
+      new StringBuilder(0),
+      null,
+      new ArrayList<>(0)
 		);
 	}
 

@@ -11,6 +11,7 @@ public final class ParseData
   public final PageInfo pageInfo;
   public final byte[] digest;
   public final StringBuilder textContent;
+  public final StringBuilder boilerpipedContent;
   public final StringBuilder rewritten;
   public final List<HTMLLink> links;
 
@@ -19,6 +20,7 @@ public final class ParseData
                     final PageInfo pageInfo,
                     final byte[] digest,
                     final StringBuilder textContent,
+                    final StringBuilder boilerpipedContent,
                     final StringBuilder rewritten,
                     final List<HTMLLink> links ) {
     this.baseUri = baseUri;
@@ -26,6 +28,7 @@ public final class ParseData
     this.pageInfo = pageInfo;
     this.digest = digest;
     this.textContent = textContent;
+    this.boilerpipedContent = boilerpipedContent;
     this.rewritten = rewritten;
     this.links = links;
   }
