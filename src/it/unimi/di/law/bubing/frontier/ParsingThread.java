@@ -432,7 +432,6 @@ public class ParsingThread extends Thread {
   private MsgCrawler.Categorization categorize( final FetchData fetchData, final ParseData parseData ) {
     try {
       if ( classifier != null ) {
-
         long startClassifTime = System.nanoTime();
         MsgCrawler.Categorization categorization = classifier.predict( parseData.boilerpipedContent.toString(), parseData.getLanguageName() );
         long endClassifTime = System.nanoTime();
