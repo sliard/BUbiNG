@@ -26,7 +26,8 @@ public class PulsarHelper
   }
 
   public static int getTopic( final MsgURL.Key urlkey, final int topicCount ) {
-    final long hash = Serializer.Host.Key.hash( urlkey.getZHost().toByteArray() );
+    final long hash = Serializer.Hasher.toLong(urlkey.getZHost().toByteArray());
+    //final long hash = Serializer.Host.Key.hash( urlkey.getZHost().toByteArray() );
     return (int)((hash & LONG_SIGN_MASK) % topicCount);
   }
 

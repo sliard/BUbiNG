@@ -456,13 +456,9 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="it.unimi.di.law.bubing.categories.NullClassifier")
 	public Class<? extends TextClassifier> classifierClass;
 
-	/** The threshold to assign a category to a text (default 0.5f) */
-	@OptionalSpecification(value="0.5f")
-	public float textClassifierThreshold;
-
-	/** The threshold to assign a category to a text (default 0.5f) */
-	@OptionalSpecification(value="1")
-	public int textClassifierMinNbResults;
+	/** classifier config file name */
+	@OptionalSpecification(value="")
+	public String textClassifierConfigFileName;
 
 	/* Checks */
 

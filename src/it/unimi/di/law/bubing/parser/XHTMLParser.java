@@ -1,5 +1,6 @@
 package it.unimi.di.law.bubing.parser;
 
+import com.kohlschutter.boilerpipe.extractors.ArticleExtractor;
 import it.unimi.di.law.bubing.parser.html.*;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.warc.filters.URIResponse;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.Attributes;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.Locator;
+import org.xml.sax.SAXException;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -37,6 +39,7 @@ public final class XHTMLParser implements Parser<Void>
   private static final int MAX_CHARSET_PAGE_CONTENT = 5000; // The max required amount of page content (without HTML entities) for charset detection
   private static final int REWRITTEN_INITIAL_CAPACITY = 128 * 1024;
   private static final int MAX_ANCHOR_TEXT_LENGTH = 1024;
+  private static final int MAX_BODY_LENGTH = 64 * 1024;
 
   private final char[] buffer;
   private final DigestAppendable digestAppendable;
@@ -67,7 +70,10 @@ public final class XHTMLParser implements Parser<Void>
     final HttpEntity entity = httpResponse.getEntity();
     final InspectableFileCachedInputStream contentStream = (InspectableFileCachedInputStream) entity.getContent();
 
-    final HtmlContentHandler htmlContentHandler = new HtmlContentHandler( digestAppendable, pureTextAppendable );
+    final HtmlDigestContentHandler digestContentHandler = new HtmlDigestContentHandler( digestAppendable );
+    final HtmlPureTextContentHandler pureTextContentHandler = new HtmlPureTextContentHandler( pureTextAppendable );
+    final HtmlBoilerpipeHandler boilerpipeHandler = new HtmlBoilerpipeHandler( ArticleExtractor.INSTANCE, MAX_BODY_LENGTH );
+    final ContentHandler htmlContentHandler = new HtmlTeeContentHandler( digestContentHandler, pureTextContentHandler, boilerpipeHandler );
     final LinksHandler linksHandler = new LinksHandler( pageInfo.getLinks(), MAX_ANCHOR_TEXT_LENGTH );
     final XhtmlContentHandler xhtmlContentHandler = new XhtmlContentHandler( metadata, htmlContentHandler, linksHandler );
     final JerichoToXhtml jerichoToXhtml = new JerichoToXhtml( xhtmlContentHandler );
@@ -85,7 +91,7 @@ public final class XHTMLParser implements Parser<Void>
       return null;
     }
 
-    pageInfo.extractFromContent( htmlContentHandler.pureTextAppendable.getContent() );
+    pageInfo.extractFromContent( pureTextContentHandler.pureTextAppendable.getContent() );
     updateDigestForRedirection( httpResponse );
 
     final List<HTMLLink> allLinks = new ArrayList<>();
@@ -102,6 +108,7 @@ public final class XHTMLParser implements Parser<Void>
       pageInfo,
       digestAppendable.digest(),
       pureTextAppendable.getContent(),
+      boilerpipeHandler.getContent(),
       rewritten,
       allLinks
     );
@@ -204,44 +211,35 @@ public final class XHTMLParser implements Parser<Void>
 
   // inner classes -----------------------------------------------------------------------------------------------------------------
 
-  public static final class HtmlContentHandler implements ContentHandler
+  public static final class HtmlDigestContentHandler implements ContentHandler
   {
     private final DigestAppendable digestAppendable;
-    private final PureTextAppendable pureTextAppendable;
 
-    HtmlContentHandler( final DigestAppendable digestAppendable, final PureTextAppendable pureTextAppendable ) {
+    HtmlDigestContentHandler( final DigestAppendable digestAppendable ) {
       this.digestAppendable = digestAppendable;
-      this.pureTextAppendable = pureTextAppendable;
     }
 
     @Override
     public void startElement( final String uri, final String localName, final String qName, final Attributes atts ) {
-      if ( digestAppendable != null ) {
-        digestAppendable.startTag( localName );
-        if ( localName == HTMLElementName.IFRAME || localName == HTMLElementName.FRAME ) {
-          final String src = atts.getValue( "src" );
-          if ( src != null ) {
-            digestAppendable.append( '\"' );
-            digestAppendable.append( src );
-            digestAppendable.append( '\"' );
-          }
+      digestAppendable.startTag( localName );
+      if ( localName == HTMLElementName.IFRAME || localName == HTMLElementName.FRAME ) {
+        final String src = atts.getValue( "src" );
+        if ( src != null ) {
+          digestAppendable.append( '\"' );
+          digestAppendable.append( src );
+          digestAppendable.append( '\"' );
         }
       }
     }
 
     @Override
     public void endElement( final String uri, final String localName, final String qName ) {
-      if ( digestAppendable != null ) {
-        digestAppendable.endTag( localName );
-      }
+      digestAppendable.endTag( localName );
     }
 
     @Override
     public void characters( final char[] ch, final int start, final int length ) {
-      if ( digestAppendable != null )
-        digestAppendable.append( ch, start, length );
-      if ( pureTextAppendable != null )
-        pureTextAppendable.append( ch, start, length );
+      digestAppendable.append( ch, start, length );
     }
 
     @Override
@@ -256,5 +254,115 @@ public final class XHTMLParser implements Parser<Void>
     @Override public void endPrefixMapping( final String prefix ) { }
     @Override public void processingInstruction( final String target, final String data ) { }
     @Override public void skippedEntity( final String name ) { }
+  }
+
+  public static final class HtmlPureTextContentHandler implements ContentHandler
+  {
+    private final PureTextAppendable pureTextAppendable;
+
+    HtmlPureTextContentHandler( final PureTextAppendable pureTextAppendable ) {
+      this.pureTextAppendable = pureTextAppendable;
+    }
+
+    @Override
+    public void characters( final char[] ch, final int start, final int length ) {
+      pureTextAppendable.append( ch, start, length );
+    }
+
+    @Override
+    public void ignorableWhitespace( final char[] ch, final int start, final int length ) {
+      characters( ch, start, length );
+    }
+
+
+    @Override public void startElement( final String uri, final String localName, final String qName, final Attributes atts ) { }
+    @Override public void endElement( final String uri, final String localName, final String qName ) { }
+    @Override public void setDocumentLocator( final Locator locator ) { }
+    @Override public void startDocument() { }
+    @Override public void endDocument() { }
+    @Override public void startPrefixMapping( final String prefix, final String uri ) { }
+    @Override public void endPrefixMapping( final String prefix ) { }
+    @Override public void processingInstruction( final String target, final String data ) { }
+    @Override public void skippedEntity( final String name ) { }
+  }
+
+  public static final class HtmlTeeContentHandler implements ContentHandler
+  {
+    private final ContentHandler[] handlers;
+
+    HtmlTeeContentHandler( final ContentHandler... handlers ) {
+      this.handlers = handlers;
+    }
+
+    HtmlTeeContentHandler( final Collection<ContentHandler> handlers ) {
+      this.handlers = new ContentHandler[ handlers.size() ];
+      handlers.toArray( this.handlers );
+    }
+
+    @Override
+    public void setDocumentLocator( final Locator locator ) {
+      for ( final ContentHandler handler : handlers )
+        handler.setDocumentLocator( locator );
+    }
+
+    @Override
+    public void startDocument() throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.startDocument();
+    }
+
+    @Override
+    public void endDocument() throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.endDocument();
+    }
+
+    @Override
+    public void startPrefixMapping( final String prefix, final String uri ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.startPrefixMapping( prefix, uri );
+    }
+
+    @Override
+    public void endPrefixMapping( final String prefix ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.endPrefixMapping( prefix );
+    }
+
+    @Override
+    public void startElement( final String uri, final String localName, final String qName, final Attributes atts ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.startElement( uri, localName, qName, atts );
+    }
+
+    @Override
+    public void endElement( final String uri, final String localName, final String qName ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.endElement( uri, localName, qName );
+    }
+
+    @Override
+    public void characters( final char[] ch, final int start, final int length ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.characters( ch, start, length );
+    }
+
+    @Override
+    public void ignorableWhitespace( final char[] ch, final int start, final int length ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.ignorableWhitespace( ch, start, length );
+    }
+
+    @Override
+    public void processingInstruction( final String target, final String data ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.processingInstruction( target, data );
+    }
+
+    @Override
+    public void skippedEntity( final String name ) throws SAXException {
+      for ( final ContentHandler handler : handlers )
+        handler.skippedEntity( name );
+    }
   }
 }
