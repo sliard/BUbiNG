@@ -542,6 +542,10 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.weightOfpathQueriesInQueues.get();
 	}
 
+	@ManagedAttribute @Description("Size of the workbench entry set")
+	public int getWorkbenchEntriesCount() {	return frontier.workbench.numberOfWorkbenchEntries(); }
+
+
 	@ManagedAttribute @Description("Overall size of the store (includes archetypes and duplicates)")
 	public long getStoreSize() {
 		return frontier.archetypes() + frontier.duplicates.get();
@@ -762,6 +766,9 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute @Description("Number of fetches done so far")
 	public long getFetchingCount() { return  frontier.fetchingCount.get();	}
+
+	@ManagedAttribute @Description("Number of robots fetches done so far")
+	public long getFetchingRobotsCount() { return  frontier.fetchingRobotsCount.get();	}
 
 	@ManagedAttribute @Description("Number of fetches finished with a timeout")
 	public long getFetchingTimeoutCount() { return  frontier.fetchingTimeoutCount.get(); }

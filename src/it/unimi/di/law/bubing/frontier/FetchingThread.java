@@ -377,6 +377,7 @@ public final class FetchingThread extends Thread implements Closeable {
       fetchData = null;
     }
     else {
+      // TODO : we need to create a FetchInfo to explain the cause of failure
       frontier.done.add( fetchData.visitState );
     }
   }
@@ -520,6 +521,9 @@ public final class FetchingThread extends Thread implements Closeable {
       return false;
     } finally {
       frontier.fetchingCount.incrementAndGet();
+      if (robots)
+        frontier.fetchingRobotsCount.incrementAndGet();
+
       frontier.fetchingDurationTotal.addAndGet(fetchData.endTime - fetchData.startTime);
     }
 
