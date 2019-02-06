@@ -1,5 +1,7 @@
 package it.unimi.di.law.bubing.frontier;
 
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
@@ -15,6 +17,8 @@ public final class ExceptionHelper
   public static final Object2IntOpenHashMap<Class<?>> EXCEPTION_TO_MAX_RETRIES = new Object2IntOpenHashMap<>();
   /** A map recording for each type of exception the number of retries. */
   public static final ObjectOpenHashSet<Class<?>> EXCEPTION_HOST_KILLER = new ObjectOpenHashSet<>();
+  /** A map recording for each type of exception the FetchStatus */
+  public static final Object2IntOpenHashMap<Class<?>> EXCEPION_TO_FETCH_STATUS = new Object2IntOpenHashMap<>();
 
   static {
     EXCEPTION_TO_WAIT_TIME.defaultReturnValue( TimeUnit.HOURS.toMillis(1));
@@ -51,5 +55,21 @@ public final class ExceptionHelper
     EXCEPTION_HOST_KILLER.add(java.net.SocketException.class);
     EXCEPTION_HOST_KILLER.add(javax.net.ssl.SSLPeerUnverifiedException.class);
     EXCEPTION_HOST_KILLER.add(org.apache.http.conn.ConnectTimeoutException.class);
+
+
+    EXCEPION_TO_FETCH_STATUS.put(java.net.NoRouteToHostException.class, MsgCrawler.FetchStatus.NO_ROUTE_TO_HOST_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(java.net.SocketException.class, MsgCrawler.FetchStatus.SOCKET_ERROR_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(java.net.SocketTimeoutException.class, MsgCrawler.FetchStatus.SOCKET_TIMEOUT_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(java.net.UnknownHostException.class, MsgCrawler.FetchStatus.UNKNOWN_HOST_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(javax.net.ssl.SSLPeerUnverifiedException.class, MsgCrawler.FetchStatus.SSL_ERROR_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.client.CircularRedirectException.class, MsgCrawler.FetchStatus.CIRCULAR_REDIRECT_ERROR_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.client.RedirectException.class, MsgCrawler.FetchStatus.REDIRECT_ERROR_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.conn.ConnectTimeoutException.class, MsgCrawler.FetchStatus.HTTP_CONNECTION_TIMEOUT_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.ConnectionClosedException.class, MsgCrawler.FetchStatus.HTTP_CONNECTION_CLOSED_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.conn.HttpHostConnectException.class, MsgCrawler.FetchStatus.HTTP_HOST_CONNECT_ERROR_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.NoHttpResponseException.class, MsgCrawler.FetchStatus.HTTP_NO_HTTP_RESPONSE_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.TruncatedChunkException.class, MsgCrawler.FetchStatus.HTTP_TRUNCATED_CHUNK_VALUE);
+    EXCEPION_TO_FETCH_STATUS.put(org.apache.http.MalformedChunkCodingException.class, MsgCrawler.FetchStatus.HTTP_MALFORMED_CHUNK_VALUE);
+
   }
 }

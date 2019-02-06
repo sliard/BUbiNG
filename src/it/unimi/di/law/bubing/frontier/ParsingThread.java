@@ -490,6 +490,9 @@ public class ParsingThread extends Thread {
     catch ( IOException e ) {
       LOGGER.error( "Failed to rewrite content of " + fetchData.uri() + " to fetchData", e );
     }
+    catch ( UnsupportedOperationException uoe) {
+      LOGGER.error( "Failed to rewrite content of " + fetchData.uri() + " to fetchData", uoe);
+    }
   }
 
   private String store( final RuntimeConfiguration rc, final FetchData fetchData, final ParseData parseData, final boolean isNotDuplicate, final long streamLength ) throws IOException, InterruptedException {

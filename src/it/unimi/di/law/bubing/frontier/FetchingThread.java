@@ -12,6 +12,7 @@ import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 
 import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.ByteString;
@@ -257,7 +258,7 @@ public final class FetchingThread extends Thread implements Closeable {
   public void run() {
     try {
       LOGGER.warn( "thread [started]" );
-      frontier.runningParsingThreads.addAndGet(1);
+      frontier.runningFetchingThreads.incrementAndGet();
       while ( !stop ) {
         final VisitState visitState = getNextVisitState();
         frontier.workingFetchingThreads.incrementAndGet();
@@ -274,7 +275,7 @@ public final class FetchingThread extends Thread implements Closeable {
     }
     finally {
       LOGGER.warn( "thread [stopped]" );
-      frontier.runningParsingThreads.addAndGet(-1);
+      frontier.runningFetchingThreads.decrementAndGet();
     }
   }
 
@@ -377,9 +378,22 @@ public final class FetchingThread extends Thread implements Closeable {
       fetchData = null;
     }
     else {
-      // TODO : we need to create a FetchInfo to explain the cause of failure
+      frontier.enqueue(fetchInfoFailed());
       frontier.done.add( fetchData.visitState );
     }
+  }
+
+  private MsgCrawler.FetchInfo fetchInfoFailed() {
+    MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
+    fetchInfoBuilder
+      .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
+      .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
+      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
+    if (ExceptionHelper.EXCEPION_TO_FETCH_STATUS.containsKey(fetchData.exception))
+      fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPION_TO_FETCH_STATUS.getInt(fetchData.exception));
+    else
+      fetchInfoBuilder.setFetchStatus(MsgCrawler.FetchStatus.UNKNOWN_FAILURE);
+    return fetchInfoBuilder.build();
   }
 
   private boolean checkAndUpdateFetchData() {
