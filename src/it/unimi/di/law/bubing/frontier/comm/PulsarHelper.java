@@ -2,6 +2,7 @@ package it.unimi.di.law.bubing.frontier.comm;
 
 import com.exensa.util.URIex;
 import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.common.HashingScheme;
 import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.exensa.wdl.protobuf.url.MsgURL;
@@ -16,20 +17,6 @@ import java.nio.charset.StandardCharsets;
 
 public class PulsarHelper
 {
-  private static final int seed = 0xa5f27b9f;
-  private static final long LONG_SIGN_MASK = 0x7fffffffffffffffL;
-
-  public static long hash( final MsgURL.URL url ) {
-    final MurmurHash3_128.LongPair pair = new MurmurHash3_128.LongPair();
-    MurmurHash3_128.murmurhash3_x64_128( url.getHost().toCharArray(), seed, pair );
-    return pair.val1 ^ pair.val2; // FIXME: xor is probably useless
-  }
-
-  public static int getTopic( final MsgURL.Key urlkey, final int topicCount ) {
-    final long hash = Serializer.Hasher.toLong(urlkey.getZHost().toByteArray());
-    //final long hash = Serializer.Host.Key.hash( urlkey.getZHost().toByteArray() );
-    return (int)((hash & LONG_SIGN_MASK) % topicCount);
-  }
 
   public static MsgURL.Key fromURI( final URI uri ) {
     return Serializer.URL.Key.from( uri );

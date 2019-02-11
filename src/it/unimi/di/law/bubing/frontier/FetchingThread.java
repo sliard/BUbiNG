@@ -12,6 +12,7 @@ import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 
 import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
@@ -389,10 +390,11 @@ public final class FetchingThread extends Thread implements Closeable {
       .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
       .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
+
     if (ExceptionHelper.EXCEPION_TO_FETCH_STATUS.containsKey(fetchData.exception))
       fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPION_TO_FETCH_STATUS.getInt(fetchData.exception));
     else
-      fetchInfoBuilder.setFetchStatus(MsgCrawler.FetchStatus.UNKNOWN_FAILURE);
+      fetchInfoBuilder.setFetchStatusValue(EnumFetchStatus.Enum.UNKNOWN_FAILURE_VALUE);
     return fetchInfoBuilder.build();
   }
 

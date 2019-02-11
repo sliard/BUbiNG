@@ -130,8 +130,9 @@ public class ParsingThread extends Thread {
     }
 
     void process( final List<HTMLLink> links, final URI base ) {
+      int linkNum = 0;
       for ( final HTMLLink link : links )
-        process( link, base );
+        process( link, base, linkNum ++ );
     }
 
     void flush() {
@@ -146,14 +147,14 @@ public class ParsingThread extends Thread {
       frontier.enqueue( fetchInfoBuilder.build() );
     }
 
-    private boolean process( final HTMLLink link, final URI base ) {
+    private boolean process( final HTMLLink link, final URI base, final int linkNum ) {
       final URI target = getTargetURI( link.uri, base );
       if ( target == null )
         return false;
       if ( !scheduleFilter.apply(new Link(source,target)) )
         return false;
       MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder) )
+      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder, linkNum) )
         return false;
 
       final boolean isInternal = isSameSchemeAndHost( source, target ); // FIXME: was isSameSchemeAndAuthority
@@ -214,7 +215,7 @@ public class ParsingThread extends Thread {
     setName(this.getClass().getSimpleName() + '-' + index);
     this.frontier = frontier;
     this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
-    this.classifier = frontier.rc.classifierClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
+    this.classifier = frontier.textClassifier;
     this.rng = new Random(index);
     this.frontierLinkReceiver = new FrontierEnqueuer(frontier, frontier.rc);
     this.parsers = new ArrayList<>(frontier.rc.parsers.size());

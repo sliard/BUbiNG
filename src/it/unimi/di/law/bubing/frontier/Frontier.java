@@ -19,6 +19,7 @@ package it.unimi.di.law.bubing.frontier;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
 import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.util.*;
@@ -208,6 +209,7 @@ public class Frontier {
 	/** The runtime configuration. */
 	public final RuntimeConfiguration rc;
 
+	/** The manager for pulsar consumers and producers */
 	public final PulsarManager pulsarManager;
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
@@ -389,11 +391,14 @@ public class Frontier {
 	/** The default configuration for a <code>robots.txt</code> request. */
 	public final RequestConfig robotsRequestConfig;
 
+	/** The global instance for the text classifier */
+	public final TextClassifier textClassifier;
+
 	/** Creates the frontier.
 	 *
 	 * @param rc the configuration to be used to set all parameters.
 	 * @param agent the BUbiNG agent possessing this frontier. */
-	public Frontier( final RuntimeConfiguration rc, final Agent agent, final PulsarManager pulsarManager ) throws IllegalArgumentException {
+	public Frontier( final RuntimeConfiguration rc, final Agent agent, final PulsarManager pulsarManager ) throws IllegalArgumentException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
 		this.rc = rc;
 		this.agent = agent;
 		this.pulsarManager = pulsarManager;
@@ -426,7 +431,7 @@ public class Frontier {
 			}
 		};
 
-		//urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize); // FIXME: seive ?
+		this.textClassifier = rc.classifierClass.getConstructor(RuntimeConfiguration.class).newInstance(rc);
 
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();

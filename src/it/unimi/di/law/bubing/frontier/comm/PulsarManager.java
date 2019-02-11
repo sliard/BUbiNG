@@ -1,5 +1,6 @@
 package it.unimi.di.law.bubing.frontier.comm;
 
+import com.exensa.wdl.common.PartitionScheme;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.Frontier;
@@ -11,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
+import com.exensa.wdl.common.HashingScheme;
 
 public final class PulsarManager implements AutoCloseable
 {
@@ -21,12 +22,14 @@ public final class PulsarManager implements AutoCloseable
   private PulsarClient client;
   private final FetchInfoProducerRepository fetchInfoProducerRepository;
   private final CrawlRequestConsumerRepository crawlRequestConsumerRepository;
+  private final PartitionScheme partitionScheme;
 
   public PulsarManager( final RuntimeConfiguration rc ) throws PulsarClientException {
     this.rc = rc;
     this.client = createClient( rc );
     this.fetchInfoProducerRepository = new FetchInfoProducerRepository();
     this.crawlRequestConsumerRepository = new CrawlRequestConsumerRepository();
+    this.partitionScheme = new PartitionScheme(rc.pulsarFrontierTopicNumber);
   }
 
   public Producer<byte[]> getFetchInfoProducer( final MsgURL.Key urlKey ) {
@@ -97,7 +100,7 @@ public final class PulsarManager implements AutoCloseable
     }
 
     public Producer<byte[]> get( final MsgURL.Key urlKey ) {
-      return get( PulsarHelper.getTopic(urlKey,rc.pulsarFrontierTopicNumber) );
+      return get( partitionScheme.getHostPartition(urlKey) );
     }
 
     public void close() throws InterruptedException {

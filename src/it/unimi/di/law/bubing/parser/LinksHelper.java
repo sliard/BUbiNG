@@ -22,7 +22,7 @@ public final class LinksHelper
     return HttpLinksHeaderParser.tryParse( header );
   }
 
-  public static boolean trySetLinkInfos( final HTMLLink link, final MsgLink.LinkInfo.Builder linkInfoBuilder ) {
+  public static boolean trySetLinkInfos( final HTMLLink link, final MsgLink.LinkInfo.Builder linkInfoBuilder, final int linkNum ) {
     final String type = link.type;
     if ( type == HTMLLink.Type.A || type == HTMLLink.Type.IMG ) {
       if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
@@ -48,7 +48,7 @@ public final class LinksHelper
       linkInfoBuilder.setText( link.text );
     else
       linkInfoBuilder.clearText();
-    linkInfoBuilder.setLinkQuality( 1.0f );
+    linkInfoBuilder.setLinkQuality( (float) ( 1. - ( 1. / (1. + Math.exp(-(linkNum/75.) + 5.)))));
     return true;
   }
 
