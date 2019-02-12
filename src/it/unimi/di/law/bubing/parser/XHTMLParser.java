@@ -183,7 +183,9 @@ public final class XHTMLParser implements Parser<Void>
   @Override
   public boolean apply( @Nullable URIResponse uriResponse ) {
     final Header contentType = uriResponse.response().getEntity().getContentType();
-    return contentType != null && contentType.getValue().startsWith("text/");
+    final int status = uriResponse.response().getStatusLine().getStatusCode();
+    final boolean isRedirect = ((status / 100) == 3);
+    return isRedirect || (contentType != null && contentType.getValue().startsWith("text/"));
   }
 
   // implementation ----------------------------------------------------------------------------------------------------------------
