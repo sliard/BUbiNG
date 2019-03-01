@@ -48,7 +48,7 @@ public final class LinksHelper
       linkInfoBuilder.setText( link.text );
     else
       linkInfoBuilder.clearText();
-    linkInfoBuilder.setLinkQuality( (float) ( 1. - ( 1. / (1. + Math.exp(-(linkNum/75.) + 5.)))));
+    linkInfoBuilder.setLinkQuality( (float) ( 1. - ( 1. / (1. + Math.exp(-(linkNum - 150.) / 30.)))));
     return true;
   }
 
