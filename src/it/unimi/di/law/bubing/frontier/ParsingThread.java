@@ -93,12 +93,11 @@ public class ParsingThread extends Thread {
   {
     private static final boolean ASSERTS = false;
     private final Frontier frontier;
+    private final TextClassifier classifier;
     private final Filter<Link> scheduleFilter;
     private byte[] schemeAuthority; // FIXME: TODO: not used anymore
     private URI source;
-    private FetchData fetchData;
     private char[][] robotsFilter;
-
     private MsgCrawler.FetchInfo.Builder fetchInfoBuilder;
 
     /** Creates the enqueuer.
@@ -108,43 +107,61 @@ public class ParsingThread extends Thread {
      */
     FrontierEnqueuer(final Frontier frontier, final RuntimeConfiguration rc) {
       this.frontier = frontier;
+      this.classifier = frontier.textClassifier;
       this.scheduleFilter = rc.scheduleFilter;
-
     }
 
     /** Initializes the enqueuer for parsing a page with a specific scheme+authority and robots filter.
      *
-     * @param schemeAuthority the scheme+authority of the page to be parsed.
+     * @param crawlRequest the crawl request for which the fetch was done
      * @param robotsFilter the robots filter of the (authority of the) page to be parsed.
      */
-    void init( byte[] schemeAuthority,
-               MsgFrontier.CrawlRequest crawlRequest,
-               MsgCrawler.FetchInfo.Builder fetchInfoBuilder,
-               FetchData fetchData,
-               char[][] robotsFilter ) {
-      this.schemeAuthority = schemeAuthority;
+    void init( final MsgFrontier.CrawlRequest crawlRequest, final char[][] robotsFilter ) {
       this.source = PulsarHelper.toURI( crawlRequest.getUrlKey() );
-      this.fetchInfoBuilder = fetchInfoBuilder;
-      this.fetchData = fetchData;
       this.robotsFilter = robotsFilter;
+      this.fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
     }
 
-    void process( final List<HTMLLink> links, final URI base ) {
-      int linkNum = 0;
-      for ( final HTMLLink link : links )
-        process( link, base, linkNum ++ );
+    void process( final FetchData fetchData, final ParseData parseData ) {
+      process( fetchData );
+      process( parseData );
+
+      final MsgCrawler.Categorization categorization = categorize( fetchData, parseData );
+      if ( categorization != null )
+        fetchInfoBuilder.setCategorisation( categorization );
     }
 
     void flush() {
       frontier.outdegree.add( fetchInfoBuilder.getExternalLinksCount() + fetchInfoBuilder.getInternalLinksCount() );
       frontier.externalOutdegree.add( fetchInfoBuilder.getExternalLinksCount() );
+      frontier.enqueue( fetchInfoBuilder.build() );
+    }
+
+    private void process( final FetchData fetchData ) {
       fetchInfoBuilder
+        .setUrlKey( fetchData.getCrawlRequest().getUrlKey() )
         .setContentLength( (int)fetchData.response().getEntity().getContentLength() )
         .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
         .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
         .setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
         .setLanguage( fetchData.lang );
-      frontier.enqueue( fetchInfoBuilder.build() );
+    }
+
+    private void process( final ParseData parseData ) {
+      if ( parseData.title != null )
+        fetchInfoBuilder.setTitle( parseData.title );
+
+      if ( parseData.pageInfo != null ) {
+        fetchInfoBuilder.getRobotsTagBuilder()
+          .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
+          .setNOFOLLOW( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
+          .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
+          .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
+      }
+
+      int linkNum = 0;
+      for ( final HTMLLink link : parseData.links )
+        process( link, parseData.baseUri, linkNum++ );
     }
 
     private boolean process( final HTMLLink link, final URI base, final int linkNum ) {
@@ -154,7 +171,7 @@ public class ParsingThread extends Thread {
       if ( !scheduleFilter.apply(new Link(source,target)) )
         return false;
       MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder, linkNum) )
+      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum) )
         return false;
 
       final boolean isInternal = isSameSchemeAndHost( source, target ); // FIXME: was isSameSchemeAndAuthority
@@ -173,6 +190,35 @@ public class ParsingThread extends Thread {
       else
         fetchInfoBuilder.addExternalLinks( fetchLinkInfoBuilder );
       return true;
+    }
+
+    private MsgCrawler.Categorization categorize( final FetchData fetchData, final ParseData parseData ) {
+      try {
+        if ( classifier != null ) {
+          long startClassifTime = System.nanoTime();
+          MsgCrawler.Categorization categorization = classifier.predict( parseData.boilerpipedContent.toString(), parseData.getLanguageName() );
+          long endClassifTime = System.nanoTime();
+          if ( LOGGER.isTraceEnabled() ) LOGGER.trace("content [" + parseData.boilerpipedContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
+          LOGGER.debug("Predict time: " + (double)(endClassifTime - startClassifTime) / 1000000000.0 + "s");
+          if (LOGGER.isDebugEnabled() && categorization != null ) {
+            StringBuilder sb  = new StringBuilder("categorization: [");
+            for (MsgCrawler.Topic topic : categorization.getTopicList()) {
+              sb.append('(');
+              sb.append(topic.getId());
+              sb.append(", ");
+              sb.append(topic.getScore());
+              sb.append(")");
+            }
+            sb.append(']');
+            LOGGER.debug(sb.toString());
+          }
+          return categorization;
+        }
+      }
+      catch ( Exception e ) {
+        LOGGER.error( "Failed to categorize " + fetchData.uri(), e );
+      }
+      return null;
     }
 
     private static URI getTargetURI( final String href, final URI base ) {
@@ -203,8 +249,6 @@ public class ParsingThread extends Thread {
   private final FrontierEnqueuer frontierLinkReceiver;
   /** A counter for java.nio.BufferOverflowException from Jericho */
   private static int overflowCounter = 0;
-  /** A reference to the classifier. */
-  private final TextClassifier classifier;
 
   /** Creates a thread.
    *
@@ -215,7 +259,6 @@ public class ParsingThread extends Thread {
     setName(this.getClass().getSimpleName() + '-' + index);
     this.frontier = frontier;
     this.store = frontier.rc.storeClass.getConstructor(RuntimeConfiguration.class).newInstance(frontier.rc);
-    this.classifier = frontier.textClassifier;
     this.rng = new Random(index);
     this.frontierLinkReceiver = new FrontierEnqueuer(frontier, frontier.rc);
     this.parsers = new ArrayList<>(frontier.rc.parsers.size());
@@ -316,43 +359,21 @@ public class ParsingThread extends Thread {
     if ( parseData == null )
       return; // failure while parsing
 
-    //final boolean isNotDuplicate = streamLength == 0 || frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
-    final boolean isNotDuplicate = true;
-    if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isNotDuplicate={}", fetchData.uri(), isNotDuplicate);
-    fetchData.isDuplicate( !isNotDuplicate );
+    //final boolean isDuplicate = streamLength > 0 && !frontier.digests.addHash(parseData.digest); // Essentially thread-safe; we do not consider zero-content pages as duplicates
+    final boolean isDuplicate = false;
+    //if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isDuplicate={}", fetchData.uri(), isDuplicate);
+    fetchData.isDuplicate( isDuplicate );
 
-    final MsgCrawler.FetchInfo.Builder fetchedPageInfoBuilder = MsgCrawler.FetchInfo.newBuilder()
-      .setUrlKey( fetchData.getCrawlRequest().getUrlKey() );
-
-    frontierLinkReceiver.init(
-      visitState.schemeAuthority,
-      fetchData.getCrawlRequest(),
-      fetchedPageInfoBuilder,
-      fetchData,
-      visitState.robotsFilter
-    );
-
-    if ( parseData.pageInfo != null ) {
-      fetchedPageInfoBuilder.getRobotsTagBuilder()
-        .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
-        .setNOFOLLOW( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
-        .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
-        .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
-    }
-
-    final MsgCrawler.Categorization categorization = categorize( fetchData, parseData );
-    if ( categorization != null )
-      fetchedPageInfoBuilder.setCategorisation( categorization );
-
-    if ( isNotDuplicate && rc.followFilter.apply(fetchData) ) {
-      frontierLinkReceiver.process( parseData.links, parseData.baseUri );
+    frontierLinkReceiver.init( fetchData.getCrawlRequest(), visitState.robotsFilter );
+    if ( !isDuplicate && rc.followFilter.apply(fetchData) ) {
+      frontierLinkReceiver.process( fetchData, parseData );
       frontierLinkReceiver.flush();
     }
     else {
       LOGGER.debug( "NOT Following {}", fetchData.uri() );
     }
 
-    final String result = store( rc, fetchData, parseData, isNotDuplicate, streamLength );
+    final String result = store( rc, fetchData, parseData, !isDuplicate, streamLength );
 
     //if (LOGGER.isDebugEnabled())
     //  LOGGER.debug( "Fetched " + fetchData.uri()
@@ -428,35 +449,6 @@ public class ParsingThread extends Thread {
       frontier.parsingExceptionCount.incrementAndGet();
       return null;
     }
-  }
-
-  private MsgCrawler.Categorization categorize( final FetchData fetchData, final ParseData parseData ) {
-    try {
-      if ( classifier != null ) {
-        long startClassifTime = System.nanoTime();
-        MsgCrawler.Categorization categorization = classifier.predict( parseData.boilerpipedContent.toString(), parseData.getLanguageName() );
-        long endClassifTime = System.nanoTime();
-        if ( LOGGER.isTraceEnabled() ) LOGGER.trace("content [" + parseData.boilerpipedContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
-        LOGGER.debug("Predict time: " + (double)(endClassifTime - startClassifTime) / 1000000000.0 + "s");
-        if (LOGGER.isDebugEnabled() && categorization != null ) {
-          StringBuilder sb  = new StringBuilder("categorization: [");
-          for (MsgCrawler.Topic topic : categorization.getTopicList()) {
-            sb.append('(');
-            sb.append(topic.getId());
-            sb.append(", ");
-            sb.append(topic.getScore());
-            sb.append(")");
-          }
-          sb.append(']');
-          LOGGER.debug(sb.toString());
-        }
-        return categorization;
-      }
-    }
-    catch ( Exception e ) {
-      LOGGER.error( "Failed to categorize " + fetchData.uri(), e );
-    }
-    return null;
   }
 
   private void updateSpammicity( final Parser<?> parser, final VisitState visitState ) {
