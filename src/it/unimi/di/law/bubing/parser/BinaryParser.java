@@ -98,11 +98,11 @@ public class BinaryParser implements Parser<Void> {
       uri,
       null,
       new PageInfo(uri),
-      hasher.hash().asBytes(),
-      new StringBuilder(0),
-      new StringBuilder(0),
+      /*digest*/hasher.hash().asBytes(),
+      /*textContent*/new StringBuilder(0),
+			/*boilerpipedContent*/new StringBuilder(0),
       null,
-      new ArrayList<>(0)
+      /*links*/new ArrayList<>(0)
 		);
 	}
 

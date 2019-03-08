@@ -17,6 +17,7 @@ import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.parser.*;
 import it.unimi.di.law.bubing.parser.html.RobotsTagState;
+import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
 import org.apache.commons.io.IOUtils;
@@ -48,10 +49,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.spam.SpamDetector;
 import it.unimi.di.law.bubing.store.Store;
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.bubing.util.Link;
-import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.warc.filters.Filter;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
@@ -151,6 +148,10 @@ public class ParsingThread extends Thread {
       if ( parseData.title != null )
         fetchInfoBuilder.setTitle( parseData.title );
 
+      fetchInfoBuilder.setTextQuality(
+        (float) TextUtils.computeTextQuality( parseData.boilerpipedContent.toString() ) // FIXME: MIN_CONTENT_LENGTH ?
+      );
+
       if ( parseData.pageInfo != null ) {
         fetchInfoBuilder.getRobotsTagBuilder()
           .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
@@ -170,15 +171,15 @@ public class ParsingThread extends Thread {
         return false;
       if ( !scheduleFilter.apply(new Link(source,target)) )
         return false;
-      MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
+      final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
       if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum) )
         return false;
 
       final boolean isInternal = isSameSchemeAndHost( source, target ); // FIXME: was isSameSchemeAndAuthority
       final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
-      //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
       crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
       crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) );
+      //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
 
       MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
       fetchLinkInfoBuilder.setTarget( PulsarHelper.fromURI(target) );
