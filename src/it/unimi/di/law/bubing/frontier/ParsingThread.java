@@ -160,6 +160,10 @@ public class ParsingThread extends Thread {
           .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
       }
 
+      if (parseData.digest != null) {
+        fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
+      }
+
       int linkNum = 0;
       for ( final HTMLLink link : parseData.links )
         process( link, parseData.baseUri, linkNum++ );
