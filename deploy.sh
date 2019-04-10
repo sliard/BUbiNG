@@ -24,24 +24,24 @@ REPOSITORY_ID=exensa_local
 URL=scpexe://maven.exensa.loc/var/http/maven-repository/releases
 
 [[ -e ${SRC_FILE} ]] || ant srcdist
-[[ -e ${file} ]] || ant jar
+[[ -e ${FILE} ]] || ant jar
+[[ -e ${FILE} ]] && {
+  mvn -f deploy.xml deploy:deploy-file -DgroupId=${GROUP_ID} \
+        -DartifactId=${ARTIFACT_ID} \
+        -Dversion=${VERSION} \
+        -Dpackaging=${PACKAGING} \
+        -Dfile=${FILE} \
+        -DrepositoryId=${REPOSITORY_ID} \
+        -Durl=${URL}
 
-mvn -f deploy.xml deploy:deploy-file -DgroupId=${GROUP_ID} \
-      -DartifactId=${ARTIFACT_ID} \
-      -Dversion=${VERSION} \
-      -Dpackaging=${PACKAGING} \
-      -Dfile=${FILE} \
-      -DrepositoryId=${REPOSITORY_ID} \
-      -Durl=${URL}
-
-mvn -f deploy.xml deploy:deploy-file -DgroupId=${GROUP_ID} \
-      -DartifactId=${ARTIFACT_ID} \
-      -Dversion=${VERSION} \
-      -Dpackaging=java-source \
-      -DgeneratePom=false \
-      -Dfile=${FILE} \
-      -Dsources=${SRC_FILE} \
-      -DrepositoryId=${REPOSITORY_ID} \
-      -Durl=${URL}
-
+  mvn -f deploy.xml deploy:deploy-file -DgroupId=${GROUP_ID} \
+        -DartifactId=${ARTIFACT_ID} \
+        -Dversion=${VERSION} \
+        -Dpackaging=java-source \
+        -DgeneratePom=false \
+        -Dfile=${FILE} \
+        -Dsources=${SRC_FILE} \
+        -DrepositoryId=${REPOSITORY_ID} \
+        -Durl=${URL}
+}
 
