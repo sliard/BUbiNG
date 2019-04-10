@@ -1,6 +1,8 @@
 package it.unimi.di.law.bubing.categories;
 
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import javafx.util.Pair;
+
 import java.io.Closeable;
 import java.io.IOException;
 
@@ -12,6 +14,8 @@ public interface TextClassifier extends Closeable
 	 * @return A set of topic which match the text content along with a normalized score.
 	 */
 	MsgCrawler.Categorization predict(String textContent, String lang);
+
+	Pair<MsgCrawler.Categorization, Float[]> predictTokenized(String[] textContent, float textQuality, String lang);
 
 	void close() throws IOException;
 }

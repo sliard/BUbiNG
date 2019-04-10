@@ -4,6 +4,7 @@ import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.nio.BufferOverflowException;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
@@ -20,6 +21,7 @@ import it.unimi.di.law.bubing.parser.html.RobotsTagState;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
+import javafx.util.Pair;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
@@ -122,10 +124,6 @@ public class ParsingThread extends Thread {
     void process( final FetchData fetchData, final ParseData parseData ) {
       process( fetchData );
       process( parseData );
-
-      final MsgCrawler.Categorization categorization = categorize( fetchData, parseData );
-      if ( categorization != null )
-        fetchInfoBuilder.setCategorisation( categorization );
     }
 
     void flush() {
@@ -148,9 +146,9 @@ public class ParsingThread extends Thread {
       if ( parseData.title != null )
         fetchInfoBuilder.setTitle( parseData.title );
 
-      fetchInfoBuilder.setTextQuality(
-        (float) TextUtils.computeTextQuality( parseData.boilerpipedContent.toString() ) // FIXME: MIN_CONTENT_LENGTH ?
-      );
+      String[] splittedText = TextUtils.splitLine(parseData.boilerpipedContent.toString(), true);
+      float textQuality = (float) TextUtils.computeTextQuality(splittedText); // FIXME: MIN_CONTENT_LENGTH ?
+      fetchInfoBuilder.setTextQuality(textQuality);
 
       if ( parseData.pageInfo != null ) {
         fetchInfoBuilder.getRobotsTagBuilder()
@@ -159,10 +157,11 @@ public class ParsingThread extends Thread {
           .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
           .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
       }
-
       if (parseData.digest != null) {
         fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
       }
+
+      categorize(parseData, splittedText, textQuality);
 
       int linkNum = 0;
       for ( final HTMLLink link : parseData.links )
@@ -197,33 +196,42 @@ public class ParsingThread extends Thread {
       return true;
     }
 
-    private MsgCrawler.Categorization categorize( final FetchData fetchData, final ParseData parseData ) {
+    private void categorize(final ParseData parseData, final String[] splittedText, final float textQuality) {
       try {
         if ( classifier != null ) {
           long startClassifTime = System.nanoTime();
-          MsgCrawler.Categorization categorization = classifier.predict( parseData.boilerpipedContent.toString(), parseData.getLanguageName() );
-          long endClassifTime = System.nanoTime();
-          if ( LOGGER.isTraceEnabled() ) LOGGER.trace("content [" + parseData.boilerpipedContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
-          LOGGER.debug("Predict time: " + (double)(endClassifTime - startClassifTime) / 1000000000.0 + "s");
-          if (LOGGER.isDebugEnabled() && categorization != null ) {
-            StringBuilder sb  = new StringBuilder("categorization: [");
-            for (MsgCrawler.Topic topic : categorization.getTopicList()) {
-              sb.append('(');
-              sb.append(topic.getId());
-              sb.append(", ");
-              sb.append(topic.getScore());
-              sb.append(")");
+          Pair<MsgCrawler.Categorization, Float[]> catAndEmbed = classifier.predictTokenized(splittedText, textQuality, parseData.getLanguageName());
+          if (catAndEmbed != null) {
+            MsgCrawler.Categorization categorization = catAndEmbed.getKey();
+            if (categorization != null) {
+              long endClassifTime = System.nanoTime();
+              if (LOGGER.isTraceEnabled())
+                LOGGER.trace("content [" + parseData.boilerpipedContent.toString() + "] lang: [" + parseData.getLanguageName() + "]");
+              LOGGER.debug("Predict time: " + (double) (endClassifTime - startClassifTime) / 1000000000.0 + "s");
+              if (LOGGER.isDebugEnabled() && categorization != null) {
+                StringBuilder sb = new StringBuilder("categorization: [");
+                for (MsgCrawler.Topic topic : categorization.getTopicList()) {
+                  sb.append('(');
+                  sb.append(topic.getId());
+                  sb.append(", ");
+                  sb.append(topic.getScore());
+                  sb.append(")");
+                }
+                sb.append(']');
+                LOGGER.debug(sb.toString());
+              }
+              fetchInfoBuilder.setCategorisation(categorization);
             }
-            sb.append(']');
-            LOGGER.debug(sb.toString());
+            Float[] embedding = catAndEmbed.getValue();
+            ByteBuffer bb = ByteBuffer.allocate(embedding.length * 4);
+            for (float f : embedding) bb.putFloat(f);
+            fetchInfoBuilder.setSemanticVector(ByteString.copyFrom(bb.array()));
           }
-          return categorization;
         }
       }
       catch ( Exception e ) {
-        LOGGER.error( "Failed to categorize " + fetchData.uri(), e );
+        LOGGER.error( "Failed to categorize " + parseData.baseUri, e );
       }
-      return null;
     }
 
     private static URI getTargetURI( final String href, final URI base ) {
