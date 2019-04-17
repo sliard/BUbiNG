@@ -14,7 +14,10 @@ public class TextUtils
   private static final Pattern PATTERN_ANY_WSPACE = Pattern.compile( "\\s+", Pattern.UNICODE_CHARACTER_CLASS );
 
   public static String[] splitLine( final String line, final boolean lowerCase ) {
-    return clean( line, lowerCase ).split( " " );
+    String cleaned = clean( line, lowerCase );
+    if (cleaned.equals(""))
+      return new String[0];
+    return cleaned.split( " " );
   }
 
   public static String clean( final String input, final boolean lowerCase ) {
