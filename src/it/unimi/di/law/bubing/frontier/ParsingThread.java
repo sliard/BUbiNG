@@ -12,6 +12,7 @@ import java.util.ArrayList;
 
 import com.exensa.wdl.common.LanguageCodes;
 import com.exensa.wdl.protobuf.link.MsgLink;
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.categories.TextClassifier;
@@ -178,6 +179,9 @@ public class ParsingThread extends Thread {
       final URI target = getTargetURI( link.uri, base );
       if ( target == null )
         return false;
+      MsgURL.Key urlKey = PulsarHelper.fromURI(target);
+      if (urlKey == null)
+        return false;
       if ( !scheduleFilter.apply(new Link(source,target)) )
         return false;
       final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
@@ -191,7 +195,7 @@ public class ParsingThread extends Thread {
       //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
 
       MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
-      fetchLinkInfoBuilder.setTarget( PulsarHelper.fromURI(target) );
+      fetchLinkInfoBuilder.setTarget( urlKey );
       fetchLinkInfoBuilder.setLinkInfo( linkInfoBuilder );
       fetchLinkInfoBuilder.setCrawlerInfo( crawlerInfoBuilder );
 
