@@ -15,7 +15,6 @@ public interface TextClassifier extends Closeable
 	 */
 	MsgCrawler.Categorization predict(String textContent, String lang);
 
-	Pair<MsgCrawler.Categorization, Float[]> predictTokenized(String[] textContent, float textQuality, String lang);
   TextInfo predictTokenizedInfo(String[] textContent, TextInfo tinfo);
 
 	void close() throws IOException;
