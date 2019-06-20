@@ -504,9 +504,10 @@ public final class FetchingThread extends Thread implements Closeable {
   private static MsgFrontier.CrawlRequest.Builder createCrawlRequest( final MsgURL.Key schemeAuthority, final byte[] zpath ) {
     return MsgFrontier.CrawlRequest.newBuilder().setUrlKey(
       MsgURL.Key.newBuilder()
-        .setScheme( schemeAuthority.getScheme() )
-        .setZHost( schemeAuthority.getZHost() )
-        .setZPathQuery( ByteString.copyFrom(zpath) )
+        .setScheme(schemeAuthority.getScheme())
+        .setZDomain(schemeAuthority.getZDomain())
+        .setZHostPart(schemeAuthority.getZHostPart())
+        .setZPathQuery(ByteString.copyFrom(zpath))
     );
   }
 

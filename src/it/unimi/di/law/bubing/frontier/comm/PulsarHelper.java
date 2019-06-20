@@ -4,6 +4,7 @@ import com.exensa.util.URIex;
 import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.HashingScheme;
 import com.exensa.wdl.common.Serializer;
+import com.exensa.wdl.common.EntityHelper;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.url.EnumScheme;
@@ -17,9 +18,8 @@ import java.nio.charset.StandardCharsets;
 
 public class PulsarHelper
 {
-
-  public static MsgURL.Key fromURI( final URI uri ) {
-    return Serializer.URL.Key.from( uri );
+  public static MsgURL.Key fromURI(final URI uri) {
+    return Serializer.URL.Key.from(uri);
   }
 
   public static URI toURI( final MsgURL.URL url ) {
@@ -50,10 +50,15 @@ public class PulsarHelper
     return toASCII( getScheme(url.getScheme()) + "://" + url.getHost() );
   }
 
-  public static MsgURL.Key.Builder schemeAuthority( final byte[] schemeAuthority ) {
+  public static MsgURL.Key.Builder schemeAuthority(final byte[] schemeAuthority) {
     final MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
-    urlBuilder.setZHost( ByteString.copyFrom(toZ(BURL.hostFromSchemeAuthorityAsByteArray(schemeAuthority))) );
-    final String sa = fromASCII( schemeAuthority );
+
+    String fullHost = BURL.hostFromSchemeAndAuthority(schemeAuthority);
+    EntityHelper.SplittedHost s = new EntityHelper.SplittedHost(fullHost);
+    urlBuilder.setZHostPart(Serializer.PathComp.compressStringToByteString(s.hostPart));
+    urlBuilder.setZDomain(Serializer.PathComp.compressStringToByteString(s.getDomainWithEtld()));
+    //urlBuilder.setZHost(ByteString.copyFrom(toZ(BURL.hostFromSchemeAuthorityAsByteArray(schemeAuthority))));
+    final String sa = fromASCII(schemeAuthority);
     if (sa.startsWith("https://"))
       urlBuilder.setScheme(EnumScheme.Enum.HTTPS);
     else
