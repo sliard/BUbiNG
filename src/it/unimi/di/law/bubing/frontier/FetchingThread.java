@@ -14,6 +14,7 @@ import javax.net.ssl.SSLContext;
 import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.crawler.MsgRobotsTag;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.ByteString;
@@ -331,19 +332,21 @@ public final class FetchingThread extends Thread implements Closeable {
       if ( fetchData == null )
         continue; // stop requested
 
-      final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest( schemeAuthorityProto, zpath );
+      final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest( schemeAuthorityProto, zpath );
       final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
 
       LOGGER.trace( "Next URL to fetch : {}", url );
 
       if ( BlackListing.checkBlacklistedHost(frontier,url) ) {
-        visitState.schedulePurge();
-        break; // skip to next SchemeAuthority
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
+        continue; // next PathQuery
       }
 
       if ( BlackListing.checkBlacklistedIP(frontier,url,visitState.workbenchEntry.ipAddress) ) {
-        visitState.schedulePurge();
-        break; // skip to next SchemeAuthority
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
+        continue; // next PathQuery
       }
 
       if ( zpath == VisitState.ROBOTS_PATH ) {
@@ -354,11 +357,15 @@ public final class FetchingThread extends Thread implements Closeable {
 
       if ( !frontier.rc.fetchFilter.apply(url) ) {
         if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} filtered out", url);
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedFiltered(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
         continue; // skip to next PathQuery
       }
 
       if ( visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter,url) ) {
         if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
         continue; // skip to next PathQuery
       }
 
@@ -373,6 +380,7 @@ public final class FetchingThread extends Thread implements Closeable {
     return false; // skip to next SchemeAuthority
   }
 
+
   private void processFetchData() {
     if ( checkAndUpdateFetchData() ) {
       frontier.results.add( fetchData );
@@ -383,6 +391,7 @@ public final class FetchingThread extends Thread implements Closeable {
       frontier.done.add( fetchData.visitState );
     }
   }
+
 
   private MsgCrawler.FetchInfo fetchInfoFailed() {
     MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
@@ -475,8 +484,14 @@ public final class FetchingThread extends Thread implements Closeable {
       frontier.brokenVisitStates.decrementAndGet();
       // Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
       if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
-        visitState.schedulePurge();
-        if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
+        // Drain URLs in visitstate, creating adequate error fetch info
+        try {
+          FetchInfoHelper.drainVisitStateForError(frontier, visitState);
+          visitState.schedulePurge();
+          if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
+        } catch (InterruptedException e) {
+          LOGGER.error( "Interrupted", e );
+        }
       }
       else {
         visitState.lastExceptionClass = null;
@@ -501,15 +516,6 @@ public final class FetchingThread extends Thread implements Closeable {
     return fetchData;
   }
 
-  private static MsgFrontier.CrawlRequest.Builder createCrawlRequest( final MsgURL.Key schemeAuthority, final byte[] zpath ) {
-    return MsgFrontier.CrawlRequest.newBuilder().setUrlKey(
-      MsgURL.Key.newBuilder()
-        .setScheme(schemeAuthority.getScheme())
-        .setZDomain(schemeAuthority.getZDomain())
-        .setZHostPart(schemeAuthority.getZHostPart())
-        .setZPathQuery(ByteString.copyFrom(zpath))
-    );
-  }
 
   private boolean tryFetch( final VisitState visitState, final MsgFrontier.CrawlRequest.Builder crawlRequest, final URI url, final boolean robots ) {
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Processing {}",url);

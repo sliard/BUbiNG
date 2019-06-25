@@ -140,6 +140,7 @@ public final class DNSThread extends Thread {
 						frontier.unknownHosts.add(visitState);
 					}
 					else {
+						FetchInfoHelper.drainVisitStateForError(frontier, visitState);
 						visitState.schedulePurge();
 						LOGGER.debug("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
 					}

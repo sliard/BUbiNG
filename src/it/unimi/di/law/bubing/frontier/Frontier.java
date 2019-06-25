@@ -368,6 +368,7 @@ public class Frontier {
 	public final AtomicLongArray speedDist;
 	public final AtomicLong fetchingDurationTotal;
 	public final AtomicLong fetchingCount;
+	public final AtomicLong fetchingFailedCount;
 	public final AtomicLong fetchingRobotsCount;
 	public final AtomicLong fetchingTimeoutCount;
 
@@ -458,6 +459,7 @@ public class Frontier {
 		speedDist = new AtomicLongArray(40);
 		fetchingDurationTotal = new AtomicLong();
 		fetchingCount = new AtomicLong();
+		fetchingFailedCount = new AtomicLong();
 		fetchingRobotsCount = new AtomicLong();
 		fetchingTimeoutCount = new AtomicLong();
 		parsingDurationTotal = new AtomicLong();

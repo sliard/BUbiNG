@@ -167,8 +167,8 @@ public class ParsingThread extends Thread {
       if (parseData.digest != null) {
         fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
       }
-
-      categorize(parseData, splittedText, tinfo);
+      if (fetchInfoBuilder.getHttpStatus() / 100 == 2)
+        categorize(parseData, splittedText, tinfo);
 
       int linkNum = 0;
       for ( final HTMLLink link : parseData.links )
@@ -227,8 +227,8 @@ public class ParsingThread extends Thread {
               }
               sb.append(']');
               LOGGER.debug(sb.toString());
-              fetchInfoBuilder.setCategorisation(tinfo.getCategorization());
             }
+            fetchInfoBuilder.setCategorisation(tinfo.getCategorization());
           }
           if (extendedTinfo.gotEmbedding()) {
             Float[] embedding = extendedTinfo.getEmbedding();

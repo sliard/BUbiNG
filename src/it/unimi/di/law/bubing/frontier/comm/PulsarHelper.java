@@ -8,6 +8,10 @@ import com.exensa.wdl.common.EntityHelper;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.url.EnumScheme;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.cache.Weigher;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.MurmurHash3_128;
@@ -18,6 +22,18 @@ import java.nio.charset.StandardCharsets;
 
 public class PulsarHelper
 {
+  final static LoadingCache<ByteString, MsgURL.Key.Builder> hostnameCache =
+    CacheBuilder.newBuilder()
+    .maximumSize(512*1024)
+    .build(
+      new CacheLoader<ByteString, MsgURL.Key.Builder>() {
+        @Override
+        public MsgURL.Key.Builder load(ByteString bytes) throws Exception {
+          return _schemeAuthority(bytes.toByteArray());
+        }
+      }
+    );
+
   public static MsgURL.Key fromURI(final URI uri) {
     return Serializer.URL.Key.from(uri);
   }
@@ -51,13 +67,17 @@ public class PulsarHelper
   }
 
   public static MsgURL.Key.Builder schemeAuthority(final byte[] schemeAuthority) {
+    return hostnameCache.getUnchecked(ByteString.copyFrom(schemeAuthority));
+  }
+
+  public static MsgURL.Key.Builder _schemeAuthority(final byte[] schemeAuthority) {
     final MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
 
     String fullHost = BURL.hostFromSchemeAndAuthority(schemeAuthority);
     EntityHelper.SplittedHost s = new EntityHelper.SplittedHost(fullHost);
     urlBuilder.setZHostPart(Serializer.PathComp.compressStringToByteString(s.hostPart));
     urlBuilder.setZDomain(Serializer.PathComp.compressStringToByteString(s.getDomainWithEtld()));
-    //urlBuilder.setZHost(ByteString.copyFrom(toZ(BURL.hostFromSchemeAuthorityAsByteArray(schemeAuthority))));
+
     final String sa = fromASCII(schemeAuthority);
     if (sa.startsWith("https://"))
       urlBuilder.setScheme(EnumScheme.Enum.HTTPS);

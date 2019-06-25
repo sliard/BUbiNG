@@ -767,6 +767,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute @Description("Number of fetches done so far")
 	public long getFetchingCount() { return  frontier.fetchingCount.get();	}
 
+
+	@ManagedAttribute @Description("Number of failed fetches done so far")
+	public long getFetchingFailedCount() { return  frontier.fetchingFailedCount.get();	}
+
+
 	@ManagedAttribute @Description("Number of robots fetches done so far")
 	public long getFetchingRobotsCount() { return  frontier.fetchingRobotsCount.get();	}
 

@@ -50,10 +50,8 @@
 		<dependency org="org.apache.httpcomponents" name="httpclient" rev="latest.release"/>
 		<!-- <dependency org="org.apache.httpcomponents" name="httpasyncclient" rev="latest.release"/>-->
 		<dependency org="org.apache.hadoop" name="hadoop-common" rev="2.7.5"/>
-		<!--dependency org="com.exensa" name="wdl-proto" changing="true" rev="0.6-SNAPSHOT"/>
-		<dependency org="com.exensa" name="wdl-common" changing="true" rev="0.6-SNAPSHOT"/-->
-                <dependency org="com.exensa" name="wdl-proto" changing="true" rev="domains-SNAPSHOT"/>
-                <dependency org="com.exensa" name="wdl-common" changing="true" rev="domains-SNAPSHOT"/>
+                <dependency org="com.exensa" name="wdl-proto" changing="true" rev="0.7-SNAPSHOT"/>
+                <dependency org="com.exensa" name="wdl-common" changing="true" rev="0.7-SNAPSHOT"/>
 		<dependency org="com.kohlschutter.boilerpipe" name="boilerpipe-common" rev="2.0-SNAPSHOT"/>
 
 		<dependency org="org.cyclopsgroup" name="jmxterm" rev="1.0-alpha-4"/>
