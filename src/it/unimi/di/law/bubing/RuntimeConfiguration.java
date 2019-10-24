@@ -19,6 +19,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.http.conn.DnsResolver;
@@ -248,6 +249,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#pulsarFrontierTopicNumber */
 	public volatile int pulsarFrontierTopicNumber;
 
+	/** @see StartupConfiguration#pulsarFrontierNodeNumber */
+	public volatile int pulsarFrontierNodeNumber;
+
+	/** @see StartupConfiguration#pulsarFrontierNodeId */
+	public volatile int pulsarFrontierNodeId;
+
 	/** @see StartupConfiguration#pulsarFrontierDiscoveredURLsTopic */
 	public volatile String pulsarFrontierDiscoveredURLsTopic;
 
@@ -292,6 +299,12 @@ public class RuntimeConfiguration {
 
 	/** @see StartupConfiguration#spamDetectionPeriodicity */
 	public final int spamDetectionPeriodicity;
+
+	/** @see StartupConfiguration#classifierClass */
+	public final Class<? extends TextClassifier> classifierClass;
+
+	/** @see StartupConfiguration#textClassifierConfigFileName */
+	public final String textClassifierConfigFileName;
 
 	/** The parser, instantiated. Parsers used by {@link ParsingThread} instances are obtained by {@linkplain FlyweightPrototype#copy() copying this parsers}. */
 	public final ArrayList<Parser<?>> parsers;
@@ -391,6 +404,7 @@ public class RuntimeConfiguration {
 		final List<Iterator<URI>> seedSequence = new ArrayList<>();
 		if (seedFile.getName().equals("..") || seedFile.getName().equals("."))
 			return seedSequence;
+
 		try {
 			LOGGER.info("Adding seed {}", seedFile.getPath());
 			if (seedFile.isDirectory())
@@ -419,8 +433,9 @@ public class RuntimeConfiguration {
 					}
 				});
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
+		}
+		catch (IOException e ) {
+			LOGGER.error( "Failed to open seed file", e );
 		}
 		return seedSequence;
 	}
@@ -490,6 +505,8 @@ public class RuntimeConfiguration {
 			pulsarWARCTopic = startupConfiguration.pulsarWARCTopic;
 			pulsarPlainTextTopic = startupConfiguration.pulsarPlainTextTopic;
 			pulsarFrontierTopicNumber = startupConfiguration.pulsarFrontierTopicNumber;
+			pulsarFrontierNodeNumber = startupConfiguration.pulsarFrontierNodeNumber;
+			pulsarFrontierNodeId = startupConfiguration.pulsarFrontierNodeId;
 			pulsarFrontierDiscoveredURLsTopic = startupConfiguration.pulsarFrontierDiscoveredURLsTopic;
 			pulsarFrontierToCrawlURLsTopic = startupConfiguration.pulsarFrontierToCrawlURLsTopic;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;
@@ -501,6 +518,7 @@ public class RuntimeConfiguration {
 			dnsCacheMaxSize = startupConfiguration.dnsCacheMaxSize;
 			dnsPositiveTtl = startupConfiguration.dnsPositiveTtl;
 			dnsNegativeTtl = startupConfiguration.dnsNegativeTtl;
+			classifierClass = startupConfiguration.classifierClass;
 
 			try {
 				dnsResolver = startupConfiguration.dnsResolverClass.getConstructor().newInstance();
@@ -518,6 +536,8 @@ public class RuntimeConfiguration {
 
 			spamDetectionThreshold = startupConfiguration.spamDetectionThreshold;
 			spamDetectionPeriodicity = startupConfiguration.spamDetectionPeriodicity;
+
+			textClassifierConfigFileName = startupConfiguration.textClassifierConfigFileName;
 
 			final List<Iterator<URI>> seedSequence = getSeedSequence(startupConfiguration.seed);
 

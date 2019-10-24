@@ -171,19 +171,21 @@ public final class StatsThread implements Runnable {
 				+ Util.format(frontier.contentTypeApplication.get()) + "/"
 				+ Util.format(frontier.contentTypeOthers.get()) + "\n");
 
-		statInfo.append("STATS : Ready URLs: " + Util.format(frontier.quickReceivedCrawlRequests.size()) + "\n");
+		statInfo.append("STATS : Current front size: " + Util.format(frontier.getCurrentFrontSize())
+			+ "; Required front size: " + Util.format(frontier.requiredFrontSize.get())
+			+ "; Ready URLs: " + Util.format(frontier.quickReceivedCrawlRequests.size()) + "\n");
 
-		statInfo.append("STATS : FetchingThread waits: " + frontier.fetchingThreadWaits.get() + "; total wait time: " + frontier.fetchingThreadWaitingTimeSum.get() + "\n");
-		statInfo.append("STATS : Visit states: " + distributor.schemeAuthority2VisitState.size()
-						+ "; on workbench (IP): " + frontier.workbench.approximatedSize()
-						+ "; broken on workbench (IP): " + frontier.workbench.broken.get()
-						+ "; to do: " + frontier.todo.size()
-						+ "; active: " + (frontier.rc.fetchingThreads - frontier.results.size())
-						+ "; fetchData available " + (frontier.availableFetchData.size())
-						+ "; ready to parse: " + frontier.results.size()
-						+ "; unknown hosts: " + frontier.unknownHosts.size()
-						+ "; broken: " + frontier.brokenVisitStates.get()
-						+ "; waiting: " + frontier.newVisitStates.size());
+		statInfo.append("STATS : FetchingThread waits: " + Util.format(frontier.fetchingThreadWaits.get()) + "; total wait time: " + Util.format(frontier.fetchingThreadWaitingTimeSum.get()) + "\n");
+		statInfo.append("STATS : Visit states: " + Util.format(distributor.schemeAuthority2VisitState.size())
+						+ "; on workbench (IP): " + Util.format(frontier.workbench.approximatedSize())
+						+ "; broken on workbench (IP): " + Util.format(frontier.workbench.broken.get())
+						+ "; to do: " + Util.format(frontier.todo.size())
+						+ "; active: " + Util.format(frontier.rc.fetchingThreads - frontier.results.size())
+						+ "; fetchData available " + Util.format(frontier.availableFetchData.size())
+						+ "; ready to parse: " + Util.format(frontier.results.size())
+						+ "; unknown hosts: " + Util.format(frontier.unknownHosts.size())
+						+ "; broken: " + Util.format(frontier.brokenVisitStates.get())
+						+ "; waiting: " + Util.format(frontier.newVisitStates.size()) );
 
 		LOGGER.info(statInfo.toString());
 		frontier.resetFetchingThreadsWaitingStats();
@@ -302,9 +304,9 @@ public final class StatsThread implements Runnable {
 				+ "; on disk: " + frontier.virtualizer.onDisk() + "\n");
 		statInfo.append("STATS : Speed dist: " + toString(frontier.speedDist) + "\n");
 		for(int i = frontier.speedDist.length(); i-- != 0;) frontier.speedDist.set(i, 0); // Cleanup
-		statInfo.append("STATS : Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses() + "\n");
+		//statInfo.append("STATS : Cache hits: " + frontier.urlCache.hits() + " misses: " + frontier.urlCache.misses() + "\n"); // FIXME: seive ?
 		LOGGER.info(statInfo.toString());
-		distributor.lastHighCostStat = System.currentTimeMillis();
+		distributor.lastHighCostStats = System.currentTimeMillis();
 	}
 
 	/** Returns the number of visit states on disk.

@@ -16,15 +16,16 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
-import com.google.common.io.Files;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.categories.TextClassifier;
+import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
+import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import it.unimi.dsi.fastutil.io.BinIO;
 import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -32,13 +33,11 @@ import it.unimi.dsi.jai4j.Job;
 import it.unimi.dsi.jai4j.JobManager;
 import it.unimi.dsi.stat.SummaryStats;
 import it.unimi.dsi.sux4j.mph.AbstractHashFunction;
-import it.unimi.dsi.util.BloomFilter;
 import it.unimi.dsi.util.Properties;
 
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -46,7 +45,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
-import java.util.zip.GZIPOutputStream;
 
 import net.htmlparser.jericho.Config;
 import net.htmlparser.jericho.LoggerProvider;
@@ -123,8 +121,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  * very important, as there is much less contention on visit state locks than on the frontier lock. */
 public class Frontier {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Frontier.class);
-
-	public static final int NUM_TO_QUEUE_URL_LISTS = 16;
 
 	/** Names of the scalar fields saved by {@link #snap()}. */
 	public static enum PropertyKeys {
@@ -213,31 +209,37 @@ public class Frontier {
 	/** The runtime configuration. */
 	public final RuntimeConfiguration rc;
 
+	/** The manager for pulsar consumers and producers */
+	public final PulsarManager pulsarManager;
 
 	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
-	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[];
+	//public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[];
 
 	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
-	public ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
+	public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
 
-	/** A queue to quickly buffer to be crawled URLs (as {@link MsgCrawler.FetchInfo} serialized. */
-	public ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
+	/** A queue to quickly buffer URLs to be crawled. */
+	public final ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
 
-	private AtomicInteger initialThreadIndexInToQueueList = new AtomicInteger(0);
-	private ThreadLocal<Integer> localThreadIndexInToQueueList = new ThreadLocal<Integer>() {
-		@Override
-		protected Integer initialValue() {
-			return new Integer(initialThreadIndexInToQueueList.getAndIncrement() % NUM_TO_QUEUE_URL_LISTS);
-		}
-	};
 	/** The parsing threads. */
 	public final ObjectArrayList<ParsingThread> parsingThreads;
+
+	/** Thread activity metrics. */
+	public final AtomicInteger runningParsingThreads;
+	public final AtomicInteger runningFetchingThreads;
+	public final AtomicInteger runningDnsThreads;
+
+	public final AtomicInteger workingParsingThreads;
+	public final AtomicInteger workingFetchingThreads;
+	public final AtomicInteger workingDnsThreads;
+
 
 	/** The Warc file where to write (if so requested) the downloaded <code>robots.txt</code> files. */
 	public final ThreadLocal<WarcWriter> robotsWarcParallelOutputStream;
 
 	/** The overall number of path+queries stored in {@link VisitState} queues. */
 	public final AtomicLong pathQueriesInQueues;
+	public final AtomicLong pathQueriesInDiskQueues;
 
 	/** The overall {@linkplain BURL#memoryUsageOf(byte[]) memory} (in bytes) used by path+queries
 	 * stored in {@link VisitState} queues. */
@@ -264,8 +266,7 @@ public class Frontier {
 	 * {@linkplain #distributor} and emptied by the {@linkplain #dnsThreads DNS threads}. */
 	public final LinkedBlockingQueue<VisitState> newVisitStates;
 
-	/** A Bloom filter storing page digests for duplicate detection. */
-	public BloomFilter<Void> digests;
+	private final FetchInfoSendThread fetchInfoSendThread;
 
 	/** The threads resolving DNS for new {@linkplain VisitState visit states}. */
 	protected final ObjectArrayList<DNSThread> dnsThreads;
@@ -278,7 +279,7 @@ public class Frontier {
 
 	/** The URL cache. This cache stores the most recent URLs that have been
 	 * {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued}. */
-	public final FastApproximateByteArrayCache urlCache;
+	//public final FastApproximateByteArrayCache urlCache; // FIXME: seive ?
 
 	/** The workbench virtualizer used by this frontier. */
 	protected final WorkbenchVirtualizer virtualizer;
@@ -293,7 +294,7 @@ public class Frontier {
 
 	/** A queue of visit states ready to be reilled; it is filled by {@linkplain DoneThread fetching
 	 * threads} and emptied by the {@link Distributor}. */
-	protected final LockFreeQueue<VisitState> refill;
+	public final LockFreeQueue<VisitState> refill;
 
 	/** The current estimation for the size of the front in IP addresses. It is adaptively increased
 	 * when a {@link FetchingThread} has to wait to retrieve a {@link VisitState} from the
@@ -363,11 +364,24 @@ public class Frontier {
 	/** The overall number of transferred bytes. */
 	public final AtomicLong transferredBytes;
 
-	/** A synchronized, highly concurrent map from scheme+authorities to number of stored URLs. */
-	public IntCountMinSketchUnsafe schemeAuthority2Count;
-
 	/** The logarithmically binned statistics of download speed in bits/s. */
 	public final AtomicLongArray speedDist;
+	public final AtomicLong fetchingDurationTotal;
+	public final AtomicLong fetchingCount;
+	public final AtomicLong fetchingFailedCount;
+	public final AtomicLong fetchingRobotsCount;
+	public final AtomicLong fetchingTimeoutCount;
+
+	public final AtomicLong parsingDurationTotal;
+	public final AtomicLong parsingCount;
+	public final AtomicLong parsingExceptionCount;
+
+
+	/** The number of received new visit states (i.e. new hosts) */
+	public final AtomicLong receivedVisitStates;
+
+	/** The number of successfully resolved new visit states (i.e. new hosts resolved) */
+	public final AtomicLong resolvedVisitStates;
 
 	/** The average speeds of all visit states. */
 	protected double averageSpeed;
@@ -378,13 +392,17 @@ public class Frontier {
 	/** The default configuration for a <code>robots.txt</code> request. */
 	public final RequestConfig robotsRequestConfig;
 
+	/** The global instance for the text classifier */
+	public final TextClassifier textClassifier;
+
 	/** Creates the frontier.
 	 *
 	 * @param rc the configuration to be used to set all parameters.
 	 * @param agent the BUbiNG agent possessing this frontier. */
-	public Frontier(final RuntimeConfiguration rc, final Agent agent) throws IllegalArgumentException {
+	public Frontier( final RuntimeConfiguration rc, final Agent agent, final PulsarManager pulsarManager ) throws IllegalArgumentException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
 		this.rc = rc;
 		this.agent = agent;
+		this.pulsarManager = pulsarManager;
 
 		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
@@ -396,33 +414,57 @@ public class Frontier {
 				LOGGER.trace("Opening file " + robotsFile + " to write robots.txt");
 				Configuration conf = new Configuration(true);
 				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
-				CompressionCodec codec = ccf.getCodecByClassName(ZstdCodec.class.getName());
+				String codecName = ZstdCodec.class.getName();
+				CompressionCodec codec = ccf.getCodecByClassName(codecName);
 				OutputStream warcOutputStream = null;
-				try {
-					warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
-				} catch (IOException e) {
-					LOGGER.error("Unable to create file", e);
-					System.exit(1);
+				if ( codec == null )
+					LOGGER.error( "failed to load compression codec {}", codecName );
+				else {
+					try {
+						warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
+					} catch (IOException e) {
+						LOGGER.error("Unable to create file", e);
+						System.exit(1);
+					}
 				}
 				WarcWriter warcWriter = new UncompressedWarcWriter(warcOutputStream);
-
 				return warcWriter;
 			}
 		};
 
-		urlCache = new FastApproximateByteArrayCache(rc.urlCacheMaxByteSize);
+		this.textClassifier = rc.classifierClass.getConstructor(RuntimeConfiguration.class).newInstance(rc);
 
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();
 		this.virtualizer = new WorkbenchVirtualizer(this);
 
+		receivedVisitStates = new AtomicLong();
+		resolvedVisitStates = new AtomicLong();
+
+		runningFetchingThreads = new AtomicInteger();
+		runningParsingThreads = new AtomicInteger();
+		runningDnsThreads = new AtomicInteger();
+		workingFetchingThreads = new AtomicInteger();
+		workingParsingThreads = new AtomicInteger();
+		workingDnsThreads = new AtomicInteger();
+
 		pathQueriesInQueues = new AtomicLong();
+		pathQueriesInDiskQueues = new AtomicLong();
+
 		weightOfpathQueriesInQueues = new AtomicLong();
 		brokenVisitStates = new AtomicLong();
 		fetchedResources = new AtomicLong();
 		fetchedRobots = new AtomicLong();
 		transferredBytes = new AtomicLong();
 		speedDist = new AtomicLongArray(40);
+		fetchingDurationTotal = new AtomicLong();
+		fetchingCount = new AtomicLong();
+		fetchingFailedCount = new AtomicLong();
+		fetchingRobotsCount = new AtomicLong();
+		fetchingTimeoutCount = new AtomicLong();
+		parsingDurationTotal = new AtomicLong();
+		parsingCount = new AtomicLong();
+		parsingExceptionCount = new AtomicLong();
 		archetypesStatus = new AtomicLong[6];
 		for (int i = 0; i < 6; i++) archetypesStatus[i] = new AtomicLong();
 		outdegree = new SummaryStats();
@@ -435,7 +477,7 @@ public class Frontier {
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
 		numberOfSentURLs = new AtomicLong();
-		requiredFrontSize = new AtomicLong(1000);
+		requiredFrontSize = new AtomicLong(10000);
 		fetchingThreadWaits = new AtomicLong();
 		fetchingThreadWaitingTimeSum = new AtomicLong();
 
@@ -459,7 +501,10 @@ public class Frontier {
 				.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
 				.build();
 
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 8 * 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 32 * 1024);
 
+		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
 		fetchingThreads = new ObjectArrayList<>();
 		parsingThreads = new ObjectArrayList<>();
@@ -474,20 +519,10 @@ public class Frontier {
 
 		// Configures Jericho to use SLF4J
 		Config.LoggerProvider = LoggerProvider.SLF4J;
-
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(64 * 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>(64 * 1024);
-		quickToQueueURLLists = new ArrayBlockingQueue[NUM_TO_QUEUE_URL_LISTS];
-		for (int i = 0; i < NUM_TO_QUEUE_URL_LISTS; i++)
-			quickToQueueURLLists[i] = new ArrayBlockingQueue<>(1024);
 	}
 
 	public void init() throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException, InterruptedException {
 		if (rc.crawlIsNew) {
-			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
-
-			digests = BloomFilter.create(Math.max(1, rc.maxUrls), rc.bloomFilterPrecision);
-
 			distributor.statsThread.start(0);
 		}
 		else {
@@ -495,6 +530,7 @@ public class Frontier {
 		}
 
 		// Never start child threads before every data structure is created or restored
+		fetchInfoSendThread.start();
 		distributor.start();
 		(todoThread = new TodoThread(this)).start();
 		(doneThread = new DoneThread(this)).start();
@@ -588,12 +624,6 @@ public class Frontier {
 		LOGGER.info("Number of Parsing Threads set to " + newParsingThreads);
 	}
 
-	public void enqueueUrlList(final MsgCrawler.FetchInfo urls) {
-		int currentIndex = localThreadIndexInToQueueList.get();
-		quickToQueueURLLists[currentIndex].offer(urls);
-		localThreadIndexInToQueueList.set((currentIndex + 1) % NUM_TO_QUEUE_URL_LISTS);
-	}
-
 	/** Enqueues a URL to the the BUbiNG crawl.
 	 *
 	 * <ul>
@@ -607,7 +637,14 @@ public class Frontier {
 	 *
 	 * </ul>
 	 *
-	 * @param crawledPageInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
+	 * @param fetchInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
+	public void enqueue( final MsgCrawler.FetchInfo fetchInfo ) {
+		if ( quickToSendDiscoveredURLs.remainingCapacity() == 0 )
+			LOGGER.warn( "quickToSendDiscoveredURLs is full" );
+		quickToSendDiscoveredURLs.offer( fetchInfo );
+	}
+
+	/*
 	public void enqueue(final MsgCrawler.FetchInfo crawledPageInfo)  {
 
 		try {
@@ -622,6 +659,8 @@ public class Frontier {
 
 		return;
 	}
+	*/
+
 	/** Returns whether the workbench is full.
 	 *
 	 * @return whether the workbench is full. */
@@ -639,19 +678,29 @@ public class Frontier {
 		/* First we wait for all high-level threads to complete. Note that only the workbench thread
 		 * needs to be interrupted--all other threads check regularly for rc.stopping. Note that
 		 * visit states in the todo and done list will be moved by snap() back into the workbench. */
+
+		LOGGER.warn( "Closing Frontier" );
+
+		LOGGER.warn( "Interrupting TODO thread" );
 		todoThread.interrupt();
 
+		LOGGER.warn( "Waiting distributor to stop" );
 		distributor.join();
-		LOGGER.info("Joined distributor");
+		LOGGER.warn( "Distributor stopped" );
+
+		LOGGER.warn( "Waiting TODO thread to stop" );
 		todoThread.join();
-		LOGGER.info("Joined todo thread");
+		LOGGER.warn( "TODO thread stopped" );
 
 		/* First we stop DNS threads; note that we have to set explicitly stop. */
+		LOGGER.warn( "Stopping DNS threads" );
 		for (DNSThread t : dnsThreads) t.stop = true;
+		LOGGER.warn( "Waiting for DNS threads to stop" );
 		for (DNSThread t : dnsThreads) t.join();
-		LOGGER.info("Joined DNS threads");
+		LOGGER.warn( "DNS threads stopped" );
 
 		/* We wait for all fetching activity to come to a stop. */
+		LOGGER.warn( "Stopping fetching threads" );
 		for (FetchingThread t : fetchingThreads) t.stop = true;
 
 		/* This extremely poor form of timeout waiting for fetching threads is motivated by threads
@@ -661,60 +710,85 @@ public class Frontier {
 		boolean someAlive;
 
 		do {
-			Thread.sleep(1000);
 			someAlive = false;
 			for (FetchingThread t : fetchingThreads) someAlive |= t.isAlive();
-		} while (someAlive && System.currentTimeMillis() - time < rc.socketTimeout * 2);
-
-		if (someAlive) for (FetchingThread t : fetchingThreads) t.abort(); // Abort any still open requests.
-
-		time = System.currentTimeMillis();
-		do {
-			Thread.sleep(1000);
-			someAlive = false;
-			for (FetchingThread t : fetchingThreads) someAlive |= t.isAlive();
+			if ( someAlive ) {
+				LOGGER.warn( "Waiting fetching threads to stop" );
+				Thread.sleep(1000);
+			}
 		} while (someAlive && System.currentTimeMillis() - time < rc.socketTimeout * 2);
 
 		if (someAlive) {
-			LOGGER.error("Some fetching threads are still alive");
-			for (FetchingThread t : fetchingThreads) t.interrupt();
+			LOGGER.warn( "Aborting fetching threads" );
+			for (FetchingThread t : fetchingThreads) t.abort(); // Abort any still open requests.
 		}
 
-		// This catches fetching threads stuck because all parsing threads crashed
-		for (FetchingThread t : fetchingThreads) t.join();
+		time = System.currentTimeMillis();
+		do {
+			someAlive = false;
+			for (FetchingThread t : fetchingThreads) someAlive |= t.isAlive();
+			if ( someAlive ) {
+				LOGGER.warn( "Waiting fetching threads to abort" );
+				Thread.sleep(1000);
+			}
+		} while (someAlive && System.currentTimeMillis() - time < rc.socketTimeout * 2);
 
-		LOGGER.info("Joined fetching threads");
+		if (someAlive) {
+			LOGGER.warn( "Interrupting fetching threads" );
+			for (FetchingThread t : fetchingThreads) t.interrupt();
+      // This catches fetching threads stuck because all parsing threads crashed
+      LOGGER.warn( "Waiting fetching threads to interrupt" );
+      for (FetchingThread t : fetchingThreads) t.join();
+		}
+
+		LOGGER.warn( "fetching threads stopped" );
 
 		// We wait to be sure that the done thread wakes up and released all remaining visit states.
+		LOGGER.warn( "Sleeping for 2s..." );
 		Thread.sleep(2000);
+
+		LOGGER.warn( "Stopping Done thread" );
 		doneThread.stop = true;
+		LOGGER.warn( "Waiting for Done thread to stop" );
 		doneThread.join();
-		LOGGER.info("Joined done thread");
+		LOGGER.warn( "Done thread stopped" );
 
 		// Wait for all results to be parsed, unless there are no more parsing threads alive
 		while (results.size() != 0) {
 			someAlive = false;
 			for (ParsingThread t : parsingThreads) someAlive |= t.isAlive();
-			if (! someAlive) {
+			if ( !someAlive ) {
 				LOGGER.error("No parsing thread alive: some results might not have been parsed");
 				break;
 			}
+			LOGGER.warn( "Waiting for parsing threads to end" );
 			Thread.sleep(1000);
 		}
 		if (results.size() == 0) LOGGER.info("All results have been parsed");
 
 		/* Then we stop parsing threads; note that we have to set explicitly stop. */
+		LOGGER.warn( "Stopping parsing threads" );
 		for (ParsingThread t : parsingThreads) t.stop = true;
+		LOGGER.warn( "Waiting parsing threads to stop" );
 		for (ParsingThread t : parsingThreads) t.join();
+		LOGGER.warn( "Parsing threads stopped" );
 
-		LOGGER.info("Joined parsing threads and closed stores");
+		//LOGGER.info("Joined parsing threads and closed stores");
 
+		LOGGER.warn( "Stopping FetchInfoSendThread" );
+		fetchInfoSendThread.stop = true;
+		LOGGER.warn( "Waiting FetchInfoSendThread to stop" );
+		fetchInfoSendThread.join();
+		LOGGER.warn( "FetchInfoSendThread stopped" );
+
+		LOGGER.warn( "Closing stores" );
 		for (FetchingThread t : fetchingThreads) t.close();
 		for (FetchData fd; (fd = availableFetchData.poll()) != null;) { fd.close(); }
 		for (FetchData fd; (fd = results.poll()) != null;) { fd.close(); }
+		LOGGER.warn( "Stores closed" );
 
-		LOGGER.info("Closed fetching threads");
 
+		LOGGER.warn( "Releasing VisitStates" );
 		// Move the todo list back into the workbench
 		for (VisitState visitState; (visitState = todo.poll()) != null;) workbench.release(visitState);
 		// Move the done list back into the workbench (here we catch visit states released by the interrupts on the fetching threads, if any)
@@ -731,21 +805,30 @@ public class Frontier {
 			if (dequeuedURLs == 0) LOGGER.info("No URLs on disk during last refill: " + visitState);
 			if (visitState.acquired) LOGGER.warn("Visit state in the poll queue is acquired: " + visitState);
 		}
+		LOGGER.warn( "VisitStates released" );
 
 		// We invoke done() here so the final stats are the last thing printed.
 		distributor.statsThread.done();
+
+		LOGGER.warn( "Frontier closed" );
 	}
+
+	public long getCurrentFrontSize() {
+		return workbench.approximatedSize() + todo.size() - workbench.broken.get();
+	}
+
 		/** Update, if necessary, the {@link #requiredFrontSize}. The current front size is the number of
 	 * visit states present in the workbench and in the {@link #todo} queue. If this quantity is
 	 * larged than the {@linkplain #requiredFrontSize currently-required front size}, the latter is
 	 * increase by {@link #FRONT_INCREASE}, although it will never be set to a value larger than
 	 * half of the workbench (two queries per visit state). */
 	public void updateRequestedFrontSize() {
+		final long currentFrontSize = getCurrentFrontSize();
 		final long currentRequiredFrontSize = requiredFrontSize.get();
+		final long nextRequiredFrontSize = Math.min( currentRequiredFrontSize+FRONT_INCREASE, workbenchSizeInPathQueries/2 );
 		// If compareAndSet() returns false the value has already been updated.
-		if (workbench.approximatedSize() + todo.size() - workbench.broken.get() >= currentRequiredFrontSize
-				&& requiredFrontSize.compareAndSet(currentRequiredFrontSize, Math.min(currentRequiredFrontSize + FRONT_INCREASE, workbenchSizeInPathQueries / 2))) LOGGER
-				.info("Required front size: " + requiredFrontSize.get());
+		if (currentFrontSize >= currentRequiredFrontSize && requiredFrontSize.compareAndSet(currentRequiredFrontSize,nextRequiredFrontSize) )
+			LOGGER.info("Required front size: " + nextRequiredFrontSize);
 	}
 
 	/** Updates the statistics relative to the wait time of {@link FetchingThread}s.
@@ -758,8 +841,8 @@ public class Frontier {
 
 	/** Resets the statistics relative to the wait time of {@link FetchingThread}s. */
 	public void resetFetchingThreadsWaitingStats() {
-		fetchingThreadWaits.set(0);
-		fetchingThreadWaitingTimeSum.set(0);
+		//fetchingThreadWaits.set(0);
+		//fetchingThreadWaitingTimeSum.set(0);
 	}
 
 	/** Snaps fields to files in the given directory. Fields that are of scalar are written into a
@@ -825,13 +908,6 @@ public class Frontier {
 
 		scalarData.save(new File(snapDir, "frontier.data"));
 
-		// TODO makes this optional
-		LOGGER.info("Storing digests");
-		BinIO.storeObject(digests, new File(snapDir, "digests"));
-
-		LOGGER.info("Storing counts");
-		BinIO.storeObject(schemeAuthority2Count, new File(snapDir, "schemeAuthority2Count"));
-
 		LOGGER.info("Storing visit states");
 		final ObjectOutputStream workbenchStream = new ObjectOutputStream(new FastBufferedOutputStream(new FileOutputStream(new File(snapDir, "workbench"))));
 
@@ -895,10 +971,6 @@ public class Frontier {
 		distributor.schemeAuthority2VisitState.ensureCapacity(scalarData.getInt(PropertyKeys.VISITSTATESETSIZE));
 		workbench.address2WorkbenchEntry.ensureCapacity(scalarData.getInt(PropertyKeys.WORKBENCHENTRYSETSIZE));
 
-		// TODO makes this optional
-		LOGGER.info("Restoring digests");
-		digests = (BloomFilter<Void>)BinIO.loadObject(new File(snapDir, "digests"));
-
 		/* LOGGER.info("Restoring virtualizer states and defreezing virtual queues");
 		 * virtualizer.currentQueue = scalarData.getInt(PropertyKeys.CURRENTQUEUE); String[]
 		 * virtualQueueSizes = scalarData.getStringArray(PropertyKeys.VIRTUALQUEUESIZES); final
@@ -909,13 +981,6 @@ public class Frontier {
 		 *); virtualizer.virtualQueue[i] = virtualQueueSize == -1? null :
 		 * WorkbenchVirtualizer.createOrOpenQueue(this, virtualizer.virtualQueuesBirthTime, i,
 		 * numVirtualQueues, false, virtualQueueSize); } */
-
-		LOGGER.info("Restoring counts");
-		if (!rc.reinitCounts)
-			schemeAuthority2Count = (IntCountMinSketchUnsafe) BinIO.loadObject(new File(snapDir, "schemeAuthority2Count"));
-		else
-			schemeAuthority2Count = new IntCountMinSketchUnsafe((int)(rc.maxUrls / Math.log((double)rc.maxUrlsPerSchemeAuthority)),3);
-
 
 		LOGGER.info("Restoring workbench");
 		final ObjectInputStream workbenchStream = new ObjectInputStream(new FastBufferedInputStream(new FileInputStream(new File(snapDir, "workbench"))));

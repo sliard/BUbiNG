@@ -1,87 +1,93 @@
 package it.unimi.di.law.bubing.parser;
 
-public final class PureTextAppendable implements Appendable, CharSequence {
-  /**
-   * True iff the last character appended was a space.
-   */
-  protected boolean lastAppendedWasSpace;
-  protected boolean lastAppendedWasNewLine;
 
-  protected final StringBuilder textContent;
+public final class PureTextAppendable implements Appendable
+{
+  private static final int BUFFER_SIZE = 64 * 1024;
+
+  private final StringBuilder stringBuilder;
+  private final char[] buffer;
+  private int position;
+  private boolean lastAppendedWasSpace;
+  private boolean lastAppendedWasNewLine;
 
   public PureTextAppendable() {
-    textContent = new StringBuilder();
-    lastAppendedWasSpace = true;
-    lastAppendedWasNewLine = true;
-  }
-
-  /**
-   * Initializes the digest computation.
-   */
-  public void init() {
-    textContent.setLength(0);
-    lastAppendedWasSpace = true;
-    lastAppendedWasNewLine = true;
+    this.stringBuilder = new StringBuilder();
+    this.buffer = new char[ BUFFER_SIZE ];
+    this.position = 0;
+    this.lastAppendedWasSpace = false;
+    this.lastAppendedWasNewLine = false;
   }
 
   @Override
-  public Appendable append(CharSequence csq, int start, int end) {
-    // Hopefully this will soon be inlined by the jvm: no need to duplicate the code! :-)
-    for (int i = start; i < end; i++) append(csq.charAt(i));
+  public final Appendable append( final CharSequence seq ) {
+    return append( seq, 0, seq.length() );
+  }
+
+  @Override
+  public final Appendable append( final CharSequence seq, final int start, final int end ) {
+    for ( int i=start; i<end; ++i )
+      appendChar( seq.charAt(i) );
     return this;
   }
 
   @Override
-  public Appendable append(char c) {
-    if (Character.isWhitespace(c)) {
-      int charType = Character.getType(c);
-      if (charType == Character.SPACE_SEPARATOR) {
-        if (!lastAppendedWasSpace) {
-          textContent.append(' ');
-          lastAppendedWasSpace = true;
-        }
-      }
-      if (charType == Character.LINE_SEPARATOR || charType == Character.PARAGRAPH_SEPARATOR || charType == Character.CONTROL) {
-        if (!lastAppendedWasNewLine) {
-          textContent.append('\n');
-          lastAppendedWasSpace = true;
-          lastAppendedWasNewLine = true;
-        }
-      }
-    } else {
-      textContent.append(c);
+  public final Appendable append( final char c ) {
+    appendChar( c );
+    return this;
+  }
+
+  public final void append( final char[] buffer, final int offset, final int length ) {
+    for ( int i=offset; i<offset+length; ++i )
+      appendChar( buffer[i] );
+  }
+
+  public final void flush() {
+    stringBuilder.append( buffer, 0, position );
+    position = 0;
+  }
+
+  public final void init() {
+    stringBuilder.setLength( 0 );
+    position = 0;
+    lastAppendedWasSpace = false;
+    lastAppendedWasNewLine = false;
+  }
+
+  public final StringBuilder getContent() {
+    flush();
+    return stringBuilder;
+  }
+
+  private void appendChar( final char c ) {
+    if ( !Character.isWhitespace(c) ) {
       lastAppendedWasSpace = false;
       lastAppendedWasNewLine = false;
+      appendCharImpl( c );
     }
-    return this;
+    else
+      appendWhiteSpace( c );
   }
 
-  @Override
-  public Appendable append(CharSequence csq) {
-    char[] chars = csq.toString().toCharArray();
-    for (char c : chars)
-      append(c);
-    return this;
+  private void appendWhiteSpace( final char c ) {
+    final int charType = Character.getType( c );
+    if ( charType == Character.SPACE_SEPARATOR ) {
+      if ( lastAppendedWasSpace ) return;
+      lastAppendedWasSpace = true;
+      appendCharImpl( ' ' );
+    }
+    else
+    if ( charType == Character.LINE_SEPARATOR || charType == Character.PARAGRAPH_SEPARATOR || charType == Character.CONTROL ) {
+      if ( lastAppendedWasNewLine ) return;
+      lastAppendedWasSpace = true;
+      lastAppendedWasNewLine = true;
+      appendCharImpl( '\n' );
+    }
   }
 
-
-  @Override
-  public int length() {
-    return textContent.length();
-  }
-
-  @Override
-  public char charAt(int index) {
-    return textContent.charAt(index);
-  }
-
-  @Override
-  public CharSequence subSequence(int start, int end) {
-    return textContent.subSequence(start, end);
-  }
-
-  @Override
-  public String toString() {
-    return textContent.toString();
+  private void appendCharImpl( final char c ) {
+    buffer[ position++ ] = c;
+    if ( position == BUFFER_SIZE )
+      flush();
   }
 }

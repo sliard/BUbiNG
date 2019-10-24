@@ -3,7 +3,6 @@ package it.unimi.di.law.bubing;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -14,18 +13,13 @@ import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
-import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
-import it.unimi.di.law.bubing.frontier.comm.QuickToQueueThread;
-import it.unimi.di.law.bubing.frontier.comm.CrawlRequestsReceiver;
+import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
-import org.apache.pulsar.client.api.ClientBuilder;
-import org.apache.pulsar.client.api.PulsarClient;
 import org.jgroups.JChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,19 +82,14 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	/** The name of the system property that, if set, makes it possible to choose a JGroups configuration file. */
 	public static final String JGROUPS_CONFIGURATION_PROPERTY_NAME = "it.unimi.di.law.bubing.jgroups.configurationFile";
 
+	private static final String DEFAULT_JGROUPS_CONFIGURATION_FILE = "/" + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml";
+
 	/** The only instance of global data in this agent. */
 	private final RuntimeConfiguration rc;
 	/** The frontier of this agent. */
 	private final Frontier frontier;
 
-	/** @see FetchInfoSendThread */
-	protected final FetchInfoSendThread fetchInfoSendThread;
-
-	/** @see QuickToQueueThread */
-	protected final QuickToQueueThread quickToQueueThread;
-
-	/** @see CrawlRequestsReceiver */
-	protected final CrawlRequestsReceiver[] crawlRequestsReceivers;
+	private final PulsarManager pulsarManager;
 
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
@@ -108,10 +97,17 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
 		// TODO: configure strategies
 
-		super(rc.name, rc.weight, new InetSocketAddress(hostname, jmxPort),
-				new JChannel(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null ? (InputStream) new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME)) : JGroupsJobManager.class.getResourceAsStream('/' + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml")),
-				rc.group, new ConsistentHashAssignmentStrategy<BubingJob>(), new LinkedBlockingQueue<BubingJob>(),
-				new TimedDroppingThreadFactory<BubingJob>(1800000), new DiscardMessagesStrategy<BubingJob>());
+		super(rc.name, rc.weight,
+			new InetSocketAddress(hostname, jmxPort),
+			new JChannel( System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null
+				? new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME))
+				: JGroupsJobManager.class.getResourceAsStream(DEFAULT_JGROUPS_CONFIGURATION_FILE) ),
+			rc.group,
+			new ConsistentHashAssignmentStrategy<>(),
+			new LinkedBlockingQueue<>(),
+			new TimedDroppingThreadFactory<>(1800000),
+			new DiscardMessagesStrategy<>()
+		);
 
 		theAgent = this;
 
@@ -122,7 +118,10 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 		register();
 
-		frontier = new Frontier(rc, this);
+		pulsarManager = new PulsarManager( rc );
+		pulsarManager.createFetchInfoProducers();
+
+		frontier = new Frontier(rc, this, pulsarManager );
 		frontier.init();
 		//setListener(frontier);
 
@@ -133,24 +132,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		frontier.parsingThreads(rc.parsingThreads);
 		frontier.fetchingThreads(rc.fetchingThreads);
 
-
-		(fetchInfoSendThread = new FetchInfoSendThread(frontier)).start();
-		(quickToQueueThread = new QuickToQueueThread(frontier)).start();
-		crawlRequestsReceivers = new CrawlRequestsReceiver[frontier.rc.pulsarFrontierTopicNumber];
-		PulsarClient pulsarClient = PulsarClient.builder()
-				.ioThreads(16)
-				.listenerThreads(16)
-				.connectionsPerBroker(4)
-				.enableTls(false)
-				.enableTlsHostnameVerification(false)
-				.statsInterval(10, TimeUnit.MINUTES)
-				.serviceUrl(frontier.rc.pulsarClientConnection).build();
-
-		for (int i = 0; i< frontier.rc.pulsarFrontierTopicNumber; i++) {
-			crawlRequestsReceivers[i] = new CrawlRequestsReceiver(frontier,i, pulsarClient);
-		}
-
-
+		pulsarManager.createCrawlRequestConsumers( frontier );
 	}
 
 	public static Agent getAgent() {
@@ -170,36 +152,59 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 				rc.wait();
 		}
 
-		LOGGER.info("Terminating the agent");
 		terminate();
 	}
 
-	public void terminate() throws Exception {
-		// Stuff to be done at stopping time
-		if (!hasStopped) {
+	private void terminate() {
+		synchronized ( this ) {
+			if ( hasStopped )
+				return;
 			hasStopped = true;
-			// The message thread uses the sieve, which will be closed by the frontier.
-			//discoveredURLReceiveThread.stop = true;
-			//discoveredURLReceiveThread.join();
-			for (int i = 0; i< frontier.rc.pulsarFrontierTopicNumber; i++) {
-				crawlRequestsReceivers[i].stop();
+		}
+
+		unsafeTerminate();
+	}
+
+	private void unsafeTerminate() {
+		try {
+			// Stuff to be done at stopping time
+			LOGGER.warn( "Terminating agent {}", this );
+
+			synchronized ( rc ) {
+				if ( !rc.stopping ) {
+					LOGGER.warn( "Notifying termination to RuntimeConfiguration" );
+					rc.stopping = true;
+					rc.notifyAll();
+				}
 			}
-			LOGGER.info("Joined message thread");
 
+			LOGGER.warn( "Closing CrawlRequest consumers" );
+			pulsarManager.closeCrawlRequestConsumers();
+			LOGGER.warn( "CrawlRequest consumers closed" );
+
+			LOGGER.warn( "Closing Frontier" );
 			frontier.close();
+			LOGGER.warn( "Frontier closed" );
 
-			LOGGER.info("Going to close job manager " + this);
+			LOGGER.warn( "Closing Job Manager {}", this );
 			close();
-			LOGGER.info("Job manager closed");
+			LOGGER.warn( "Job Manager {} closed", this );
 
-			// We stop here the quick message thread. Messages in the receivedURLs queue will be snapped.
-			fetchInfoSendThread.stop = true;
-			fetchInfoSendThread.join();
-			quickToQueueThread.stop = true;
-			quickToQueueThread.join();
-			LOGGER.info("Joined quick message thread");
+			LOGGER.warn( "Closing FetchInfo producers" );
+			pulsarManager.closeFetchInfoProducers();
+			LOGGER.warn( "FetchInfo producers closed" );
 
-			LOGGER.info("Agent " + this + " exits");
+			LOGGER.warn( "Closing Pulsar client" );
+			pulsarManager.closePulsarClient();
+			LOGGER.warn( "Pulsar client closed" );
+
+			LOGGER.warn( "Agent {} terminated", this );
+		}
+		catch ( InterruptedException e ) {
+			LOGGER.error( String.format("Termination of agent %s was interrupted",this), e );
+		}
+		catch ( IOException e ) {
+			LOGGER.error( String.format("While terminating agent %s",this), e );
 		}
 	}
 
@@ -313,6 +318,36 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute @Description("Number of fetching threads")
 	public int getFetchingThreads() {
 		return rc.fetchingThreads;
+	}
+
+	@ManagedAttribute @Description("Number of running fetching threads")
+	public int getRunningFetchingThreads() {
+		return frontier.runningFetchingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of working fetching threads")
+	public int getWorkingFetchingThreads() {
+		return frontier.workingFetchingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of running parsing threads")
+	public int getRunningParsingThreads() {
+		return frontier.runningParsingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of working parsing threads")
+	public int getWorkingParsingThreads() {
+		return frontier.workingParsingThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of running DNS threads")
+	public int getRunningDnsThreads() {
+		return frontier.runningDnsThreads.get();
+	}
+
+	@ManagedAttribute @Description("Number of working DNS threads")
+	public int getWorkingDnsThreads() {
+		return frontier.workingDnsThreads.get();
 	}
 
 	@ManagedAttribute
@@ -507,6 +542,10 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.weightOfpathQueriesInQueues.get();
 	}
 
+	@ManagedAttribute @Description("Size of the workbench entry set")
+	public int getWorkbenchEntriesCount() {	return frontier.workbench.numberOfWorkbenchEntries(); }
+
+
 	@ManagedAttribute @Description("Overall size of the store (includes archetypes and duplicates)")
 	public long getStoreSize() {
 		return frontier.archetypes() + frontier.duplicates.get();
@@ -637,6 +676,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.pathQueriesInQueues.get();
 	}
 
+	@ManagedAttribute @Description("URLs in VisitState queues")
+	public long getURLsInDiskQueues() {
+		return frontier.pathQueriesInDiskQueues.get();
+	}
+
 	@ManagedAttribute @Description("Percentage of workbench maximum size in used")
 	public double getURLsInQueuesPercentage() {
 		return 100.0 * frontier.weightOfpathQueriesInQueues.get() / frontier.rc.workbenchMaxByteSize;
@@ -682,10 +726,12 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.getStatsThread().getVisitStates();
 	}
 
+
+	@ManagedAttribute @Description("Number of received VisitState instances")
+	public long getReceivedVisitStates() {return frontier.receivedVisitStates.get(); }
+
 	@ManagedAttribute @Description("Number of resolved VisitState instances")
-	public long getResolvedVisitStates() {
-		return frontier.getStatsThread().resolvedVisitStates;
-	}
+	public long getResolvedVisitStates() {return frontier.resolvedVisitStates.get(); }
 
 	@ManagedAttribute @Description("Number of entries on the workbench")
 	public long getIPOnWorkbench() {
@@ -702,10 +748,44 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.todo.size();
 	}
 
+	@ManagedAttribute @Description("Number of VisitState instances on the refill list")
+	public long getRefillSize() {
+		return frontier.refill.size();
+	}
+
 	@ManagedAttribute @Description("Number of FetchingThread instances downloading data")
 	public int getActiveFetchingThreads() {
 		return  (int)(frontier.rc.fetchingThreads - frontier.results.size());
 	}
+
+
+	@ManagedAttribute @Description("Time spent in fetches")
+	public long getFetchingDurationTotalMs() {
+		return (frontier.fetchingDurationTotal.get());
+	}
+
+	@ManagedAttribute @Description("Number of fetches done so far")
+	public long getFetchingCount() { return  frontier.fetchingCount.get();	}
+
+
+	@ManagedAttribute @Description("Number of failed fetches done so far")
+	public long getFetchingFailedCount() { return  frontier.fetchingFailedCount.get();	}
+
+
+	@ManagedAttribute @Description("Number of robots fetches done so far")
+	public long getFetchingRobotsCount() { return  frontier.fetchingRobotsCount.get();	}
+
+	@ManagedAttribute @Description("Number of fetches finished with a timeout")
+	public long getFetchingTimeoutCount() { return  frontier.fetchingTimeoutCount.get(); }
+
+	@ManagedAttribute @Description("Time spent in parsing")
+	public long getParsingDurationTotal() { return  frontier.parsingDurationTotal.get(); }
+
+	@ManagedAttribute @Description("Number of parsing done")
+	public long getParsingCount() { return  frontier.parsingCount.get(); }
+
+	@ManagedAttribute @Description("Number of parsing failed with an exception")
+	public long getParsingExceptionCount() { return  frontier.parsingExceptionCount.get(); }
 
 	@ManagedAttribute @Description("Number of FetchingThread instances waiting for parsing")
 	public int getReadyToParse() {
@@ -742,6 +822,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		return frontier.requiredFrontSize.get();
 	}
 
+	@ManagedAttribute @Description("Current required front size")
+	public long getFrontSize() {
+		return frontier.getCurrentFrontSize();
+	}
+
 	/**
 	 * Hack for allowing hostnames with "_"
 	 */
@@ -773,11 +858,16 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 					new FlaggedOption("rootDir", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.NOT_REQUIRED, 'r', "root-dir", "The root directory."),
 					new Switch("new", 'n', "new", "Start a new crawl"),
 					new FlaggedOption("properties", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.REQUIRED, 'P', "properties", "The properties used to configure the agent."),
+					new FlaggedOption("id", JSAP.INTEGER_PARSER, "0", JSAP.REQUIRED, 'i', "id", "The agent id."),
 					new UnflaggedOption("name", JSAP.STRING_PARSER, JSAP.REQUIRED, "The agent name (an identifier that must be unique across the group).")
 			});
 
 		final JSAPResult jsapResult = jsap.parse(arg);
 		if (jsap.messagePrinted()) System.exit(1);
+
+		// Safety : long running process wiht ssl connection get OOM because SSL cache is unbounded, this ensure that the cache is bounded
+		if (System.getProperty("javax.net.ssl.sessionCacheSize") == null)
+			System.setProperty("javax.net.ssl.sessionCacheSize","8192");
 
 		// JMX *must* be set up.
 		final String portProperty = System.getProperty(JMX_REMOTE_PORT_SYSTEM_PROPERTY);
@@ -785,6 +875,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 		final String name = jsapResult.getString("name");
 		final int weight = jsapResult.getInt("weight");
+		final int id = jsapResult.getInt("id");
 		final String group = jsapResult.getString("group");
 		final String host = jsapResult.getString("jmxHost");
 		final int port = Integer.parseInt(portProperty);
@@ -792,23 +883,30 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		final BaseConfiguration additional = new BaseConfiguration();
 		additional.addProperty("name", name);
 		additional.addProperty("group", group);
+		additional.addProperty("pulsarFrontierNodeId", Integer.toString(id));
 		additional.addProperty("weight", Integer.toString(weight));
 		additional.addProperty("crawlIsNew", Boolean.valueOf(jsapResult.getBoolean("new")));
 		if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));
-		Agent agent = new Agent(host, port, new RuntimeConfiguration(new StartupConfiguration(jsapResult.getString("properties"), additional)));
 
-		Runtime.getRuntime().addShutdownHook(new Thread( () -> {
+		final RuntimeConfiguration rc = new RuntimeConfiguration( new StartupConfiguration(jsapResult.getString("properties"), additional) );
+		final Agent agent = new Agent(host, port, rc);
+
+		final Thread shutdownHookThread = new Thread( () -> {
 			try {
-				if (!hasStopped)
-					agent.terminate();
-			} catch (Exception e) {
-				LOGGER.error("Error during shutdown",e);
-			} finally {
-				System.exit(0);
+				LOGGER.warn( "ShutdownHook : invoked" );
+				agent.terminate();
 			}
-		}));
+			catch (Exception e) {
+				LOGGER.error("Error during shutdown",e);
+			}
+			LOGGER.warn( "ShutdownHook : exited" );
+		} );
+
+		Runtime.getRuntime().addShutdownHook( shutdownHookThread );
+		LOGGER.warn( "Invoking agent.run()" );
 		agent.run();
-		System.exit(0); // Kills remaining FetchingThread instances, if any.
+		LOGGER.warn( "agent.run() exited" );
+		Runtime.getRuntime().removeShutdownHook( shutdownHookThread );
 	}
 
 }

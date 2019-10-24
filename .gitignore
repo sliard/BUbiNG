@@ -5,6 +5,7 @@
 .idea
 *.iml
 bubing-*
+pom.xml
 out/
 build/
 dist/
@@ -23,3 +24,4 @@ src/it/unimi/di/law/bubing/protobuf/*.java
 .settings/
 priv/
 bin/
+tests/

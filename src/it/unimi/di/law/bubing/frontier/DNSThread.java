@@ -66,6 +66,7 @@ public final class DNSThread extends Thread {
 	@Override
 	public void run() {
 		Random rng = new Random();
+		frontier.runningDnsThreads.incrementAndGet();
 		while(! stop) {
 			try {
 				frontier.rc.ensureNotPaused();
@@ -77,6 +78,7 @@ public final class DNSThread extends Thread {
 				// If none after one second, try again.
 				if (visitState == null) continue;
 
+				frontier.workingDnsThreads.incrementAndGet();
 				final String host = BURL.hostFromSchemeAndAuthority(visitState.schemeAuthority);
 
 				try {
@@ -120,6 +122,7 @@ public final class DNSThread extends Thread {
 						overflowCounter++;
 					} while (entry.size() > frontier.rc.maxInstantSchemeAuthorityPerIP);
 					visitState.setWorkbenchEntry(entry);
+					frontier.resolvedVisitStates.incrementAndGet();
 				}
 				catch(UnknownHostException e) {
 					LOGGER.info("Unknown host " + host + " for visit state " + visitState);
@@ -129,24 +132,26 @@ public final class DNSThread extends Thread {
 
 					visitState.lastExceptionClass = UnknownHostException.class;
 
-					if (visitState.retries < ParsingThread.EXCEPTION_TO_MAX_RETRIES.getInt(UnknownHostException.class)) {
-						final long delay = ParsingThread.EXCEPTION_TO_WAIT_TIME.getLong(UnknownHostException.class) << visitState.retries;
+					if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getInt(UnknownHostException.class)) {
+						final long delay = ExceptionHelper.EXCEPTION_TO_WAIT_TIME.getLong(UnknownHostException.class) << visitState.retries;
 						// Exponentially growing delay
 						visitState.nextFetch = System.currentTimeMillis() + delay;
 						LOGGER.debug("Will retry DNS resolution of state " + visitState + " with delay " + delay);
 						frontier.unknownHosts.add(visitState);
 					}
 					else {
+						FetchInfoHelper.drainVisitStateForError(frontier, visitState);
 						visitState.schedulePurge();
 						LOGGER.debug("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
 					}
 				}
+				frontier.workingDnsThreads.decrementAndGet();
 			}
 			catch(Throwable t) {
 				LOGGER.error("Unexpected exception", t);
 			}
 		}
-
+		frontier.runningDnsThreads.decrementAndGet();
 		if (LOGGER.isDebugEnabled()) LOGGER.debug("Completed");
 	}
 

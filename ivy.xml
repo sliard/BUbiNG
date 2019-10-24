@@ -50,13 +50,14 @@
 		<dependency org="org.apache.httpcomponents" name="httpclient" rev="latest.release"/>
 		<!-- <dependency org="org.apache.httpcomponents" name="httpasyncclient" rev="latest.release"/>-->
 		<dependency org="org.apache.hadoop" name="hadoop-common" rev="2.7.5"/>
-		<dependency org="com.exensa" name="wdl-proto" changing="true" rev="0.3-SNAPSHOT"/>
-		<dependency org="com.exensa" name="wdl-common" changing="true" rev="0.3-SNAPSHOT"/>
+                <dependency org="com.exensa" name="wdl-proto" changing="true" rev="0.7-SNAPSHOT"/>
+                <dependency org="com.exensa" name="wdl-common" changing="true" rev="0.7-SNAPSHOT"/>
+		<dependency org="com.kohlschutter.boilerpipe" name="boilerpipe-common" rev="2.0-SNAPSHOT"/>
 
 		<dependency org="org.cyclopsgroup" name="jmxterm" rev="1.0-alpha-4"/>
 
 		<dependency org="com.martiansoftware" name="jsap" rev="latest.release"/>
-                <dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
+		<dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
 
 		<dependency org="org.softee" name="pojo-mbean" rev="latest.release"/>
 		<!-- <dependency org="org.jgroups" name="jgroups" rev="latest.release"/> -->
@@ -65,7 +66,7 @@
 		<dependency org="net.java.dev.javacc" name="javacc" rev="5.0" conf="compile"/>
 
 		<dependency org="com.google.protobuf" name="protobuf-java" rev="3.5.1"/>
-		<dependency org="org.apache.pulsar" name="pulsar-client" rev="2.1.0-incubating"/>
+		<dependency org="org.apache.pulsar" name="pulsar-client" rev="2.3.2"/>
 
 		<dependency org="org.apache.commons" name="commons-math" rev="latest.release" conf="test"/>
 		<dependency org="junit" name="junit" rev="latest.release" conf="test"/>
@@ -78,5 +79,8 @@
 		<exclude org="org.slf4j" artifact="slf4j-log4j12"/>
 		<exclude org="log4j" artifact="log4j"/>
 		<exclude org="commons-httpclient" artifact="commons-httpclient"/> <!-- originally due to mg4j but not used here -->
+		<exclude org="xerces" artifact="xercesImpl"/> <!-- from boilerpipe -->
+		<exclude org="net.sourceforge.nekohtml" artifact="nekohtml"/> <!-- from boilerpipe -->
+		<exclude org="xml-apis" artifact="xml-apis"/> <!-- from boilerpipe (?) -->
 	</dependencies>
 </ivy-module>

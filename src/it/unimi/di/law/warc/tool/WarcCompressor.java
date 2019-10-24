@@ -52,51 +52,49 @@ import it.unimi.dsi.logging.ProgressLogger;
  */
 public class WarcCompressor {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(WarcCompressor.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(WarcCompressor.class);
 
-    public static void main(String arg[]) throws IOException, InterruptedException, JSAPException {
+	public static void main(String arg[]) throws IOException, InterruptedException, JSAPException {
 
-	SimpleJSAP jsap = new SimpleJSAP(WarcCompressor.class.getName(),
-		"Given a store uncompressed, write a compressed store.",
-		new Parameter[] { new FlaggedOption("output", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.REQUIRED, 'o', "output", "The output filename  (- for stdout)."),
-		new UnflaggedOption("store", JSAP.STRING_PARSER, JSAP.NOT_REQUIRED, "The name of the store (if omitted, stdin)."),
-	});
+		SimpleJSAP jsap = new SimpleJSAP(WarcCompressor.class.getName(),
+			"Given a store uncompressed, write a compressed store.",
+			new Parameter[] { new FlaggedOption("output", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.REQUIRED, 'o', "output", "The output filename  (- for stdout)."),
+				new UnflaggedOption("store", JSAP.STRING_PARSER, JSAP.NOT_REQUIRED, "The name of the store (if omitted, stdin)."),
+			});
 
-	JSAPResult jsapResult = jsap.parse(arg);
-	if (jsap.messagePrinted()) return;
+		JSAPResult jsapResult = jsap.parse(arg);
+		if (jsap.messagePrinted()) return;
 
-	final InputStream in = jsapResult.userSpecified("store") ? new FastBufferedInputStream(new FileInputStream(jsapResult.getString("store"))) : System.in;
+		final InputStream in = jsapResult.userSpecified("store") ? new FastBufferedInputStream(new FileInputStream(jsapResult.getString("store"))) : System.in;
 
-	final WarcReader reader = new UncompressedWarcReader(in);
-	final ProgressLogger pl = new ProgressLogger(LOGGER, 1, TimeUnit.MINUTES, "records");
-	final String output = jsapResult.getString("output");
+		final WarcReader reader = new UncompressedWarcReader(in);
+		final ProgressLogger pl = new ProgressLogger(LOGGER, 1, TimeUnit.MINUTES, "records");
+		final String output = jsapResult.getString("output");
 
-	PrintStream out = "-".equals(output) ? System.out : new PrintStream(new FastBufferedOutputStream(new FileOutputStream(output)), false, "UTF-8");
-	final WarcWriter writer = new CompressedWarcWriter(out);
+		PrintStream out = "-".equals(output) ? System.out : new PrintStream(new FastBufferedOutputStream(new FileOutputStream(output)), false, "UTF-8");
+		final WarcWriter writer = new CompressedWarcWriter(out);
 
-	pl.itemsName = "records";
-	pl.displayFreeMemory = true;
-	pl.displayLocalSpeed = true;
-	pl.start("Scanning...");
+		pl.itemsName = "records";
+		pl.displayFreeMemory = true;
+		pl.displayLocalSpeed = true;
+		pl.start("Scanning...");
 
-	for (long storePosition = 0;; storePosition++) {
-	    LOGGER.trace("STOREPOSITION " + storePosition);
-	    WarcRecord record = null;
-	    try {
-		record = reader.read();
-	    } catch (Exception e) {
-		LOGGER.error("Exception while reading record " + storePosition + " ");
-		LOGGER.error(e.getMessage());
-		e.printStackTrace();
-		continue;
-	    }
-	    if (record == null)
-		break;
-	    writer.write(record);
-	    pl.lightUpdate();
+		for (long storePosition = 0;; storePosition++) {
+			LOGGER.trace("STOREPOSITION " + storePosition);
+			WarcRecord record = null;
+			try {
+				record = reader.read();
+			} catch (Exception e) {
+				LOGGER.error("Exception while reading record " + storePosition + " ",e);
+				continue;
+			}
+			if (record == null)
+				break;
+			writer.write(record);
+			pl.lightUpdate();
+		}
+		pl.done();
+		writer.close();
 	}
-	pl.done();
-	writer.close();
-    }
 
 }

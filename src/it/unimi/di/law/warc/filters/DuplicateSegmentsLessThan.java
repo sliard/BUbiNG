@@ -86,6 +86,8 @@ public class DuplicateSegmentsLessThan extends AbstractFilter<URI> {
 
 		final String s = url.getRawPath();
 		final int length = s.length();
+		if (length == 0)
+			return true;
 		final boolean pathEndsWithSlash = s.charAt(length - 1) == '/';
 
 		final char[] path = new char[length + 1 + (! pathEndsWithSlash? 1 : 0)];

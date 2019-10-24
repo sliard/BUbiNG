@@ -46,6 +46,8 @@ import com.martiansoftware.jsap.stringparsers.LongSizeStringParser;
  * limitations under the License.
  */
 
+
+import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.DNSThread;
 import it.unimi.di.law.bubing.frontier.FetchingThread;
 import it.unimi.di.law.bubing.frontier.Frontier;
@@ -152,6 +154,11 @@ public class StartupConfiguration {
 	@Retention(RetentionPolicy.RUNTIME)
 	@Target(ElementType.FIELD)
 	public @interface DnsResolverSpecification{}
+
+	/** A marker for the classifier class specification. */
+	@Retention(RetentionPolicy.RUNTIME)
+	@Target(ElementType.FIELD)
+	public @interface ClassifierSpecification{}
 
 	/** The name of this agent; it must be unique within its group. */
 	public String name;
@@ -368,6 +375,14 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="512")
 	public int pulsarFrontierTopicNumber;
 
+	/** For PulsarFrontier : pulsar frontier node number */
+	@OptionalSpecification(value="16")
+	public int pulsarFrontierNodeNumber;
+
+	/** For PulsarFrontier : pulsar frontier node id */
+	@OptionalSpecification(value="0")
+	public int pulsarFrontierNodeId;
+
 	/** For Pulsar Frontier : discoveredURLs topic. */
 	@OptionalSpecification(value="persistent://sample/standalone/crawling/discoveredURLs")
 	public String pulsarFrontierDiscoveredURLsTopic;
@@ -436,6 +451,14 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="2147483647")
 	public int spamDetectionPeriodicity;
 
+	/** The class used to classify page content. */
+	@ClassifierSpecification
+	@OptionalSpecification(value="it.unimi.di.law.bubing.categories.NullClassifier")
+	public Class<? extends TextClassifier> classifierClass;
+
+	/** classifier config file name */
+	@OptionalSpecification(value="")
+	public String textClassifierConfigFileName;
 
 	/* Checks */
 
@@ -466,8 +489,10 @@ public class StartupConfiguration {
 		if (rootDirChecked) return;
 		final File d = new File(rootDir);
 		if (crawlIsNew) {
-			if (d.exists()) throw new ConfigurationException("Root directory " + d + " exists");
-			if (! d.mkdirs()) throw new ConfigurationException("Cannot create root directory " + d);
+			if (!d.exists())
+				if (! d.mkdirs()) throw new ConfigurationException("Cannot create root directory " + d);
+			else
+				LOGGER.warn("Root directory " + d + " exists");
 		}
 		else if (! d.exists()) throw new ConfigurationException("Cannot find root directory " + rootDir + " for the crawl");
 		rootDirChecked = true;
@@ -494,8 +519,10 @@ public class StartupConfiguration {
 	private void chkSubDir(final String dir) throws ConfigurationException {
 		final File d = subDir(rootDir, dir);
 		if (crawlIsNew) {
-			if (d.exists()) throw new ConfigurationException("Directory " + d + " exists");
-			if (! d.mkdirs()) throw new ConfigurationException("Cannot create directory " + d);
+			if (!d.exists())
+			  if (! d.mkdirs()) throw new ConfigurationException("Cannot create directory " + d);
+			else
+			  LOGGER.warn("Directory " + d + " exists");
 		}
 		else if (! d.exists()) throw new ConfigurationException("Directory " + d + " does not exist");
 	}
@@ -581,6 +608,8 @@ public class StartupConfiguration {
 					else if (type == String[].class)
 						f.set(this, configuration.getStringArray(name));
 					else if (f.getAnnotation(StoreSpecification.class) != null)
+						f.set(this, Class.forName(value));
+					else if (f.getAnnotation(ClassifierSpecification.class) != null)
 						f.set(this, Class.forName(value));
 					else if (f.getAnnotation(DnsResolverSpecification.class) != null)
 						f.set(this, Class.forName(value));

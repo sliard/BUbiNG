@@ -26,29 +26,36 @@ import java.util.concurrent.TimeUnit;
 /** A {@link Store} implementation using Pulsar. */
 
 public class PulsarWarcStore implements Closeable, Store {
-	private final static Logger LOGGER = LoggerFactory.getLogger( WarcStore.class );
+	private final static Logger LOGGER = LoggerFactory.getLogger( PulsarWarcStore.class );
 
 	private final PulsarClient pulsarClient;
 	private final Producer pulsarWARCProducer;
 	private final Producer pulsarPlainTextProducer;
 	private final ByteArrayOutputStream outputStream;
 	private final WarcWriter warcWriter;
+
 	public PulsarWarcStore(final RuntimeConfiguration rc ) throws IOException {
-		ClientConfiguration conf = new ClientConfiguration();
-		conf.setListenerThreads(8);
-		conf.setIoThreads(8);
-		conf.setConnectionsPerBroker(2);
-		pulsarClient = PulsarClient.create(rc.pulsarClientConnection,conf);
-		ProducerConfiguration producerConfig = new ProducerConfiguration();
-		producerConfig.setBatchingEnabled(true);
-		producerConfig.setBatchingMaxMessages(128);
-		producerConfig.setBatchingMaxPublishDelay(100, TimeUnit.MILLISECONDS);
-		producerConfig.setBlockIfQueueFull(true);
-		producerConfig.setSendTimeout(30000, TimeUnit.MILLISECONDS);
-		producerConfig.setCompressionType(CompressionType.LZ4);
-		producerConfig.setProducerName(rc.name + UUID.randomUUID().toString());
-		pulsarWARCProducer = pulsarClient.createProducer(rc.pulsarWARCTopic,  producerConfig);
-		pulsarPlainTextProducer = pulsarClient.createProducer(rc.pulsarPlainTextTopic,  producerConfig);
+
+		ClientBuilder clientBuilder = PulsarClient.builder()
+      .ioThreads(8)
+      .listenerThreads(8)
+      .connectionsPerBroker(2)
+      .enableTlsHostnameVerification(false)
+      .serviceUrl(rc.pulsarClientConnection);
+		pulsarClient = clientBuilder.build();
+
+		ProducerBuilder producerBuilder = pulsarClient.newProducer()
+			.enableBatching(true)
+			.batchingMaxMessages(128)
+			.batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
+			.blockIfQueueFull(true)
+			.sendTimeout(30000, TimeUnit.MILLISECONDS)
+			.compressionType(CompressionType.LZ4)
+			.producerName(rc.name + UUID.randomUUID().toString());
+
+		pulsarWARCProducer = producerBuilder.topic(rc.pulsarWARCTopic).create();
+		pulsarPlainTextProducer = producerBuilder.topic(rc.pulsarPlainTextTopic).create();
+
 		outputStream = new ByteArrayOutputStream();
 		warcWriter = new UncompressedWarcWriter(outputStream);
 	}

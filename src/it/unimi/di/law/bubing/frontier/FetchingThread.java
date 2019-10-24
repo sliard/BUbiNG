@@ -3,21 +3,25 @@ package it.unimi.di.law.bubing.frontier;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 
 import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.crawler.MsgRobotsTag;
 import com.exensa.wdl.protobuf.url.MsgURL;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.config.ConnectionConfig;
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
@@ -38,7 +42,6 @@ import org.apache.http.ssl.SSLContexts;
 import org.apache.http.ssl.TrustStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -59,7 +62,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.bubing.util.LockFreeQueue;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.dsi.bits.Fast;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -210,6 +212,13 @@ public final class FetchingThread extends Thread implements Closeable {
     return cookies.toArray(new Cookie[cookies.size()]);
   }
 
+  public static void storeCookies(final VisitState visitState, final CookieStore cookieStore ) {
+    if ( visitState.cookies != null ) {
+      for ( final Cookie cookie : visitState.cookies )
+        cookieStore.addCookie( cookie );
+    }
+  }
+
   /**
    * Creates a new fetching thread.
    *
@@ -247,6 +256,38 @@ public final class FetchingThread extends Thread implements Closeable {
     fetchData = new FetchData(frontier.rc);
   }
 
+  @Override
+  public void run() {
+    try {
+      LOGGER.warn( "thread [started]" );
+      frontier.runningFetchingThreads.incrementAndGet();
+      while ( !stop ) {
+        final VisitState visitState = getNextVisitState();
+        frontier.workingFetchingThreads.incrementAndGet();
+        if ( visitState != null && processVisitState(visitState) )
+          processFetchData();
+        frontier.workingFetchingThreads.decrementAndGet();
+      }
+    }
+    catch ( InterruptedException e ) {
+      LOGGER.error( "Interrupted", e );
+    }
+    catch ( Throwable e ) {
+      LOGGER.error( "Unexpected exception", e );
+    }
+    finally {
+      LOGGER.warn( "thread [stopped]" );
+      frontier.runningFetchingThreads.decrementAndGet();
+    }
+  }
+
+  @Override
+  public void close() throws IOException {
+    FetchData fd = fetchData;
+    if (fd != null)
+      fd.close();
+  }
+
   /**
    * Causes the {@link FetchData} used by this thread to be {@linkplain FetchData#abort()} (whence, the corresponding connection to be closed).
    */
@@ -256,165 +297,269 @@ public final class FetchingThread extends Thread implements Closeable {
       fd.abort();
   }
 
-  @Override
-  public void run() {
-    try {
-      final RuntimeConfiguration rc = frontier.rc;
-      final int cookieMaxByteSize = rc.cookieMaxByteSize;
-      final LockFreeQueue<FetchData> results = frontier.results; // Cached
-      final LockFreeQueue<FetchData> availableFetchData = frontier.availableFetchData; // Cached
+  private VisitState getNextVisitState() throws InterruptedException {
+    long waitTime = 0;
 
-      while (!stop) {
-        // Take a new VisitState
-        VisitState visitState;
-        long waitTime = 0;
+    frontier.rc.ensureNotPaused();
+    VisitState visitState;
+    for ( int i=0; (visitState=frontier.todo.poll()) == null; ++i ) {
+      if (stop) return null;
+      long newSleep = 1 << Math.min(i, 10);
+      waitTime += newSleep;
+      Thread.sleep( newSleep );
+      frontier.rc.ensureNotPaused();
+    }
 
-        frontier.rc.ensureNotPaused();
+    if (waitTime > 0) {
+      frontier.updateRequestedFrontSize();
+      frontier.updateFetchingThreadsWaitingStats(waitTime);
+    }
 
-        for (int i = 0; (visitState = frontier.todo.poll()) == null; i++) {
-          frontier.rc.ensureNotPaused();
-          if (stop) return;
-          waitTime += 1 << Math.min(i, 10);
-          Thread.sleep(1 << Math.min(i, 10));
-        }
+    if (LOGGER.isTraceEnabled()) LOGGER.trace("Acquired visit state {}", visitState);
+    return visitState;
+  }
 
-        if (waitTime > 0) {
-          frontier.updateRequestedFrontSize();
-          frontier.updateFetchingThreadsWaitingStats(waitTime);
-        }
+  private boolean processVisitState( final VisitState visitState ) throws InterruptedException {
+    if (LOGGER.isTraceEnabled()) LOGGER.trace("Processing VisitState for {}", PulsarHelper.toString(PulsarHelper.schemeAuthority(visitState.schemeAuthority).build()));
+    final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
 
-        if (LOGGER.isTraceEnabled()) LOGGER.trace("Acquired visit state {}", visitState);
+    while ( !stop && !visitState.isEmpty() ) {
+      frontier.rc.ensureNotPaused();
+      final byte[] zpath = visitState.dequeue(); // contains a zPathQuery
 
-        final long startTime = System.currentTimeMillis();
+      if ( fetchData == null )
+        fetchData = getAvailableFetchData(); // block until success or stop requested
+      if ( fetchData == null )
+        continue; // stop requested
 
-        if (LOGGER.isTraceEnabled())
-          LOGGER.trace("Processing visitstate for {}", PulsarHelper.toString(PulsarHelper.schemeAuthority(visitState.schemeAuthority).build()));
-        final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
+      final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest( schemeAuthorityProto, zpath );
+      final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
 
-        while (!visitState.isEmpty()) {
-          final byte[] zpath = visitState.firstPath(); // Contains a zPathQuery
+      LOGGER.trace( "Next URL to fetch : {}", url );
 
-          if (fetchData == null) {
-            for (int i = 0; ((fetchData = availableFetchData.poll()) == null) || fetchData.inUse; i++) {
-              rc.ensureNotPaused();
-              if (stop) return;
-              long newSleep = 1 << Math.min(i, 10);
-              Thread.sleep(newSleep);
-            }
-            if (fetchData.inUse == true)
-              LOGGER.error("Received a FetchData being used");
-          }
-
-          MsgFrontier.CrawlRequest.Builder crawlRequest;
-          try {
-            crawlRequest = MsgFrontier.CrawlRequest.newBuilder().setUrlKey(MsgURL.Key.newBuilder().setZPathQuery(ByteString.copyFrom(zpath)).build());
-          } catch (Exception e) {
-            LOGGER.error("Error while parsing path {}", new String(HuffmanModel.defaultModel.decompress(zpath)), e);
-            fetchData.inUse = false;
-            visitState.dequeue();
-            continue; // skip to next element in visitState
-          }
-
-          final MsgURL.Key.Builder urlKeyBuilder = crawlRequest.getUrlKeyBuilder().setScheme(schemeAuthorityProto.getScheme()).setZHost(schemeAuthorityProto.getZHost());
-          crawlRequest.setUrlKey(urlKeyBuilder);
-          final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority,
-              HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
-
-          LOGGER.trace("Next URL to fetch : {}", url);
-
-          if (BlackListing.checkBlacklistedHost(frontier, url)) { // Check for blacklisted Host
-            visitState.dequeue();
-            visitState.schedulePurge();
-            fetchData.inUse = false;
-            break; // Skip to next VisitState
-          } else if (BlackListing.checkBlacklistedIP(frontier, url, visitState.workbenchEntry.ipAddress)) { // Check for blacklisted IP
-            visitState.dequeue();
-            visitState.schedulePurge();
-            fetchData.inUse = false;
-            break; // Skip to next VisitState
-          } else if (zpath == VisitState.ROBOTS_PATH) {
-            if (LOGGER.isTraceEnabled())
-              LOGGER.trace("Processing ROBOTS.TXT");
-            fetchData.inUse = true;
-            cookieStore.clear();
-            try {
-              fetchData.fetch(url,
-                  crawlRequest.build(), httpClient, frontier.robotsRequestConfig, visitState, true);
-            } catch (Exception shouldntHappen) {
-              /* This shouldn't really happen--it's a bug that must be reported to the
-               * ASF team. We cannot rely on the internal state of fetchData being OK,
-               * so we just discard it and stop the keepalive download. We assume an
-               * empty filter (as in the case of a 5xx status). We must perform some
-               * bookkeeping usually performed by a ParsingThread. */
-              LOGGER.error("Unexpected exception during fetch of " + url, shouldntHappen);
-              fetchData.inUse = false;
-              visitState.robotsFilter = URLRespectsRobots.EMPTY_ROBOTS_FILTER;
-              final long endTime = System.currentTimeMillis();
-              visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
-              visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
-              visitState.dequeue();
-              break; // Skip to next visitState
-            }
-
-            frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
-            frontier.transferredBytes.addAndGet(fetchData.length());
-            results.add(fetchData);
-            fetchData = null;
-            break;
-          } else if (!frontier.rc.fetchFilter.apply(url)) {
-            if (LOGGER.isDebugEnabled()) LOGGER.debug("I'm not fetching URL {}", url);
-            visitState.dequeue();
-            continue;
-          } else if (visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter, url)) {
-            if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
-            visitState.dequeue();
-            continue;
-          } else {
-            if (RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null)
-              LOGGER.warn("Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority));
-            fetchData.inUse = true;
-            cookieStore.clear();
-
-            if (visitState.cookies != null) for (Cookie cookie : visitState.cookies) cookieStore.addCookie(cookie);
-            try {
-              fetchData.fetch(url, crawlRequest.build(), httpClient, frontier.defaultRequestConfig, visitState, false);
-            } catch (Exception shouldntHappen) {
-              /* This shouldn't really happen--it's a bug that must be reported to the ASF team.
-               * We cannot rely on the internal state of fetchData being OK, so we just discard it
-               * and stop the keepalive download. We must perform some bookkeeping usually
-               * performed by a ParsingThread. */
-              LOGGER.error("Unexpected exception during fetch of " + url, shouldntHappen);
-              fetchData.inUse = false;
-              final long endTime = System.currentTimeMillis();
-              visitState.workbenchEntry.nextFetch = endTime + rc.ipDelay;
-              visitState.nextFetch = endTime + rc.schemeAuthorityDelay;
-              visitState.dequeue();
-              break;
-            }
-            if (LOGGER.isTraceEnabled())
-              LOGGER.trace("Fetched {} in {} ms", url.toString(), fetchData.endTime - fetchData.startTime);
-            frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
-            frontier.transferredBytes.addAndGet(fetchData.length());
-
-            results.add(fetchData);
-
-            if (fetchData.exception == null) {
-              visitState.cookies = getCookies(fetchData.uri(), cookieStore, cookieMaxByteSize);
-            }
-            fetchData = null;
-            break; // Skip to next visitState
-          }
-        }
+      if ( BlackListing.checkBlacklistedHost(frontier,url) ) {
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
+        continue; // next PathQuery
       }
-    } catch (Throwable e) {
-      LOGGER.error("Unexpected exception", e);
+
+      if ( BlackListing.checkBlacklistedIP(frontier,url,visitState.workbenchEntry.ipAddress) ) {
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
+        continue; // next PathQuery
+      }
+
+      if ( zpath == VisitState.ROBOTS_PATH ) {
+        if ( tryFetch(visitState,crawlRequest,url,true) )
+          return true; // process fetch data
+        break; // skip to next SchemeAuthority
+      }
+
+      if ( !frontier.rc.fetchFilter.apply(url) ) {
+        if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} filtered out", url);
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedFiltered(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
+        continue; // skip to next PathQuery
+      }
+
+      if ( visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter,url) ) {
+        if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest.build()));
+        frontier.fetchingFailedCount.incrementAndGet();
+        continue; // skip to next PathQuery
+      }
+
+      if ( RuntimeConfiguration.FETCH_ROBOTS && visitState.robotsFilter == null )
+        LOGGER.warn( "Null robots filter for " + it.unimi.di.law.bubing.util.Util.toString(visitState.schemeAuthority) );
+
+      if ( tryFetch(visitState,crawlRequest,url,false) )
+        return true; // process fetch data
+      break; // skip to next SchemeAuthority
+    }
+
+    return false; // skip to next SchemeAuthority
+  }
+
+
+  private void processFetchData() {
+    if ( checkAndUpdateFetchData() ) {
+      frontier.results.add( fetchData );
+      fetchData = null;
+    }
+    else {
+      frontier.enqueue(fetchInfoFailed());
+      frontier.done.add( fetchData.visitState );
     }
   }
 
-  @Override
-  public void close() throws IOException {
-    FetchData fd = fetchData;
-    if (fd != null)
-      fd.close();
+
+  private MsgCrawler.FetchInfo fetchInfoFailed() {
+    MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
+    fetchInfoBuilder
+      .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
+      .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
+      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
+
+    if (ExceptionHelper.EXCEPION_TO_FETCH_STATUS.containsKey(fetchData.exception))
+      fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPION_TO_FETCH_STATUS.getInt(fetchData.exception));
+    else
+      fetchInfoBuilder.setFetchStatusValue(EnumFetchStatus.Enum.UNKNOWN_FAILURE_VALUE);
+    return fetchInfoBuilder.build();
+  }
+
+  private boolean checkAndUpdateFetchData() {
+    final RuntimeConfiguration rc = frontier.rc;
+    final VisitState visitState = fetchData.visitState;
+
+    // This is always the same, independently of what will happen.
+    final int entrySize = visitState.workbenchEntry.size();
+    long ipDelay = rc.ipDelay;
+    final int knownCount = frontier.agent.getKnownCount();
+    if (knownCount > 1 && rc.ipDelayFactor != 0)
+      ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
+    visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
+
+    if ( !checkFetchDataException() )
+      return false; // don't parse
+
+    //final byte[] firstPath = visitState.dequeue();
+    //if (LOGGER.isTraceEnabled())
+    //	LOGGER.trace("Dequeuing " + it.unimi.di.law.bubing.util.Util.zToString(firstPath) + " after fetching " + fetchData.uri() + "; " + (visitState.isEmpty()
+    //    ? "visit state is now empty "
+    //    : "first path now is " + it.unimi.di.law.bubing.util.Util.zToString(visitState.firstPath())));
+    visitState.nextFetch = fetchData.endTime + rc.schemeAuthorityDelay; // Regular delay
+
+    if ( fetchData.robots ) {
+      frontier.fetchedRobots.incrementAndGet();
+      // FIXME: following is done by ParsingThread
+      //frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+      //if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
+      //  // We go on getting/creating a workbench entry only if we have robots permissions.
+      //  visitState.schedulePurge();
+      //  LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
+      //}
+      visitState.lastRobotsFetch = fetchData.endTime;
+    }
+    else {
+      fetchData.visitState.cookies = getCookies( fetchData.uri(), cookieStore, frontier.rc.cookieMaxByteSize );
+      frontier.fetchedResources.incrementAndGet();
+    }
+
+    return true; // do parse
+  }
+
+  private boolean checkFetchDataException() {  // FIXME: see if this can be done by FetchingThread
+    final VisitState visitState = fetchData.visitState;
+
+    if ( fetchData.exception == null ) {
+      if ( visitState.lastExceptionClass != null ) {
+        frontier.brokenVisitStates.decrementAndGet();
+        visitState.lastExceptionClass = null;
+      }
+      return true;
+    }
+
+    final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
+
+    if (LOGGER.isDebugEnabled()) LOGGER.debug("Exception while fetching " + fetchData.uri(), fetchData.exception);
+    else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + " while fetching " + fetchData.uri());
+
+    if (visitState.lastExceptionClass == exceptionClass )
+      visitState.retries += 1; // An old problem
+    else { // A new problem
+      // If the visit state *just broke down*, we increment the number of broken visit states.
+      if (visitState.lastExceptionClass == null)
+        frontier.brokenVisitStates.incrementAndGet();
+      visitState.lastExceptionClass = exceptionClass;
+      visitState.retries = 0;
+    }
+
+    if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getInt(exceptionClass)) {
+      final long delay = ExceptionHelper.EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
+      // Exponentially growing delay
+      visitState.nextFetch = fetchData.endTime + delay;
+      if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
+    }
+    else {
+      frontier.brokenVisitStates.decrementAndGet();
+      // Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
+      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
+        // Drain URLs in visitstate, creating adequate error fetch info
+        try {
+          FetchInfoHelper.drainVisitStateForError(frontier, visitState);
+          visitState.schedulePurge();
+          if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
+        } catch (InterruptedException e) {
+          LOGGER.error( "Interrupted", e );
+        }
+      }
+      else {
+        visitState.lastExceptionClass = null;
+        // Regular delay
+        visitState.nextFetch = fetchData.endTime + frontier.rc.schemeAuthorityDelay;
+        if (LOGGER.isDebugEnabled()) LOGGER.debug("URL " + fetchData.uri() + " killed by " + exceptionClass.getSimpleName());
+      }
+    }
+
+    return false;
+  }
+
+  private FetchData getAvailableFetchData() throws InterruptedException {
+    frontier.rc.ensureNotPaused();
+    FetchData fetchData;
+    for ( int i = 0; ((fetchData = frontier.availableFetchData.poll()) == null)/* || fetchData.inUse*/; i++) {
+      if (stop) return null;
+      long newSleep = 1 << Math.min(i, 10);
+      Thread.sleep(newSleep);
+      frontier.rc.ensureNotPaused();
+    }
+    return fetchData;
+  }
+
+
+  private boolean tryFetch( final VisitState visitState, final MsgFrontier.CrawlRequest.Builder crawlRequest, final URI url, final boolean robots ) {
+    if (LOGGER.isTraceEnabled()) LOGGER.trace("Processing {}",url);
+
+    cookieStore.clear();
+    if ( robots )
+      visitState.robotsFilter = URLRespectsRobots.EMPTY_ROBOTS_FILTER;
+    else
+      storeCookies( visitState, cookieStore );
+
+    try {
+      final RequestConfig requestConfig = robots
+        ? frontier.robotsRequestConfig
+        : frontier.defaultRequestConfig;
+      fetchData.fetch( url, crawlRequest.build(), httpClient, requestConfig, visitState, robots );
+    }
+    catch (Throwable shouldntHappen) {
+      /* This shouldn't really happen--it's a bug that must be reported to the ASF team.
+       * We cannot rely on the internal state of fetchData being OK, so we just discard it
+       * and stop the keepalive download. We must perform some bookkeeping usually
+       * performed by a ParsingThread. */
+      LOGGER.error( "Unexpected exception during fetch of " + url, shouldntHappen );
+      final long endTime = System.currentTimeMillis();
+      visitState.workbenchEntry.nextFetch = endTime + frontier.rc.ipDelay;
+      visitState.nextFetch = endTime + frontier.rc.schemeAuthorityDelay;
+      return false;
+    } finally {
+      frontier.fetchingCount.incrementAndGet();
+      if (robots)
+        frontier.fetchingRobotsCount.incrementAndGet();
+
+      frontier.fetchingDurationTotal.addAndGet(fetchData.endTime - fetchData.startTime);
+    }
+
+    if (fetchData.exception != null && (
+        fetchData.exception instanceof java.net.SocketException
+            || fetchData.exception instanceof java.net.SocketTimeoutException
+            || fetchData.exception instanceof org.apache.http.conn.ConnectTimeoutException))
+      frontier.fetchingTimeoutCount.incrementAndGet();
+
+    if (LOGGER.isTraceEnabled()) LOGGER.trace("Fetched {} in {} ms", url.toString(), fetchData.endTime - fetchData.startTime);
+    frontier.speedDist.incrementAndGet(Math.min(frontier.speedDist.length() - 1, Fast.mostSignificantBit(8 * fetchData.length() / (1 + fetchData.endTime - fetchData.startTime)) + 1));
+    frontier.transferredBytes.addAndGet(fetchData.length());
+
+    return true;
   }
 }

@@ -418,6 +418,21 @@ public final class BURL {
 		return Arrays.copyOfRange(url, 0, startOfpathAndQuery(url));
 	}
 
+	public static boolean sameSchemeAuthority(final byte[] schemeAuthority, final URI url) {
+		final String scheme = url.getScheme();
+		int schemeLength = scheme.length();
+		if (schemeAuthority.length < schemeLength + 3) return false;
+		for(int i = schemeLength; i-- != 0;) if (schemeAuthority[i] != (byte)scheme.charAt(i)) return false;
+		if (schemeAuthority[schemeLength++] != (byte)':') return false;
+		if (schemeAuthority[schemeLength++] != (byte)'/') return false;
+		if (schemeAuthority[schemeLength++] != (byte)'/') return false;
+
+		final String authority = url.getRawAuthority();
+		if (schemeAuthority.length != schemeLength + authority.length()) return false;
+		for(int i = authority.length(); i-- != 0;) if (schemeAuthority[schemeLength + i] != (byte)authority.charAt(i)) return false;
+		return true;
+	}
+
 	/** Extracts the host part from a scheme+authority by removing the scheme, the user info and the port number.
 	 *
 	 * @param schemeAuthority a scheme+authority.
@@ -435,6 +450,19 @@ public final class BURL {
 		final char[] host = new char[endOfHost - startOfHost];
 		for(int i = startOfHost; i < endOfHost; i++) host[i - startOfHost] = (char)schemeAuthority[i];
 		return new String(host);
+	}
+
+	public static byte[] hostFromSchemeAuthorityAsByteArray( final byte[] schemeAuthority ) {
+		final int length = schemeAuthority.length;
+		final int startOfAuthority = ArrayUtils.indexOf(schemeAuthority, (byte)':') + 3;
+		int atPosition;
+		for(atPosition = startOfAuthority; atPosition < length; atPosition++) if (schemeAuthority[atPosition] == (byte)'@') break;
+		final int startOfHost = atPosition != length ? atPosition + 1 : startOfAuthority;
+
+		int endOfHost;
+		for(endOfHost = startOfHost; endOfHost < length; endOfHost++) if (schemeAuthority[endOfHost] == (byte)':') break;
+		return Arrays.copyOfRange( schemeAuthority, startOfHost, endOfHost );
+
 	}
 
 

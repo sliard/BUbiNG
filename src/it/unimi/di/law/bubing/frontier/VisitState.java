@@ -21,6 +21,7 @@ import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.bubing.util.URLRespectsRobots;
 import it.unimi.di.law.bubing.util.Util;
@@ -86,11 +87,7 @@ public class VisitState implements Delayed, Serializable {
 	private static final long serialVersionUID = 1L;
 
 	/** A special path marking a <code>robots.txt</code> refresh request. */
-	public final static byte[] ROBOTS_PATH;
-	static {
-		byte[] robotsString = { '/', 'r', 'o', 'b', 'o', 't', 's', '.', 't', 'x', 't' };
-		ROBOTS_PATH = HuffmanModel.defaultModel.compress(robotsString);
-	}
+	public final static byte[] ROBOTS_PATH = PulsarHelper.toZ(PulsarHelper.toASCII( "/robots.txt" ));
 
 	/** A singleton empty cookie array. */
 	public final static Cookie[] EMPTY_COOKIE_ARRAY = {};

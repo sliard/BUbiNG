@@ -83,7 +83,8 @@ public class FetchData implements URIResponse, Closeable {
 	private static final RandomNamedGraphServer GRAPH_SERVER = FAKE ? new RandomNamedGraphServer(100000000, 50, 3) : null;
 	private static final Header FAKE_CONTENT_TYPE = FAKE ? new BasicHeader(HttpHeaders.CONTENT_TYPE, "text/html") : null;
 	private final HttpResponse FAKE_RESPONSE = FAKE ? new BasicHttpResponse(new ProtocolVersion("HTTP", 1, 1), 200, "OK") : null;
-	{
+
+  {
 		if (FAKE) FAKE_RESPONSE.setHeader(FAKE_CONTENT_TYPE);
 	}
 
@@ -168,7 +169,7 @@ public class FetchData implements URIResponse, Closeable {
 	private final InspectableFileCachedInputStream inspectableFileCachedInputStream;
 
 	/** The content digest of the response. */
-	private volatile byte[] digest;
+	//private volatile byte[] digest;
 
 	/** Tells whether this response is a duplicate. */
 	private volatile boolean isDuplicate;
@@ -187,12 +188,12 @@ public class FetchData implements URIResponse, Closeable {
 
 	/** If true, this istance has been enqueued to the list of results and we are waiting
 	 * for the signal of the {@link ParsingThread} that is analyzing it. */
-	public volatile boolean inUse;
+	//public volatile boolean inUse;
 
 	/** The {@link RuntimeConfiguration}, cached. */
 	private final RuntimeConfiguration rc;
 
-	public volatile byte lang;
+	public volatile byte lang; // FIXME: already in ParseData
 
 	public volatile Map<String,String> extraMap;
 
@@ -291,11 +292,11 @@ public class FetchData implements URIResponse, Closeable {
 	 * @param url the URL to be used to populate this response.
 	 * @param visitState the {@link VisitState} associated with {@code url}.
 	 */
-	public void fetch(final URI url, final MsgFrontier.CrawlRequest crawlRequest, final HttpClient httpClient, final RequestConfig requestConfig, final VisitState visitState, final boolean robots) throws IOException {
+	public void fetch(final URI url, final MsgFrontier.CrawlRequest crawlRequest, final HttpClient httpClient, final RequestConfig requestConfig, final VisitState visitState, final boolean robots) {
 		// ALERT: check that all fields are cleared.
-		this.visitState = visitState;
 		this.url = url;
 		this.crawlRequest = crawlRequest;
+    this.visitState = visitState;
 		this.response = null;
 		this.exception = null;
 		this.truncated = false;
@@ -306,84 +307,104 @@ public class FetchData implements URIResponse, Closeable {
 
 		assert url.getHost() != null : url;
 
-		httpGet.setURI(url);
-		if (requestConfig != null) httpGet.setConfig(requestConfig);
-
-		wrappedEntity.clear(); // Reset backing file.
- 		startTime = System.currentTimeMillis();
-
- 		if (FAKE) {
-			final String content;
- 			if (robots) content = "\n";
- 			else {
- 				CharSequence[] successors = GRAPH_SERVER.successors(url.toString());
- 				// Note that this value must be kept in
-	 			final StringBuilder builder = new StringBuilder(NamedGraphServerHttpProxy.estimateLength(successors));
- 				NamedGraphServerHttpProxy.generate(url.hashCode(), builder, successors == null ? RandomNamedGraphServer.EMPTY_CHARSEQUENCE_ARRAY : successors, false);
- 				content = builder.toString();
- 			}
- 			final BasicHttpEntity fakeEntity = new BasicHttpEntity();
-			fakeEntity.setContent(IOUtils.toInputStream(content, Charsets.ISO_8859_1));
- 			fakeEntity.setContentLength(content.length());
- 			fakeEntity.setContentType(FAKE_CONTENT_TYPE);
- 			wrappedEntity.setEntity(fakeEntity);
- 			wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.connectionTimeout, 10);
-			(response = FAKE_RESPONSE).setEntity(wrappedEntity);
- 		}
- 		else {
- 			try {
-				final URI uri = httpGet.getURI();
-				final String scheme = uri.getScheme();
-				final int port = uri.getPort() == -1 ? (scheme.equals("https") ? 443 : 80) : uri.getPort();
- 				final HttpHost httpHost = visitState != null ? 
-					new HttpHost(InetAddress.getByAddress(visitState.workbenchEntry.ipAddress), uri.getHost(), port, scheme) :
- 					new HttpHost(uri.getHost(), port, scheme);
- 				if (LOGGER.isTraceEnabled())
- 					LOGGER.trace("Fetching {}", uri);
- 				httpClient.execute(httpHost, httpGet, new ResponseHandler<Void>() {
-
- 					@Override
- 					public Void handleResponse(HttpResponse response) throws ClientProtocolException, IOException {
- 						FetchData.this.response = response;
- 						final HttpEntity entity = response.getEntity();
-
- 						if (entity == null) LOGGER.warn("Null entity for URL " + url);
- 						else {
- 							wrappedEntity.setEntity(entity);
- 							truncated = wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.connectionTimeout, 10);
- 							if (truncated) httpGet.abort();
- 						}
- 						return null;
- 					}});
-
- 				response.setEntity(wrappedEntity);
- 			}
- 			catch(IOException e) {
- 				exception = e instanceof ClientProtocolException ? e.getCause() : e;
- 			}
- 		}
-
-		endTime = Math.max(System.currentTimeMillis(), startTime); // Work around non-monotonicity of System.currentTimeMillis()
-		httpGet.reset(); // Release resources.
+    startTime = System.currentTimeMillis();
+    if (FAKE)
+      doFakeFetch();
+    else
+      doFetch( httpClient, requestConfig );
+    endTime = Math.max(System.currentTimeMillis(), startTime); // Work around non-monotonicity of System.currentTimeMillis()
 	}
+
+  private void doFakeFetch() {
+    try {
+      wrappedEntity.clear(); // Reset backing file.
+      final String content;
+      if (robots)
+        content = "\n";
+      else {
+        CharSequence[] successors = GRAPH_SERVER.successors(url.toString());
+        // Note that this value must be kept in
+        final StringBuilder builder = new StringBuilder(NamedGraphServerHttpProxy.estimateLength(successors));
+        NamedGraphServerHttpProxy.generate(url.hashCode(), builder, successors == null ? RandomNamedGraphServer.EMPTY_CHARSEQUENCE_ARRAY : successors, false);
+        content = builder.toString();
+      }
+
+      final BasicHttpEntity fakeEntity = new BasicHttpEntity();
+      fakeEntity.setContent(IOUtils.toInputStream(content, Charsets.ISO_8859_1));
+      fakeEntity.setContentLength(content.length());
+      fakeEntity.setContentType(FAKE_CONTENT_TYPE);
+      wrappedEntity.setEntity(fakeEntity);
+      wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.connectionTimeout, 10);
+      (response = FAKE_RESPONSE).setEntity(wrappedEntity);
+    }
+    catch ( IOException e ) {
+      exception = e;
+    }
+  }
+
+  private void doFetch( final HttpClient httpClient, final RequestConfig requestConfig ) {
+    try {
+      wrappedEntity.clear(); // Reset backing file.
+      final String scheme = url.getScheme();
+      final int port = url.getPort() == -1 ? (scheme.equals("https") ? 443 : 80) : url.getPort();
+      final String host = url.getHost();
+      final HttpHost httpHost = visitState != null
+        ? new HttpHost( InetAddress.getByAddress(visitState.workbenchEntry.ipAddress), host, port, scheme )
+        : new HttpHost( host, port, scheme );
+      if (LOGGER.isTraceEnabled()) LOGGER.trace("Fetching {}", url);
+
+      httpGet.setURI(url);
+      if (requestConfig != null)
+        httpGet.setConfig(requestConfig);
+
+      httpClient.execute( httpHost, httpGet, new ResponseHandler<Void>() {
+        @Override
+        public Void handleResponse(HttpResponse response) throws ClientProtocolException, IOException {
+          FetchData.this.response = response;
+          final HttpEntity entity = response.getEntity();
+
+          if (entity == null)
+            LOGGER.warn( "Null entity for URL " + url );
+          else {
+            wrappedEntity.setEntity(entity);
+            truncated = wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.connectionTimeout, 10);
+            if (truncated)
+              httpGet.abort();
+          }
+          return null;
+        }
+      } );
+
+      response.setEntity(wrappedEntity);
+    }
+    catch ( ClientProtocolException e ) {
+      exception = e.getCause();
+    }
+    catch( IOException e ) {
+      exception = e;
+    }
+    finally {
+      httpGet.reset(); // Release resources.
+    }
+  }
 
 	/**
 	 * Set the digest with a given value
 	 *
 	 * @param digest the value to be set for <code>digest</code>
 	 */
-	public void digest(byte[] digest) {
-		this.digest = digest;
-	}
+	//public void digest(byte[] digest) {
+	//	this.digest = digest;
+	//}
 
 	/**
 	 * Get the digest
 	 *
 	 * @return the digest of this <code>FetchData</code>
 	 */
-	public byte[] digest() {
-		return digest;
-	}
+	//public byte[] digest() {
+	//	return digest;
+	//}
 
 	/**
 	 * Mark the current <code>FetchData</code> as duplicated or not duplicated

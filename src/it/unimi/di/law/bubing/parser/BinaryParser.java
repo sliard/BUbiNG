@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Locale;
 
 import org.apache.http.HttpResponse;
@@ -88,12 +89,21 @@ public class BinaryParser implements Parser<Void> {
 	}
 
 	@Override
-	public byte[] parse(final URI uri, final HttpResponse httpResponse, final MsgCrawler.FetchInfo.Builder linkReceiver) throws IOException {
+	public ParseData parse(final URI uri, final HttpResponse httpResponse) throws IOException {
 		if (hashFunction == null) return null;
 		final InputStream is = httpResponse.getEntity().getContent();
 		final Hasher hasher = init(crossAuthorityDuplicates? null : uri);
 		for(int length; (length = is.read(buffer, 0, buffer.length)) > 0;) hasher.putBytes(buffer, 0, length);
-		return hasher.hash().asBytes();
+		return new ParseData(
+      uri,
+      null,
+      new PageInfo(uri),
+      /*digest*/hasher.hash().asBytes(),
+      /*textContent*/new StringBuilder(0),
+			/*boilerpipedContent*/new StringBuilder(0),
+      null,
+      /*links*/new ArrayList<>(0)
+		);
 	}
 
 	@Override
@@ -104,51 +114,6 @@ public class BinaryParser implements Parser<Void> {
 	@Override
 	public Object clone() {
 		return new BinaryParser(hashFunction);
-	}
-
-	@Override
-	public Charset guessedCharset() {
-		return null;
-	}
-
-	@Override
-	public Boolean responsiveDesign() {
-		return null;
-	}
-
-	@Override
-	public Locale guessedLanguage() {
-		return null;
-	}
-
-	@Override
-	public CharsetDetectionInfo getCharsetDetectionInfo() {
-		return null;
-	}
-
-	@Override
-	public LanguageDetectionInfo getLanguageDetectionInfo() {
-		return null;
-	}
-
-	@Override
-	public StringBuilder getRewrittenContent() {
-		return null;
-	}
-
-	@Override
-	public String getTitle() {
-		return null;
-	}
-
-	@Override
-	public StringBuilder getTextContent() {
-		return null;
-	}
-
-	@Override
-	public Boolean html5() {
-		return null;
 	}
 
 	@Override

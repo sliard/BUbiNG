@@ -109,7 +109,9 @@ public class NamedGraphServerHttpProxy extends Thread {
 		content.append("<html>\n<head>");
 		content.append("<!-- a very important comment -->");
 		ThreadLocalRandom trng = ThreadLocalRandom.current();
-		content.append("<title>My page " + RandomStringUtils.randomAlphabetic(trng.nextInt(10)+4) + "</title>");
+		content.append("<title>My page ");
+		content.append(RandomStringUtils.randomAlphabetic(trng.nextInt(10) + 4));
+		content.append("</title>");
 
 		content.append("<script type=\"text/javascript\">\n");
 		content.append("if(self!==top)window.document.write(\"\\u003Cstyle>body * {display:none !important;}\\u003C\\/style>\\u003Ca href=\\\"#\\\" onclick=\"+\n" +
@@ -135,14 +137,32 @@ public class NamedGraphServerHttpProxy extends Thread {
 		// This helps in making the page text different even for the same number
 		// of URLs, but not always.
 		content.append("<h1>").append((char)((hashCode & 0xF) + 'A')).append((char)((hashCode >>> 4 & 0xF) + 'A')).append((char)((hashCode >>> 8 & 0xF) + 'A')).append((char)((hashCode >>> 12 & 0xF) + 'A')).append("</h1>\n");
+		String[] sentences = new String[] {
+			"<p>Alan Mathison Turing OBE FRS (/ˈtjʊərɪŋ/; 23 June 1912 – 7 June 1954) was an English mathematician, computer scientist, logician, cryptanalyst, philosopher and theoretical biologist.[6] Turing was highly influential in the development of theoretical computer science, providing a formalisation of the concepts of algorithm and computation with the Turing machine, which can be considered a model of a general-purpose computer.[7][8][9] Turing is widely considered to be the father of theoretical computer science and artificial intelligence.[10] Despite these accomplishments, he was never fully recognized in his home country during his lifetime due to his homosexuality, which was then a crime in the UK.</p>\n",
+			"<p>During the Second World War, Turing worked for the Government Code and Cypher School (GC&CS) at Bletchley Park, Britain's codebreaking centre that produced Ultra intelligence. For a time he led Hut 8, the section that was responsible for German naval cryptanalysis. Here he devised a number of techniques for speeding the breaking of German ciphers, including improvements to the pre-war Polish bombe method, an electromechanical machine that could find settings for the Enigma machine. Turing played a pivotal role in cracking intercepted coded messages that enabled the Allies to defeat the Nazis in many crucial engagements, including the Battle of the Atlantic, and in so doing helped win the war.[11][12] Counterfactual history is difficult with respect to the effect Ultra intelligence had on the length of the war,[13] but at the upper end it has been estimated that this work shortened the war in Europe by more than two years and saved over 14 million lives.[11]</p>\n",
+			"<p>Turing was prosecuted in 1952 for homosexual acts, when by the Labouchere Amendment, \"gross indecency\" was a criminal offence in the UK. He accepted chemical castration treatment, with DES, as an alternative to prison. Turing died in 1954, 16 days before his 42nd birthday, from cyanide poisoning. An inquest determined his death as suicide, but it has been noted that the known evidence is also consistent with accidental poisoning.[15] In 2009, following an Internet campaign, British Prime Minister Gordon Brown made an official public apology on behalf of the British government for \"the appalling way he was treated\". Queen Elizabeth II granted him a posthumous pardon in 2013.[16][17][18] The Alan Turing law is now an informal term for a 2017 law in the United Kingdom that retroactively pardoned men cautioned or convicted under historical legislation that outlawed homosexual acts.[19]</p>\n",
+			"<p>Alan Mathison Turing, né le 23 juin 1912 à Londres et mort le 7 juin 1954 à Wilmslow, est un mathématicien et cryptologue britannique, auteur de travaux qui fondent scientifiquement l'informatique. Pour résoudre le problème fondamental de la décidabilité en arithmétique, il présente en 1936 une expérience de pensée que l'on nommera ensuite machine de Turing et des concepts de programme et de programmation, qui prendront tout leur sens avec la diffusion des ordinateurs, dans la seconde moitié du xxe siècle. Son modèle a contribué à établir la thèse de Church, qui définit le concept mathématique intuitif de fonction calculable.</p>\n",
+			"<p>Durant la Seconde Guerre mondiale, il joue un rôle majeur dans la cryptanalyse de la machine Enigma utilisée par les armées allemandes. Ce travail secret ne sera connu du public que dans les années 1970. Après la guerre, il travaille sur un des tout premiers ordinateurs, puis contribue au débat sur la possibilité de l'intelligence artificielle, en proposant le test de Turing. Vers la fin de sa vie, il s'intéresse à des modèles de morphogenèse du vivant conduisant aux « structures de Turing ». Poursuivi en justice en 1952 pour homosexualité, il choisit pour éviter la prison la castration chimique par prise d'œstrogènes. Il est retrouvé mort par empoisonnement au cyanure le 7 juin 1954 dans la chambre de sa maison à Wilmslow. La reine Élisabeth II le reconnaît comme héros de guerre et le gracie à titre posthume en 2013.</p>\n",
+			"<p>À cause de son manque d'enthousiasme à travailler autant dans les matières classiques que dans les matières scientifiques, Turing échoue plusieurs fois à ses examens. Il n'est admis qu'au King's College de l'université de Cambridge, alors qu'il avait demandé Trinity College en premier choix. Il étudie de 1931 à 1934 sous la direction de Godfrey Harold Hardy, mathématicien alors titulaire de la chaire sadleirienne puis responsable du centre de recherches et d'études en mathématiques. Il suit également les cours d'Arthur Eddington et, la dernière année, de Max Newman qui l'initie à la logique mathématique. En 1935, Turing est élu fellow du King's College, l'équivalent d'une bourse de thèse, grâce à sa démonstration du théorème central limite8.</p>\n",
+			"<p>Alan Mathison Turing OBE,[2] FRS[3] [ˈælən ˈmæθɪsən ˈtjʊəɹɪŋ] (* 23. Juni 1912 in London; † 7. Juni 1954 in Wilmslow, Cheshire) war ein britischer Logiker, Mathematiker, Kryptoanalytiker und Informatiker. Er gilt heute als einer der einflussreichsten Theoretiker der frühen Computerentwicklung und Informatik. Turing schuf einen großen Teil der theoretischen Grundlagen für die moderne Informations- und Computertechnologie. Als richtungsweisend erwiesen sich auch seine Beiträge zur theoretischen Biologie.Das von ihm entwickelte Berechenbarkeitsmodell der Turingmaschine bildet eines der Fundamente der Theoretischen Informatik. Während des Zweiten Weltkrieges war er maßgeblich an der Entzifferung der mit der „Enigma“ verschlüsselten deutschen Funksprüche beteiligt. Der Großteil seiner Arbeiten blieb auch nach Kriegsende unter Verschluss.</p>\n",
+			"<p>Turing entwickelte 1953 eines der ersten Schachprogramme, dessen Berechnungen er mangels Hardware selbst durchführte. Nach ihm benannt sind der Turing Award, die bedeutendste Auszeichnung in der Informatik, sowie der Turing-Test zum Überprüfen des Vorhandenseins von künstlicher Intelligenz.</p>\n",
+			"<p>Im März 1952 wurde Turing wegen seiner Homosexualität, die damals noch als Straftat verfolgt wurde, zur chemischen Kastration verurteilt.[5] Turing erkrankte in Folge der Hormonbehandlung an einer Depression und starb etwa zwei Jahre später durch Suizid. Im Jahr 2009 sprach der damalige britische Premierminister Gordon Brown eine offizielle Entschuldigung im Namen der Regierung für die „entsetzliche Behandlung“ Turings aus und würdigte dessen „außerordentliche Verdienste“ während des Krieges; eine Begnadigung wurde aber noch 2011 trotz einer Petition abgelehnt. Am Weihnachtstag, dem 24. Dezember 2013 sprach Königin Elisabeth II. posthum ein „Royal Pardon“ (Königliche Begnadigung) aus.</p>\n",
+			"<p>Lorem ipsum dolor sit amet , consectetur adipisici elit, sed eiusmod tempor incidunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquid ex ea commodi consequat. Quis aute iure reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint obcaecat cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>\n"
+		};
+		int nbLang = 4;
+		int lang = Math.abs(trng.nextInt()) % nbLang;
+
 		for (final CharSequence s : successors) {
 			String ref = s.toString();
 			if (!notescurl) ref = StringEscapeUtils.escapeHtml(s.toString());
-			content.append("<p>Lorem ipsum dolor sit amet <a href=\""
+
+			int index = Math.min(lang * 3 + Math.abs(trng.nextInt()) % 3, sentences.length - 1);
+			content.append(sentences[index] + " <a href=\"" + ref + "\">" + ref + "</a> ");
+			/*content.append("<p>Lorem ipsum dolor sit amet <a href=\""
 					+ ref
 					+ "\">"
 					+ ref
-					+ "</a>, consectetur adipisici elit, sed eiusmod tempor incidunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquid ex ea commodi consequat. Quis aute iure reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint obcaecat cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n");
+					+ "</a>, consectetur adipisici elit, sed eiusmod tempor incidunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquid ex ea commodi consequat. Quis aute iure reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint obcaecat cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n");*/
 		}
 		content.append("</body>\n</html>\n");
 	}
@@ -271,7 +291,11 @@ public class NamedGraphServerHttpProxy extends Thread {
 							else generate(hashCode, content, successors, notescurl);
 							out.println("HTTP/1.1 200 OK");
 							out.println("Connection: close");
-							out.println("Content-Type: text/html; charset=iso-8859-1");
+							ThreadLocalRandom trng = ThreadLocalRandom.current();
+							if ( trng.nextDouble() > 0.8 )
+								out.println("Content-Type: text/html; charset=iso-8859-1");
+							else
+								out.println("Content-Type: text/html");
 							out.println("Content-Length: " + content.length());
 							out.println();
 							//System.err.println("200: pred:"  + (600 * (successors == null ? 1 : successors.length + 1))  + " real: " + content.length());
