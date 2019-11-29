@@ -46,8 +46,8 @@ public final class XHTMLParser implements Parser<Void>
   private final PureTextAppendable pureTextAppendable;
   private final HtmlCharsetDetector charsetDetector;
   private final StringBuilder rewritten;
-  private final XhtmlContentHandler.Metadata metadata;
   private PageInfo pageInfo;
+  private Metadata metadata;
 
   public XHTMLParser( final String dummy ) {
     this.buffer = new char[ CHAR_BUFFER_SIZE ];
@@ -55,8 +55,8 @@ public final class XHTMLParser implements Parser<Void>
     this.pureTextAppendable = new PureTextAppendable();
     this.charsetDetector = new HtmlCharsetDetector( MAX_CHARSET_PAGE_CONTENT );
     this.rewritten = new StringBuilder( REWRITTEN_INITIAL_CAPACITY );
-    this.metadata = new XhtmlContentHandler.Metadata();
     this.pageInfo = null;
+    this.metadata = null;
   }
 
   @Override
@@ -106,6 +106,7 @@ public final class XHTMLParser implements Parser<Void>
       baseUri,
       metadata.get( "title" ),
       pageInfo,
+      metadata,
       digestAppendable.digest(),
       pureTextAppendable.getContent(),
       boilerpipeHandler.getContent(),
@@ -113,62 +114,6 @@ public final class XHTMLParser implements Parser<Void>
       allLinks
     );
   }
-
-  /*
-  @Override
-  public Charset guessedCharset() {
-    return pageInfo.getGuessedCharset();
-  }
-
-  @Override
-  public Locale guessedLanguage() {
-    return pageInfo.getGuessedLanguage();
-  }
-
-  @Override
-  public CharsetDetectionInfo getCharsetDetectionInfo() {
-    return pageInfo.getCharsetDetectionInfo();
-  }
-
-  @Override
-  public LanguageDetectionInfo getLanguageDetectionInfo() {
-    return pageInfo.getLanguageDetectionInfo();
-  }
-
-  @Override
-  public URI getBase() {
-  }
-
-  @Override
-  public List<HTMLLink> getLinks() {
-
-  }
-
-  @Override
-  public StringBuilder getRewrittenContent() {
-    return rewritten;
-  }
-
-  @Override
-  public StringBuilder getTextContent() {
-    return pureTextAppendable.getContent();
-  }
-
-  @Override
-  public String getTitle() {
-    return metadata.get( "title" );
-  }
-
-  @Override
-  public Boolean responsiveDesign() {
-    return pageInfo.hasViewportMeta();
-  }
-
-  @Override
-  public Boolean html5() {
-    return pageInfo.isHtmlVersionAtLeast5();
-  }
-  */
 
   @Override
   public Void result() {
@@ -191,8 +136,8 @@ public final class XHTMLParser implements Parser<Void>
   // implementation ----------------------------------------------------------------------------------------------------------------
 
   private void init( final URI uri ) {
-    metadata.clear();
     pageInfo = new PageInfo( uri, charsetDetector );
+    metadata = new Metadata();
     digestAppendable.init( uri );
     pureTextAppendable.init();
     rewritten.setLength( 0 );

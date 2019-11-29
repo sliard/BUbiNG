@@ -276,12 +276,12 @@ public final class FetchingThread extends Thread implements Closeable {
       LOGGER.error( "Unexpected exception", e );
     }
     finally {
+      LOGGER.warn( "thread [stopping]" );
       LOGGER.warn( "thread [stopped]" );
       frontier.runningFetchingThreads.decrementAndGet();
     }
   }
 
-  @Override
   public void close() throws IOException {
     FetchData fd = fetchData;
     if (fd != null)
@@ -335,16 +335,16 @@ public final class FetchingThread extends Thread implements Closeable {
       final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest( schemeAuthorityProto, zpath );
       final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
 
-      LOGGER.trace( "Next URL to fetch : {}", url );
+      if (LOGGER.isTraceEnabled()) LOGGER.trace( "Next URL to fetch : {}", url );
 
       if ( BlackListing.checkBlacklistedHost(frontier,url) ) {
-        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest.build()));
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest,visitState));
         frontier.fetchingFailedCount.incrementAndGet();
         continue; // next PathQuery
       }
 
       if ( BlackListing.checkBlacklistedIP(frontier,url,visitState.workbenchEntry.ipAddress) ) {
-        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest.build()));
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedBlackList(crawlRequest,visitState));
         frontier.fetchingFailedCount.incrementAndGet();
         continue; // next PathQuery
       }
@@ -357,14 +357,14 @@ public final class FetchingThread extends Thread implements Closeable {
 
       if ( !frontier.rc.fetchFilter.apply(url) ) {
         if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} filtered out", url);
-        frontier.enqueue(FetchInfoHelper.fetchInfoFailedFiltered(crawlRequest.build()));
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedFiltered(crawlRequest,visitState));
         frontier.fetchingFailedCount.incrementAndGet();
         continue; // skip to next PathQuery
       }
 
       if ( visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter,url) ) {
         if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
-        frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest.build()));
+        frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest,visitState));
         frontier.fetchingFailedCount.incrementAndGet();
         continue; // skip to next PathQuery
       }
