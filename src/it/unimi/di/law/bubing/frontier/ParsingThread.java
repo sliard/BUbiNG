@@ -8,7 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
+import java.util.*;
 
 import com.exensa.wdl.common.LanguageCodes;
 import com.exensa.wdl.protobuf.link.MsgLink;
@@ -23,7 +23,6 @@ import it.unimi.di.law.bubing.parser.html.RobotsTagState;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
-import javafx.util.Pair;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
@@ -57,9 +56,7 @@ import it.unimi.di.law.warc.filters.Filter;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.stream.Stream;
 
 import static java.lang.System.nanoTime;
 //RELEASE-STATUS: DIST
@@ -142,7 +139,8 @@ public class ParsingThread extends Thread {
         .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
         .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
         .setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
-        .setLanguage( fetchData.lang );
+        .setLanguage( fetchData.lang )
+        .setIpAddress( ByteString.copyFrom(fetchData.visitState.workbenchEntry.ipAddress) );
     }
 
     private void process( final ParseData parseData ) {
@@ -164,11 +162,15 @@ public class ParsingThread extends Thread {
           .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
           .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
       }
-      if (parseData.digest != null) {
+      if ( parseData.metadata != null )
+        for ( final Map.Entry<String,List<String>> meta : parseData.metadata.entries() )
+          fetchInfoBuilder.addMetadatas( MsgCrawler.Metadata.newBuilder()
+            .setKey( meta.getKey() )
+            .addAllValues( meta.getValue() ));
+      if (  parseData.digest != null )
         fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
-      }
-      if (fetchInfoBuilder.getHttpStatus() / 100 == 2)
-        categorize(parseData, splittedText, tinfo);
+      if ( fetchInfoBuilder.getHttpStatus()/100 == 2 )
+        categorize( parseData, splittedText, tinfo );
 
       int linkNum = 0;
       for ( final HTMLLink link : parseData.links )
@@ -318,6 +320,7 @@ public class ParsingThread extends Thread {
       LOGGER.error( "Unexpected exception", e );
     }
     finally {
+      LOGGER.warn( "thread [stopping]" );
       close();
       frontier.runningParsingThreads.decrementAndGet();
       LOGGER.warn( "thread [stopped]" );
