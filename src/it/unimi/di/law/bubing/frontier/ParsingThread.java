@@ -164,7 +164,7 @@ public class ParsingThread extends Thread {
       }
       if ( parseData.metadata != null )
         for ( final Map.Entry<String,List<String>> meta : parseData.metadata.entries() )
-          fetchInfoBuilder.addMetadatas( MsgCrawler.Metadata.newBuilder()
+          fetchInfoBuilder.addMetadata( MsgCrawler.Metadata.newBuilder()
             .setKey( meta.getKey() )
             .addAllValues( meta.getValue() ));
       if (  parseData.digest != null )
