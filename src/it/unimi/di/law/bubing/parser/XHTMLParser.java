@@ -6,7 +6,6 @@ import it.unimi.di.law.bubing.util.BURL;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
 import net.htmlparser.jericho.HTMLElementName;
-import net.htmlparser.jericho.StartTagType;
 import net.htmlparser.jericho.StreamedSource;
 import org.apache.http.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -25,15 +24,6 @@ import java.util.*;
 
 public final class XHTMLParser implements Parser<Void>
 {
-  static {
-    /* As suggested by Martin Jericho. This should speed up things and avoid problems with
-     * server tags embedded in weird places (e.g., JavaScript string literals). Server tags
-     * should not appear in generated HTML anyway. */
-    StartTagType.SERVER_COMMON.deregister();
-    StartTagType.SERVER_COMMON_COMMENT.deregister();
-    StartTagType.SERVER_COMMON_ESCAPED.deregister();
-  }
-
   private static final Logger LOGGER = LoggerFactory.getLogger( XHTMLParser.class );
   private static final int CHAR_BUFFER_SIZE = 1024 * 1024; // The size of the internal Jericho buffer.
   private static final int MAX_CHARSET_PAGE_CONTENT = 5000; // The max required amount of page content (without HTML entities) for charset detection
@@ -81,6 +71,8 @@ public final class XHTMLParser implements Parser<Void>
 
     final StreamedSource streamedSource = new StreamedSource(new InputStreamReader( contentStream, pageInfo.getGuessedCharset() ));
     streamedSource.setBuffer( buffer );
+    final JerichoLoggerWrapper loggerWrapper = new JerichoLoggerWrapper( streamedSource.getLogger() );
+    streamedSource.setLogger( loggerWrapper );
     final JerichoParser jerichoParser = new JerichoParser( streamedSource, new JerichoParser.TeeHandler(jerichoToXhtml,jerichoHtmlBackup) );
 
     try {
@@ -91,6 +83,7 @@ public final class XHTMLParser implements Parser<Void>
       return null;
     }
 
+    pageInfo.setHtmlErrorCount( loggerWrapper.getTagRejected() + loggerWrapper.getTagNotRegistered() );
     pageInfo.extractFromContent( pureTextContentHandler.pureTextAppendable.getContent() );
     updateDigestForRedirection( httpResponse );
 
@@ -130,7 +123,7 @@ public final class XHTMLParser implements Parser<Void>
     final Header contentType = uriResponse.response().getEntity().getContentType();
     final int status = uriResponse.response().getStatusLine().getStatusCode();
     final boolean isRedirect = ((status / 100) == 3);
-    return isRedirect || (contentType != null && contentType.getValue().startsWith("text/"));
+    return isRedirect || (contentType != null && contentType.getValue().startsWith("text/html"));
   }
 
   // implementation ----------------------------------------------------------------------------------------------------------------
@@ -221,7 +214,6 @@ public final class XHTMLParser implements Parser<Void>
       characters( ch, start, length );
     }
 
-
     @Override public void startElement( final String uri, final String localName, final String qName, final Attributes atts ) { }
     @Override public void endElement( final String uri, final String localName, final String qName ) { }
     @Override public void setDocumentLocator( final Locator locator ) { }
@@ -311,5 +303,102 @@ public final class XHTMLParser implements Parser<Void>
       for ( final ContentHandler handler : handlers )
         handler.skippedEntity( name );
     }
+  }
+
+  public static void main( final String[] args ) {
+    /*
+    try {
+      final XHTMLParser parser = new XHTMLParser("");
+      parser.init( new URI("http://toto.com") );
+      final String fileName = args[0];
+      try ( final java.io.InputStream is = new java.io.FileInputStream(fileName) ) {
+        final HtmlDigestContentHandler digestContentHandler = new HtmlDigestContentHandler( parser.digestAppendable );
+        final HtmlPureTextContentHandler pureTextContentHandler = new HtmlPureTextContentHandler( parser.pureTextAppendable );
+        final HtmlBoilerpipeHandler boilerpipeHandler = new HtmlBoilerpipeHandler( ArticleExtractor.INSTANCE, MAX_BODY_LENGTH );
+        final ContentHandler htmlContentHandler = new HtmlTeeContentHandler( digestContentHandler, pureTextContentHandler, boilerpipeHandler );
+        final LinksHandler linksHandler = new LinksHandler( parser.pageInfo.getLinks(), MAX_ANCHOR_TEXT_LENGTH );
+        final XhtmlContentHandler xhtmlContentHandler = new XhtmlContentHandler( parser.metadata, htmlContentHandler, linksHandler );
+        final JerichoToXhtml jerichoToXhtml = new JerichoToXhtml( xhtmlContentHandler );
+        final JerichoHtmlBackup jerichoHtmlBackup = new JerichoHtmlBackup( parser.rewritten );
+
+        final StreamedSource streamedSource = new StreamedSource(new InputStreamReader( is, parser.pageInfo.getGuessedCharset() ));
+        streamedSource.setBuffer( parser.buffer );
+        final JerichoLoggerWrapper loggerWrapper = new JerichoLoggerWrapper( streamedSource.getLogger() );
+        streamedSource.setLogger( loggerWrapper );
+        final JerichoParser jerichoParser = new JerichoParser( streamedSource, new JerichoParser.TeeHandler(jerichoToXhtml,jerichoHtmlBackup) );
+
+        jerichoParser.parse();
+
+        System.out.println( "--------------------------" );
+        System.out.println( parser.pureTextAppendable.getContent() );
+        System.out.println( "--------------------------" );
+        System.out.println( boilerpipeHandler.getContent() );
+        System.out.println( "--------------------------" );
+        System.out.println( "#error            : " + loggerWrapper.getErrorCount() );
+        System.out.println( "#tagRejected      : " + loggerWrapper.getTagRejected() );
+        System.out.println( "#tagNotRegistered : " + loggerWrapper.getTagNotRegistered() );
+        System.out.println( "#otherError       : " + (loggerWrapper.getErrorCount() - loggerWrapper.getTagRejected() - loggerWrapper.getTagNotRegistered()) );
+        System.out.println( "#warn             : " + loggerWrapper.getWarnCount() );
+      }
+    }
+    catch ( java.io.IOException|JerichoParser.ParseException|java.net.URISyntaxException e ) {
+      LOGGER.warn( "Failed to parse HTML", e );
+    }
+    */
+
+    testHref( "https://stallman.org/glossay.html", "" );
+    testHref( "https://stallman.org/glossay.html", "#" );
+    testHref( "https://stallman.org/glossay.html", "javascript:;" );
+    testHref( "https://stallman.org/glossay.html", "//:0" );
+  }
+
+  private static void testHref( final String source, final String link ) {
+    try {
+      System.out.println( "====================================================" );
+      System.out.println( "source: '" + source + "', link: '" + link + "'" );
+      System.out.println( "====================================================" );
+      //final URI base = BURL.parse( source );
+      //final URI href = BURL.parse( link );
+      final URI base = new URI( source );
+      final URI href = new URI( link );
+      final URI target = href == null ? null : base.resolve( href );
+
+      logUriInfo( "base", base );
+      logUriInfo( "href", href );
+      logUriInfo( "target", target );
+
+      System.out.println( "base: " + toString(base) );
+      System.out.println( "href: " + toString(href) );
+      System.out.println( "target: " + toString(target) );
+    }
+    catch ( java.net.URISyntaxException exn ) {
+      System.err.println( "Exception: " + exn.getMessage() );
+    }
+    finally {
+
+    }
+  }
+
+  private static void logUriInfo( final String context, final URI uri ) {
+    System.out.println( "-------------" + context + "-------------" );
+    if ( uri == null )
+      System.out.println( "<null>" );
+    else {
+      System.out.println( "'" + uri.toString() + "'" );
+      System.out.println( "isAbsolute: " + uri.isAbsolute() );
+      System.out.println( "isOpaque: " + uri.isOpaque() );
+
+      System.out.println( "getScheme: " + uri.getScheme() );
+      System.out.println( "getSchemeSpecificPart: " + uri.getSchemeSpecificPart() );
+      System.out.println( "getAuthority: " + uri.getAuthority() );
+      System.out.println( "getFragment: " + uri.getFragment() );
+      System.out.println( "getHost: " + uri.getHost() );
+      System.out.println( "getPath: " + uri.getPath() );
+      System.out.println( "getQuery: " + uri.getQuery() );
+    }
+  }
+
+  private static String toString( final URI uri ) {
+    return uri == null ? "<null>" : uri.toString();
   }
 }

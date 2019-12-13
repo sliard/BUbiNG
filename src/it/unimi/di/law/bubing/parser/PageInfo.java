@@ -60,6 +60,7 @@ public final class PageInfo
   private URI guessedLocation;
   private boolean hasViewportMeta;
   private boolean htmlVersionAtLeast5;
+  private int htmlErrorCount;
 
   // accessors ---------------------------------------------------------------------------------------------------------------------
 
@@ -116,6 +117,14 @@ public final class PageInfo
       .collect( java.util.stream.Collectors.toList() );
   }
 
+  public int getHtmlErrorCount() {
+    return htmlErrorCount;
+  }
+
+  public void setHtmlErrorCount( final int errorCount ) {
+    htmlErrorCount = errorCount;
+  }
+
   // contructor --------------------------------------------------------------------------------------------------------------------
 
   public PageInfo( final URI uri ) {
@@ -136,6 +145,7 @@ public final class PageInfo
     this.guessedLocation = uri;
     this.hasViewportMeta = false;
     this.htmlVersionAtLeast5 = false;
+    this.htmlErrorCount = 0;
   }
 
   // API ---------------------------------------------------------------------------------------------------------------------------
@@ -146,7 +156,7 @@ public final class PageInfo
         tryExtractLanguageFromHeader( httpResponse ) |
         tryExtractLocationFromHeader( httpResponse ) |
         tryExtractContentLocationFromHeader( httpResponse ) |
-        tryExtractRobotstagFromHeader( httpResponse ) |
+        tryExtractRobotsTagFromHeader( httpResponse ) |
         tryExtractLinksFromHeader( httpResponse );
   }
 
@@ -214,7 +224,7 @@ public final class PageInfo
     return locationDetectionInfo.httpHeaderContentLocation != null;
   }
 
-  private boolean tryExtractRobotstagFromHeader( final HttpResponse httpResponse ) {
+  private boolean tryExtractRobotsTagFromHeader( final HttpResponse httpResponse ) {
     final Header[] headers = httpResponse.getHeaders( "X-Robots-Tag" );
     if ( headers.length == 0 ) return false;
     for ( final Header h : headers )
@@ -443,35 +453,4 @@ public final class PageInfo
     }
     return null;
   }
-
-  /*
-  public static final class Link
-  {
-    public final String type;
-    public final String uri;
-    public final String title;
-    public final String text;
-    public final String rel;
-
-    public Link( final String type, final String uri, final String title, final String text, final String rel ) {
-      this.type = type;
-      this.uri = uri;
-      this.title = title;
-      this.text = text;
-      this.rel = rel;
-    }
-
-    public static final class Type
-    {
-      public static final String A = HTMLElementName.A;
-      public static final String IMG = HTMLElementName.IMG;
-      public static final String LINK = HTMLElementName.LINK;
-      public static final String SCRIPT = HTMLElementName.SCRIPT;
-      public static final String EMBED = HTMLElementName.EMBED;
-      public static final String IFRAME = HTMLElementName.IFRAME;
-      public static final String FRAME = HTMLElementName.FRAME;
-      public static final String REDIRECT = "redirect";
-    }
-  }
-  */
 }
