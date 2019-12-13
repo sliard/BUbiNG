@@ -171,21 +171,35 @@ public final class StatsThread implements Runnable {
 				+ Util.format(frontier.contentTypeApplication.get()) + "/"
 				+ Util.format(frontier.contentTypeOthers.get()) + "\n");
 
-		statInfo.append("STATS : Current front size: " + Util.format(frontier.getCurrentFrontSize())
-			+ "; Required front size: " + Util.format(frontier.requiredFrontSize.get())
-			+ "; Ready URLs: " + Util.format(frontier.quickReceivedCrawlRequests.size()) + "\n");
+		statInfo.append("STATS : Fetch count/robots/failed/timeout: "
+				+ Util.format(frontier.fetchingCount.get()) + "/"
+				+ Util.format(frontier.fetchedRobots.get()) + "/"
+				+ Util.format(frontier.fetchingFailedCount.get()) + "/"
+				+ Util.format(frontier.fetchingTimeoutCount.get()) + "\n");
 
-		statInfo.append("STATS : FetchingThread waits: " + Util.format(frontier.fetchingThreadWaits.get()) + "; total wait time: " + Util.format(frontier.fetchingThreadWaitingTimeSum.get()) + "\n");
+		statInfo.append("STATS : Parse count/robots/error/except: "
+				+ Util.format(frontier.parsingCount.get()) + "/"
+				+ Util.format(frontier.parsingRobotsCount.get()) + "/"
+				+ Util.format(frontier.parsingErrorCount.get()) + "/"
+				+ Util.format(frontier.parsingExceptionCount.get()) + "\n");
+
+		statInfo.append("STATS : Current front size: " + Util.format(frontier.getCurrentFrontSize())
+				+ "; Required front size: " + Util.format(frontier.requiredFrontSize.get())
+				+ "; Ready URLs: " + Util.format(frontier.quickReceivedCrawlRequests.size()) + "\n");
+
+		statInfo.append("STATS : FetchingThread waits: " + Util.format(frontier.fetchingThreadWaits.get())
+				+ "; total wait time: " + Util.format(frontier.fetchingThreadWaitingTimeSum.get()) + "\n");
+
 		statInfo.append("STATS : Visit states: " + Util.format(distributor.schemeAuthority2VisitState.size())
-						+ "; on workbench (IP): " + Util.format(frontier.workbench.approximatedSize())
-						+ "; broken on workbench (IP): " + Util.format(frontier.workbench.broken.get())
-						+ "; to do: " + Util.format(frontier.todo.size())
-						+ "; active: " + Util.format(frontier.rc.fetchingThreads - frontier.results.size())
-						+ "; fetchData available " + Util.format(frontier.availableFetchData.size())
-						+ "; ready to parse: " + Util.format(frontier.results.size())
-						+ "; unknown hosts: " + Util.format(frontier.unknownHosts.size())
-						+ "; broken: " + Util.format(frontier.brokenVisitStates.get())
-						+ "; waiting: " + Util.format(frontier.newVisitStates.size()) );
+				+ "; on workbench (IP): " + Util.format(frontier.workbench.approximatedSize())
+				+ "; broken on workbench (IP): " + Util.format(frontier.workbench.broken.get())
+				+ "; to do: " + Util.format(frontier.todo.size())
+				+ "; active: " + Util.format(frontier.rc.fetchingThreads - frontier.results.size())
+				+ "; fetchData available " + Util.format(frontier.availableFetchData.size())
+				+ "; ready to parse: " + Util.format(frontier.results.size())
+				+ "; unknown hosts: " + Util.format(frontier.unknownHosts.size())
+				+ "; broken: " + Util.format(frontier.brokenVisitStates.get())
+				+ "; waiting: " + Util.format(frontier.newVisitStates.size()) );
 
 		LOGGER.info(statInfo.toString());
 		frontier.resetFetchingThreadsWaitingStats();

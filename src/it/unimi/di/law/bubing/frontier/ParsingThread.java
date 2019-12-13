@@ -154,14 +154,14 @@ public class ParsingThread extends Thread {
       tinfo.setTextQuality((float) TextUtils.computeTextQuality(splittedText)); // FIXME: MIN_CONTENT_LENGTH ?
       fetchInfoBuilder.setTextSize(splittedText.length);
       fetchInfoBuilder.setTextQuality(tinfo.getTextQuality());
+      fetchInfoBuilder.setParsingErrors(parseData.pageInfo.getHtmlErrorCount() );
 
-      if ( parseData.pageInfo != null ) {
-        fetchInfoBuilder.getRobotsTagBuilder()
-          .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
-          .setNOFOLLOW( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
-          .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
-          .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
-      }
+      fetchInfoBuilder.getRobotsTagBuilder()
+        .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
+        .setNOFOLLOW( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
+        .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
+        .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
+
       if ( parseData.metadata != null )
         for ( final Map.Entry<String,List<String>> meta : parseData.metadata.entries() )
           fetchInfoBuilder.addMetadata( MsgCrawler.Metadata.newBuilder()
@@ -250,6 +250,13 @@ public class ParsingThread extends Thread {
     }
 
     private static URI getTargetURI( final String href, final URI base ) {
+      final URI target = resolve( href, base );
+      return target == null || target.equals(base) ? null : target;
+    }
+
+    private static URI resolve( final String href, final URI base ) {
+      if ( href.length() == 0 || href.charAt(0) == '#' )
+        return base;
       final URI url = BURL.parse( href );
       return url == null ? null : base.resolve( url );
     }
@@ -366,6 +373,7 @@ public class ParsingThread extends Thread {
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
 
     if ( fetchData.robots ) {
+      frontier.parsingRobotsCount.incrementAndGet();
       frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
       if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
         // We go on getting/creating a workbench entry only if we have robots permissions.
@@ -378,6 +386,10 @@ public class ParsingThread extends Thread {
     final long streamLength = fetchData.response().getEntity().getContentLength();
 
     ParseData parseData = parse( fetchData );
+
+    if ( parseData == null || parseData.pageInfo.getHtmlErrorCount() > 0 )
+      frontier.parsingErrorCount.incrementAndGet();
+
     if ( parseData == null || parseData.digest == null ) {
       // We don't log for zero-length streams.
       if (streamLength != 0 && LOGGER.isDebugEnabled()) LOGGER.debug("Computing binary digest for " + fetchData.uri());

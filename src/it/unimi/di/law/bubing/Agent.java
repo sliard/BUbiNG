@@ -784,6 +784,12 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute @Description("Number of parsing done")
 	public long getParsingCount() { return  frontier.parsingCount.get(); }
 
+	@ManagedAttribute @Description("Number of parsing robots")
+	public long getParsingRobotsCount() { return  frontier.parsingRobotsCount.get(); }
+
+	@ManagedAttribute @Description("Number of parsing failed")
+	public long getParsingErrorCount() { return  frontier.parsingErrorCount.get(); }
+
 	@ManagedAttribute @Description("Number of parsing failed with an exception")
 	public long getParsingExceptionCount() { return  frontier.parsingExceptionCount.get(); }
 
