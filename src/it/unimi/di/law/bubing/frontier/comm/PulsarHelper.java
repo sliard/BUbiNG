@@ -73,10 +73,10 @@ public class PulsarHelper
   public static MsgURL.Key.Builder _schemeAuthority(final byte[] schemeAuthority) {
     final MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
 
-    String fullHost = BURL.hostFromSchemeAndAuthority(schemeAuthority);
-    EntityHelper.SplittedHost s = new EntityHelper.SplittedHost(fullHost);
-    urlBuilder.setZHostPart(Serializer.PathComp.compressStringToByteString(s.hostPart));
-    urlBuilder.setZDomain(Serializer.PathComp.compressStringToByteString(s.getDomainWithEtld()));
+    final String fullHost = BURL.hostFromSchemeAndAuthority(schemeAuthority);
+    final EntityHelper.SplittedHost sh = EntityHelper.SplittedHost.fromHostName( fullHost );
+    urlBuilder.setZHostPart(Serializer.PathComp.compressStringToByteString(sh.hostPart));
+    urlBuilder.setZDomain(Serializer.PathComp.compressStringToByteString(sh.domain));
 
     final String sa = fromASCII(schemeAuthority);
     if (sa.startsWith("https://"))
