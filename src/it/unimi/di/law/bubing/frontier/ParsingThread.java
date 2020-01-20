@@ -211,30 +211,32 @@ public class ParsingThread extends Thread {
         if (classifier != null) {
           long startClassifTime = System.nanoTime();
           TextInfo extendedTinfo = classifier.predictTokenizedInfo(splittedText, tinfo);
-          if (extendedTinfo.gotCategorization()) {
-            long endClassifTime = System.nanoTime();
-            if (LOGGER.isTraceEnabled())
-              LOGGER.trace("content " + Arrays.toString(splittedText) + " lang: [" + extendedTinfo.getLang() + "] text/vocab size: " + tinfo.getTextSize() + "/" + tinfo.getVocabSize());
-            LOGGER.debug("Predict time: " + (double) (endClassifTime - startClassifTime) / 1000000000.0 + "s");
-            if (LOGGER.isDebugEnabled()) {
-              StringBuilder sb = new StringBuilder("categorization: [");
-              for (MsgCrawler.Topic topic : tinfo.getCategorization().getTopicList()) {
-                sb.append('(');
-                sb.append(topic.getId());
-                sb.append(", ");
-                sb.append(topic.getScore());
-                sb.append(")");
+          if (extendedTinfo != null) {
+            if (extendedTinfo.gotCategorization()) {
+              long endClassifTime = System.nanoTime();
+              if (LOGGER.isTraceEnabled())
+                LOGGER.trace("content " + Arrays.toString(splittedText) + " lang: [" + extendedTinfo.getLang() + "] text/vocab size: " + tinfo.getTextSize() + "/" + tinfo.getVocabSize());
+              LOGGER.debug("Predict time: " + (double) (endClassifTime - startClassifTime) / 1000000000.0 + "s");
+              if (LOGGER.isDebugEnabled()) {
+                StringBuilder sb = new StringBuilder("categorization: [");
+                for (MsgCrawler.Topic topic : tinfo.getCategorization().getTopicList()) {
+                  sb.append('(');
+                  sb.append(topic.getId());
+                  sb.append(", ");
+                  sb.append(topic.getScore());
+                  sb.append(")");
+                }
+                sb.append(']');
+                LOGGER.debug(sb.toString());
               }
-              sb.append(']');
-              LOGGER.debug(sb.toString());
+              fetchInfoBuilder.setCategorisation(tinfo.getCategorization());
             }
-            fetchInfoBuilder.setCategorisation(tinfo.getCategorization());
-          }
-          if (extendedTinfo.gotEmbedding()) {
-            Float[] embedding = extendedTinfo.getEmbedding();
-            ByteBuffer bb = ByteBuffer.allocate(embedding.length * 4);
-            for (float f : embedding) bb.putFloat(f);
-            fetchInfoBuilder.setSemanticVector(ByteString.copyFrom(bb.array()));
+            if (extendedTinfo.gotEmbedding()) {
+              Float[] embedding = extendedTinfo.getEmbedding();
+              ByteBuffer bb = ByteBuffer.allocate(embedding.length * 4);
+              for (float f : embedding) bb.putFloat(f);
+              fetchInfoBuilder.setSemanticVector(ByteString.copyFrom(bb.array()));
+            }
           }
           return extendedTinfo;
         }
