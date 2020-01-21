@@ -12,7 +12,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import com.exensa.wdl.common.HashingScheme;
 
 public final class PulsarManager implements AutoCloseable
 {
@@ -182,9 +181,9 @@ public final class PulsarManager implements AutoCloseable
 
       for ( int i=0; i<rc.pulsarFrontierTopicNumber; ++i )
         futures[i] = producerBuilder
-          .topic(String.format( "%s-%d", rc.pulsarFrontierDiscoveredURLsTopic, i ))
+          .topic(String.format( "%s-%d", rc.pulsarFrontierFetchTopic, i ))
           .createAsync();
-      LOGGER.warn( "Requested creation of {} FetchInfo producers for topic {}", rc.pulsarFrontierTopicNumber, rc.pulsarFrontierDiscoveredURLsTopic );
+      LOGGER.warn( "Requested creation of {} FetchInfo producers for topic {}", rc.pulsarFrontierTopicNumber, rc.pulsarFrontierFetchTopic);
     }
   }
 
