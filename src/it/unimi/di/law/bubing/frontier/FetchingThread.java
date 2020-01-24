@@ -365,6 +365,7 @@ public final class FetchingThread extends Thread implements Closeable {
       if ( visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter,url) ) {
         if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
         frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest,visitState));
+        frontier.fetchingFailedRobotsCount.incrementAndGet();
         frontier.fetchingFailedCount.incrementAndGet();
         continue; // skip to next PathQuery
       }

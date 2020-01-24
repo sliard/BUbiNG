@@ -55,9 +55,8 @@ public class FetchInfoHelper {
       frontier.rc.ensureNotPaused();
       final byte[] zpath = visitState.dequeue(); // contains a zPathQuery
       final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest( schemeAuthorityProto, zpath );
-      //final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
-      //final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
       frontier.enqueue(fetchInfoFailedGeneric( crawlRequest, visitState, EnumFetchStatus.Enum.HOST_INVALID));
+      frontier.fetchingFailedHostCount.incrementAndGet();
       frontier.fetchingFailedCount.incrementAndGet();
     }
   }
