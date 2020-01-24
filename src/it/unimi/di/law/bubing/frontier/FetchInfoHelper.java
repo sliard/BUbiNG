@@ -31,7 +31,7 @@ public class FetchInfoHelper {
       .setUrlKey( crawlRequest.getUrlKey() )
       .setFetchDate( ProtoHelper.getDayNow() )
       .setFetchStatus( fetchStatus );
-    if ( visitState.workbenchEntry.ipAddress != null )
+    if ( visitState.workbenchEntry != null && visitState.workbenchEntry.ipAddress != null )
       fetchInfoBuilder.setIpAddress( ByteString.copyFrom(visitState.workbenchEntry.ipAddress) );
     return fetchInfoBuilder.build();
   }
@@ -55,6 +55,7 @@ public class FetchInfoHelper {
       frontier.rc.ensureNotPaused();
       final byte[] zpath = visitState.dequeue(); // contains a zPathQuery
       final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest( schemeAuthorityProto, zpath );
+      //final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
       //final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery( visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(zpath) );
       frontier.enqueue(fetchInfoFailedGeneric( crawlRequest, visitState, EnumFetchStatus.Enum.HOST_INVALID));
       frontier.fetchingFailedCount.incrementAndGet();
