@@ -338,7 +338,7 @@
 
 	<target name="-testonly-present" if="testonly">
 		<echo>Testing only package: ${testonly}</echo>
-		<property name="testonlydir" value="it/unimi/di/law/${testonly}/**"/>
+		<property name="testonlydir" value="it/unimi/di/law/${testonly}"/>
 		<property name="coverage.output" value="jacoco-${testonly}.exec"/>
 	</target>
 	<target name="-testonly-absent" unless="testonly">

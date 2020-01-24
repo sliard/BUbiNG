@@ -369,6 +369,8 @@ public class Frontier {
 	public final AtomicLong fetchingDurationTotal;
 	public final AtomicLong fetchingCount;
 	public final AtomicLong fetchingFailedCount;
+	public final AtomicLong fetchingFailedHostCount;
+	public final AtomicLong fetchingFailedRobotsCount;
 	public final AtomicLong fetchingRobotsCount;
 	public final AtomicLong fetchingTimeoutCount;
 
@@ -460,6 +462,8 @@ public class Frontier {
 		fetchingDurationTotal = new AtomicLong();
 		fetchingCount = new AtomicLong();
 		fetchingFailedCount = new AtomicLong();
+		fetchingFailedRobotsCount = new AtomicLong();
+		fetchingFailedHostCount = new AtomicLong();
 		fetchingRobotsCount = new AtomicLong();
 		fetchingTimeoutCount = new AtomicLong();
 		parsingDurationTotal = new AtomicLong();
