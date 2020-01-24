@@ -8,7 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
+import java.util.*;
 
 import com.exensa.wdl.common.LanguageCodes;
 import com.exensa.wdl.protobuf.link.MsgLink;
@@ -23,7 +23,6 @@ import it.unimi.di.law.bubing.parser.html.RobotsTagState;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
-import javafx.util.Pair;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
@@ -57,9 +56,7 @@ import it.unimi.di.law.warc.filters.Filter;
 import it.unimi.dsi.Util;
 import it.unimi.dsi.fastutil.shorts.Short2ShortMap;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.stream.Stream;
 
 import static java.lang.System.nanoTime;
 //RELEASE-STATUS: DIST
@@ -142,7 +139,8 @@ public class ParsingThread extends Thread {
         .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
         .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
         .setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
-        .setLanguage( fetchData.lang );
+        .setLanguage( fetchData.lang )
+        .setIpAddress( ByteString.copyFrom(fetchData.visitState.workbenchEntry.ipAddress) );
     }
 
     private void process( final ParseData parseData ) {
@@ -156,19 +154,23 @@ public class ParsingThread extends Thread {
       tinfo.setTextQuality((float) TextUtils.computeTextQuality(splittedText)); // FIXME: MIN_CONTENT_LENGTH ?
       fetchInfoBuilder.setTextSize(splittedText.length);
       fetchInfoBuilder.setTextQuality(tinfo.getTextQuality());
+      fetchInfoBuilder.setParsingErrors(parseData.pageInfo.getHtmlErrorCount() );
 
-      if ( parseData.pageInfo != null ) {
-        fetchInfoBuilder.getRobotsTagBuilder()
-          .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
-          .setNOFOLLOW( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
-          .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
-          .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
-      }
-      if (parseData.digest != null) {
+      fetchInfoBuilder.getRobotsTagBuilder()
+        .setNOINDEX( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOINDEX) )
+        .setNOFOLLOW( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOFOLLOW) )
+        .setNOARCHIVE( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOARCHIVE) )
+        .setNOSNIPPET( parseData.pageInfo.getRobotsTagState().contains(RobotsTagState.NOSNIPPET) );
+
+      if ( parseData.metadata != null )
+        for ( final Map.Entry<String,List<String>> meta : parseData.metadata.entries() )
+          fetchInfoBuilder.addMetadata( MsgCrawler.Metadata.newBuilder()
+            .setKey( meta.getKey() )
+            .addAllValues( meta.getValue() ));
+      if (  parseData.digest != null )
         fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
-      }
-      if (fetchInfoBuilder.getHttpStatus() / 100 == 2)
-        categorize(parseData, splittedText, tinfo);
+      if ( fetchInfoBuilder.getHttpStatus()/100 == 2 )
+        categorize( parseData, splittedText, tinfo );
 
       int linkNum = 0;
       for ( final HTMLLink link : parseData.links )
@@ -191,7 +193,7 @@ public class ParsingThread extends Thread {
       final boolean isInternal = isSameSchemeAndHost( source, target ); // FIXME: was isSameSchemeAndAuthority
       final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
       crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
-      crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) );
+      crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
       //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
 
       MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
@@ -248,6 +250,13 @@ public class ParsingThread extends Thread {
     }
 
     private static URI getTargetURI( final String href, final URI base ) {
+      final URI target = resolve( href, base );
+      return target == null || target.equals(base) ? null : target;
+    }
+
+    private static URI resolve( final String href, final URI base ) {
+      if ( href.length() == 0 || href.charAt(0) == '#' )
+        return base;
       final URI url = BURL.parse( href );
       return url == null ? null : base.resolve( url );
     }
@@ -318,6 +327,7 @@ public class ParsingThread extends Thread {
       LOGGER.error( "Unexpected exception", e );
     }
     finally {
+      LOGGER.warn( "thread [stopping]" );
       close();
       frontier.runningParsingThreads.decrementAndGet();
       LOGGER.warn( "thread [stopped]" );
@@ -363,6 +373,7 @@ public class ParsingThread extends Thread {
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
 
     if ( fetchData.robots ) {
+      frontier.parsingRobotsCount.incrementAndGet();
       frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
       if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgent)) == null) {
         // We go on getting/creating a workbench entry only if we have robots permissions.
@@ -375,6 +386,10 @@ public class ParsingThread extends Thread {
     final long streamLength = fetchData.response().getEntity().getContentLength();
 
     ParseData parseData = parse( fetchData );
+
+    if ( parseData == null || parseData.pageInfo.getHtmlErrorCount() > 0 )
+      frontier.parsingErrorCount.incrementAndGet();
+
     if ( parseData == null || parseData.digest == null ) {
       // We don't log for zero-length streams.
       if (streamLength != 0 && LOGGER.isDebugEnabled()) LOGGER.debug("Computing binary digest for " + fetchData.uri());

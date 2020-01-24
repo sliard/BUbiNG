@@ -376,6 +376,8 @@ public class Frontier {
 
 	public final AtomicLong parsingDurationTotal;
 	public final AtomicLong parsingCount;
+	public final AtomicLong parsingRobotsCount;
+	public final AtomicLong parsingErrorCount;
 	public final AtomicLong parsingExceptionCount;
 
 
@@ -468,6 +470,8 @@ public class Frontier {
 		fetchingTimeoutCount = new AtomicLong();
 		parsingDurationTotal = new AtomicLong();
 		parsingCount = new AtomicLong();
+		parsingRobotsCount = new AtomicLong();
+		parsingErrorCount = new AtomicLong();
 		parsingExceptionCount = new AtomicLong();
 		archetypesStatus = new AtomicLong[6];
 		for (int i = 0; i < 6; i++) archetypesStatus[i] = new AtomicLong();

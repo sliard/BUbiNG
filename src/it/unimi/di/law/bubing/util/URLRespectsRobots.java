@@ -190,7 +190,7 @@ public class URLRespectsRobots {
 		return result;
 	}
 
-	private final static int compare(char[] left, String right) {
+	private static int compare(char[] left, String right) {
 		int l = Math.min(left.length, right.length());
 		for (int i = 0; i < l; i++) {
 			final int result = left[i] - right.charAt(i);
@@ -199,7 +199,7 @@ public class URLRespectsRobots {
 		return left.length - right.length();
 	}
 
-	private final static boolean doesNotStartsWith(final String s, final char[] prefix) {
+	private static boolean doesNotStartsWith(final String s, final char[] prefix) {
 		if (prefix.length > s.length()) return true;
 		for (int i = prefix.length; i-- != 0;) if (s.charAt(i) != prefix[i]) return true;
 		return false;
@@ -223,7 +223,7 @@ public class URLRespectsRobots {
 			else if (cmp > 0) to = mid - 1;
 			else return false; // key found (unlikely, but possible)
 		}
-		return from == 0 ? true : doesNotStartsWith(pathQuery, robotsFilter[from - 1]);
+		return from == 0 || doesNotStartsWith(pathQuery, robotsFilter[from-1]);
 	}
 
 	/** Prints gracefully a robot filter using at most {@value #MAX_TO_STRING_ROBOTS} prefixes.

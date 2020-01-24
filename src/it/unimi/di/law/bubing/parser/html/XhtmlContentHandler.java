@@ -12,11 +12,13 @@
 
 package it.unimi.di.law.bubing.parser.html;
 
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import it.unimi.di.law.bubing.parser.Metadata;
 import org.xml.sax.Attributes;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
+
+import java.util.*;
 
 import static net.htmlparser.jericho.HTMLElementName.*;
 
@@ -181,53 +183,7 @@ public class XhtmlContentHandler implements ContentHandler
   private boolean tryAddMetadata( final Attributes attributes, final String name, final String content ) {
     final String key = attributes.getValue( name );
     if ( key == null ) return false;
-    metadata.add( key, content );
+    metadata.add( key.toLowerCase(Locale.US), content );
     return true;
-  }
-
-  public static final class Metadata
-  {
-    private final Object2ObjectOpenHashMap<String,String[]> map;
-
-    public Metadata() {
-      this.map = new Object2ObjectOpenHashMap<>();
-    }
-
-    public void set( final String key, final String value ) {
-      if ( value == null )
-        map.remove( key );
-      else
-        map.put( key, new String[]{value} );
-    }
-
-    public void add( final String key, final String value ) {
-      if ( value != null ) {
-        final String[] existing = map.get( key );
-        if ( existing  == null )
-          map.put( key, new String[]{value} );
-        else
-          addExisting( key, value, existing );
-      }
-    }
-
-    public String get( final String key ) {
-      final String[] values = map.get( key );
-      return values == null ? null : values[0];
-    }
-
-    public String[] getValues( final String key ) {
-      return map.get( key );
-    }
-
-    public void clear() {
-      map.clear();
-    }
-
-    private void addExisting( final String key, final String value, final String[] existing ) {
-      final String[] values = new String[ existing.length+1 ];
-      System.arraycopy( existing, 0, values, 0, existing.length );
-      values[ existing.length ] = value;
-      map.put( key, values );
-    }
   }
 }
