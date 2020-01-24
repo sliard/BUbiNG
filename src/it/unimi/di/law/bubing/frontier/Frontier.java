@@ -181,7 +181,10 @@ public class Frontier {
 	public static final long MIN_FLUSH_INTERVAL = 10000;
 
 	/** The increase of the front size used by {@link #updateRequestedFrontSize()}. */
-	public static final long FRONT_INCREASE = 1000;
+	private static final long FRONT_INCREASE = 1000;
+
+	/** Minimum number of available fetchdata required before we decide to drop one */
+	final AtomicInteger fetchDataCount = new AtomicInteger(0);
 
 	/** A hash function using {@link MurmurHash3}. */
 	public final static AbstractHashFunction<byte[]> BYTE_ARRAY_HASHING_STRATEGY = new AbstractHashFunction<byte[]>() {

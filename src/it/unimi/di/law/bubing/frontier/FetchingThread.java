@@ -254,6 +254,7 @@ public final class FetchingThread extends Thread implements Closeable {
         .setDefaultHeaders(ObjectArrayList.wrap(headers))
         .build();
     fetchData = new FetchData(frontier.rc);
+    frontier.fetchDataCount.incrementAndGet();
   }
 
   @Override

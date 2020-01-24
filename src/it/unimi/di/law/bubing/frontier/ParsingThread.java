@@ -301,6 +301,7 @@ public class ParsingThread extends Thread {
     this.parsers = new ArrayList<>(frontier.rc.parsers.size());
     for(final Parser<?> parser : frontier.rc.parsers) this.parsers.add(parser.copy());
     frontier.availableFetchData.add(new FetchData(frontier.rc)); // Add extra available Fetch Data
+    frontier.fetchDataCount.incrementAndGet();
     setPriority((Thread.NORM_PRIORITY + Thread.MIN_PRIORITY) / 2); // Below main threads
   }
 
@@ -355,7 +356,12 @@ public class ParsingThread extends Thread {
     finally {
       if (LOGGER.isTraceEnabled()) LOGGER.trace("Releasing visit state {}", fetchData.visitState);
       frontier.done.add( fetchData.visitState );
-      frontier.availableFetchData.add( fetchData );
+      // If we need to downsize FetchData, drop this one
+      if (frontier.fetchDataCount.get() <= frontier.rc.parsingThreads + frontier.rc.fetchingThreads) {
+        frontier.availableFetchData.add(fetchData);
+      } else {
+        frontier.fetchDataCount.decrementAndGet();
+      }
     }
   }
 
