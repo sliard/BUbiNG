@@ -172,11 +172,12 @@ public final class PulsarManager implements AutoCloseable
     private void requestProducers( final PulsarClient client ) {
       final ProducerBuilder<byte[]> producerBuilder = client.newProducer()
         .enableBatching( true )
-        .batchingMaxMessages( 1024 )
         .batchingMaxPublishDelay( 100, TimeUnit.MILLISECONDS )
         .blockIfQueueFull( true )
+        .maxPendingMessages(2048)
+        .maxPendingMessagesAcrossPartitions(32768)
         .sendTimeout( 30000, TimeUnit.MILLISECONDS )
-        .compressionType( CompressionType.LZ4 )
+        .compressionType( CompressionType.ZSTD )
         .producerName( rc.name );
 
       for ( int i=0; i<rc.pulsarFrontierTopicNumber; ++i )
