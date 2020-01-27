@@ -31,7 +31,7 @@ public class FetchInfoHelper {
       .setUrlKey( crawlRequest.getUrlKey() )
       .setFetchDate( ProtoHelper.getDayNow() )
       .setFetchStatus( fetchStatus );
-    if ( visitState.workbenchEntry.ipAddress != null )
+    if ( visitState.workbenchEntry != null && visitState.workbenchEntry.ipAddress != null )
       fetchInfoBuilder.setIpAddress( ByteString.copyFrom(visitState.workbenchEntry.ipAddress) );
     return fetchInfoBuilder.build();
   }

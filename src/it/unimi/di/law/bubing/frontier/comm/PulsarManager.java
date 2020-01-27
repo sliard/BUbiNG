@@ -12,7 +12,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import com.exensa.wdl.common.HashingScheme;
 
 public final class PulsarManager implements AutoCloseable
 {
@@ -45,7 +44,7 @@ public final class PulsarManager implements AutoCloseable
   }
 
   public void createCrawlRequestConsumers( final Frontier frontier ) {
-    crawlRequestConsumerRepository.requestConsumers( client, frontier );
+    crawlRequestConsumerRepository.requestConsumers(client, frontier, rc.priorityCrawl);
   }
 
   public void close() throws InterruptedException {
@@ -173,18 +172,19 @@ public final class PulsarManager implements AutoCloseable
     private void requestProducers( final PulsarClient client ) {
       final ProducerBuilder<byte[]> producerBuilder = client.newProducer()
         .enableBatching( true )
-        .batchingMaxMessages( 1024 )
         .batchingMaxPublishDelay( 100, TimeUnit.MILLISECONDS )
         .blockIfQueueFull( true )
+        .maxPendingMessages(2048)
+        .maxPendingMessagesAcrossPartitions(32768)
         .sendTimeout( 30000, TimeUnit.MILLISECONDS )
-        .compressionType( CompressionType.LZ4 )
+        .compressionType( CompressionType.ZSTD )
         .producerName( rc.name );
 
       for ( int i=0; i<rc.pulsarFrontierTopicNumber; ++i )
         futures[i] = producerBuilder
-          .topic(String.format( "%s-%d", rc.pulsarFrontierDiscoveredURLsTopic, i ))
+          .topic(String.format( "%s-%d", rc.pulsarFrontierFetchTopic, i ))
           .createAsync();
-      LOGGER.warn( "Requested creation of {} FetchInfo producers for topic {}", rc.pulsarFrontierTopicNumber, rc.pulsarFrontierDiscoveredURLsTopic );
+      LOGGER.warn( "Requested creation of {} FetchInfo producers for topic {}", rc.pulsarFrontierTopicNumber, rc.pulsarFrontierFetchTopic);
     }
   }
 
@@ -271,13 +271,31 @@ public final class PulsarManager implements AutoCloseable
       }
     }
 
-    private void requestConsumers( final PulsarClient client, final Frontier frontier ) {
-      for ( int topic=0; topic<rc.pulsarFrontierTopicNumber; ++topic )
-        futures[topic] = requestConsumer( client, frontier, topic );
-      LOGGER.warn( "Requested creation of {} CrawlRequest consumers for topic {}", rc.pulsarFrontierTopicNumber, rc.pulsarFrontierToCrawlURLsTopic );
+    private void requestConsumers(final PulsarClient client, final Frontier frontier, final boolean priorityCrawl) {
+      for (int topic = 0; topic < rc.pulsarFrontierTopicNumber; ++topic)
+        futures[topic] = requestConsumer(client, frontier, topic, priorityCrawl);
+      String topicName;
+      if (priorityCrawl)
+        topicName = rc.pulsarFrontierToPromptlyCrawlURLsTopic;
+      else
+        topicName = rc.pulsarFrontierToCrawlURLsTopic;
+      LOGGER.warn("Requested creation of {} CrawlRequest consumers for topic {}", rc.pulsarFrontierTopicNumber, topicName);
     }
 
-    private CompletableFuture<Consumer<byte[]>> requestConsumer( final PulsarClient client, final Frontier frontier, final int topic ) {
+    private String getConsumerName(final int topic) {
+      return String.format("%06d-%s",
+        ((rc.pulsarFrontierTopicNumber / rc.pulsarFrontierNodeNumber) * rc.pulsarFrontierNodeId + topic) % rc.pulsarFrontierTopicNumber,
+        rc.name);
+    }
+
+    private CompletableFuture<Consumer<byte[]>> requestConsumer(final PulsarClient client, final Frontier frontier,
+                                                                final int topic, final boolean priorityCrawl) {
+      String topicName;
+      if (priorityCrawl)
+        topicName = String.format("%s-%d", rc.pulsarFrontierToPromptlyCrawlURLsTopic, topic);
+      else
+        topicName = String.format("%s-%d", rc.pulsarFrontierToCrawlURLsTopic, topic);
+
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
         //.receiverQueueSize(512)
@@ -286,8 +304,8 @@ public final class PulsarManager implements AutoCloseable
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
         .subscriptionInitialPosition( SubscriptionInitialPosition.Latest )
         .subscriptionName( "toCrawlSubscription" )
-        .consumerName( String.format("%06d-%s", ((rc.pulsarFrontierTopicNumber/rc.pulsarFrontierNodeNumber)*rc.pulsarFrontierNodeId+topic)%rc.pulsarFrontierTopicNumber, rc.name ))
-        .topic(String.format( "%s-%d", rc.pulsarFrontierToCrawlURLsTopic, topic ))
+        .consumerName(getConsumerName(topic))
+        .topic(topicName)
         .subscribeAsync();
     }
   }

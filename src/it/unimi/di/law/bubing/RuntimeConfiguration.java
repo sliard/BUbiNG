@@ -255,11 +255,14 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#pulsarFrontierNodeId */
 	public volatile int pulsarFrontierNodeId;
 
-	/** @see StartupConfiguration#pulsarFrontierDiscoveredURLsTopic */
-	public volatile String pulsarFrontierDiscoveredURLsTopic;
+	/** @see StartupConfiguration#pulsarFrontierFetchTopic */
+	public volatile String pulsarFrontierFetchTopic;
 
-	/** @see StartupConfiguration#pulsarFrontierDiscoveredURLsTopic */
+	/** @see StartupConfiguration#pulsarFrontierToCrawlURLsTopic */
 	public volatile String pulsarFrontierToCrawlURLsTopic;
+
+	/** @see StartupConfiguration#pulsarFrontierToPromptlyCrawlURLsTopic */
+	public volatile String pulsarFrontierToPromptlyCrawlURLsTopic;
 
 	/** @see StartupConfiguration#workbenchMaxByteSize */
 	public volatile long workbenchMaxByteSize;
@@ -290,6 +293,9 @@ public class RuntimeConfiguration {
 
 	/** @see StartupConfiguration#crawlIsNew */
 	public final boolean crawlIsNew;
+
+	/** @see StartupConfiguration#priorityCrawl */
+	public final boolean priorityCrawl;
 
 	/** @see StartupConfiguration#spamDetectorUri */
 	public final SpamDetector<?> spamDetector;
@@ -475,6 +481,7 @@ public class RuntimeConfiguration {
 	public RuntimeConfiguration(final StartupConfiguration startupConfiguration) throws ConfigurationException, IOException {
 		try {
 			crawlIsNew = startupConfiguration.crawlIsNew;
+			priorityCrawl = startupConfiguration.priorityCrawl;
 			name = startupConfiguration.name;
 			group = startupConfiguration.group;
 			weight = startupConfiguration.weight;
@@ -507,8 +514,9 @@ public class RuntimeConfiguration {
 			pulsarFrontierTopicNumber = startupConfiguration.pulsarFrontierTopicNumber;
 			pulsarFrontierNodeNumber = startupConfiguration.pulsarFrontierNodeNumber;
 			pulsarFrontierNodeId = startupConfiguration.pulsarFrontierNodeId;
-			pulsarFrontierDiscoveredURLsTopic = startupConfiguration.pulsarFrontierDiscoveredURLsTopic;
+			pulsarFrontierFetchTopic = startupConfiguration.pulsarFrontierFetchTopic;
 			pulsarFrontierToCrawlURLsTopic = startupConfiguration.pulsarFrontierToCrawlURLsTopic;
+			pulsarFrontierToPromptlyCrawlURLsTopic = startupConfiguration.pulsarFrontierToPromptlyCrawlURLsTopic;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;
 			virtualizerMaxByteSize = startupConfiguration.virtualizerMaxByteSize;
 			urlCacheMaxByteSize = startupConfiguration.urlCacheMaxByteSize;

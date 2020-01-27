@@ -383,14 +383,17 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="0")
 	public int pulsarFrontierNodeId;
 
-	/** For Pulsar Frontier : discoveredURLs topic. */
+	/** For Pulsar Frontier : fetch topic. */
 	@OptionalSpecification(value="persistent://sample/standalone/crawling/discoveredURLs")
-	public String pulsarFrontierDiscoveredURLsTopic;
+	public String pulsarFrontierFetchTopic;
 
-	/** For Pulsar Frontier : discoveredURLs topic. */
+	/** For Pulsar Frontier : to crawl topic. */
 	@OptionalSpecification(value="persistent://sample/standalone/crawling/toCrawl")
 	public String pulsarFrontierToCrawlURLsTopic;
 
+	/** For Pulsar Frontier : to (promptly) crawl topic. */
+	@OptionalSpecification(value="persistent://sample/standalone/crawling/toCrawl")
+	public String pulsarFrontierToPromptlyCrawlURLsTopic;
 
 	/** The maximum size of the workbench in bytes. */
 	public long workbenchMaxByteSize;
@@ -437,6 +440,9 @@ public class StartupConfiguration {
 
 	/** Whether this is a new crawl. */
 	public boolean crawlIsNew;
+
+	/** Whether this is a crawler on priority line. */
+	public boolean priorityCrawl;
 
 	/** An optional {@link SpamDetector}; this {@link URI} should point to a serialized instance. */
 	@OptionalSpecification(value="")

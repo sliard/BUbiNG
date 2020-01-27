@@ -869,6 +869,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 					new FlaggedOption("jmxHost", JSAP.STRING_PARSER, InetAddress.getLocalHost().getHostAddress(), JSAP.REQUIRED, 'h', "jmx-host", "The IP address (possibly specified by a host name) that will be used to expose the JMX RMI connector to other agents."),
 					new FlaggedOption("rootDir", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.NOT_REQUIRED, 'r', "root-dir", "The root directory."),
 					new Switch("new", 'n', "new", "Start a new crawl"),
+					new Switch("priority", 'p', "priority", "Priority crawler"),
 					new FlaggedOption("properties", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.REQUIRED, 'P', "properties", "The properties used to configure the agent."),
 					new FlaggedOption("id", JSAP.INTEGER_PARSER, "0", JSAP.REQUIRED, 'i', "id", "The agent id."),
 					new UnflaggedOption("name", JSAP.STRING_PARSER, JSAP.REQUIRED, "The agent name (an identifier that must be unique across the group).")
@@ -877,7 +878,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		final JSAPResult jsapResult = jsap.parse(arg);
 		if (jsap.messagePrinted()) System.exit(1);
 
-		// Safety : long running process wiht ssl connection get OOM because SSL cache is unbounded, this ensure that the cache is bounded
+		// Safety : long running process with ssl connection get OOM because SSL cache is unbounded, this ensure that the cache is bounded
 		if (System.getProperty("javax.net.ssl.sessionCacheSize") == null)
 			System.setProperty("javax.net.ssl.sessionCacheSize","8192");
 
@@ -897,7 +898,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		additional.addProperty("group", group);
 		additional.addProperty("pulsarFrontierNodeId", Integer.toString(id));
 		additional.addProperty("weight", Integer.toString(weight));
-		additional.addProperty("crawlIsNew", Boolean.valueOf(jsapResult.getBoolean("new")));
+		additional.addProperty("crawlIsNew", jsapResult.getBoolean("new"));
+		additional.addProperty("priorityCrawl", jsapResult.getBoolean("priority"));
 		if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));
 
 		final RuntimeConfiguration rc = new RuntimeConfiguration( new StartupConfiguration(jsapResult.getString("properties"), additional) );
