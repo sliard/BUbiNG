@@ -441,6 +441,9 @@ public class StartupConfiguration {
 	/** Whether this is a new crawl. */
 	public boolean crawlIsNew;
 
+	/** Whether this is a crawler on priority line. */
+	public boolean priorityCrawl;
+
 	/** An optional {@link SpamDetector}; this {@link URI} should point to a serialized instance. */
 	@OptionalSpecification(value="")
 	public String spamDetectorUri;

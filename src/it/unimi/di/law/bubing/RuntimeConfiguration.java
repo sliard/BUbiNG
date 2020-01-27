@@ -294,6 +294,9 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#crawlIsNew */
 	public final boolean crawlIsNew;
 
+	/** @see StartupConfiguration#priorityCrawl */
+	public final boolean priorityCrawl;
+
 	/** @see StartupConfiguration#spamDetectorUri */
 	public final SpamDetector<?> spamDetector;
 
@@ -478,6 +481,7 @@ public class RuntimeConfiguration {
 	public RuntimeConfiguration(final StartupConfiguration startupConfiguration) throws ConfigurationException, IOException {
 		try {
 			crawlIsNew = startupConfiguration.crawlIsNew;
+			priorityCrawl = startupConfiguration.priorityCrawl;
 			name = startupConfiguration.name;
 			group = startupConfiguration.group;
 			weight = startupConfiguration.weight;

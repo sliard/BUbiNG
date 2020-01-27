@@ -44,7 +44,7 @@ public final class PulsarManager implements AutoCloseable
   }
 
   public void createCrawlRequestConsumers( final Frontier frontier ) {
-    crawlRequestConsumerRepository.requestConsumers( client, frontier );
+    crawlRequestConsumerRepository.requestConsumers(client, frontier, rc.priorityCrawl);
   }
 
   public void close() throws InterruptedException {
@@ -271,13 +271,31 @@ public final class PulsarManager implements AutoCloseable
       }
     }
 
-    private void requestConsumers( final PulsarClient client, final Frontier frontier ) {
-      for ( int topic=0; topic<rc.pulsarFrontierTopicNumber; ++topic )
-        futures[topic] = requestConsumer( client, frontier, topic );
-      LOGGER.warn( "Requested creation of {} CrawlRequest consumers for topic {}", rc.pulsarFrontierTopicNumber, rc.pulsarFrontierToCrawlURLsTopic );
+    private void requestConsumers(final PulsarClient client, final Frontier frontier, final boolean priorityCrawl) {
+      for (int topic = 0; topic < rc.pulsarFrontierTopicNumber; ++topic)
+        futures[topic] = requestConsumer(client, frontier, topic, priorityCrawl);
+      String topicName;
+      if (priorityCrawl)
+        topicName = rc.pulsarFrontierToPromptlyCrawlURLsTopic;
+      else
+        topicName = rc.pulsarFrontierToCrawlURLsTopic;
+      LOGGER.warn("Requested creation of {} CrawlRequest consumers for topic {}", rc.pulsarFrontierTopicNumber, topicName);
     }
 
-    private CompletableFuture<Consumer<byte[]>> requestConsumer( final PulsarClient client, final Frontier frontier, final int topic ) {
+    private String getConsumerName(final int topic) {
+      return String.format("%06d-%s",
+        ((rc.pulsarFrontierTopicNumber / rc.pulsarFrontierNodeNumber) * rc.pulsarFrontierNodeId + topic) % rc.pulsarFrontierTopicNumber,
+        rc.name);
+    }
+
+    private CompletableFuture<Consumer<byte[]>> requestConsumer(final PulsarClient client, final Frontier frontier,
+                                                                final int topic, final boolean priorityCrawl) {
+      String topicName;
+      if (priorityCrawl)
+        topicName = String.format("%s-%d", rc.pulsarFrontierToPromptlyCrawlURLsTopic, topic);
+      else
+        topicName = String.format("%s-%d", rc.pulsarFrontierToCrawlURLsTopic, topic);
+
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
         //.receiverQueueSize(512)
@@ -286,8 +304,8 @@ public final class PulsarManager implements AutoCloseable
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
         .subscriptionInitialPosition( SubscriptionInitialPosition.Latest )
         .subscriptionName( "toCrawlSubscription" )
-        .consumerName( String.format("%06d-%s", ((rc.pulsarFrontierTopicNumber/rc.pulsarFrontierNodeNumber)*rc.pulsarFrontierNodeId+topic)%rc.pulsarFrontierTopicNumber, rc.name ))
-        .topic(String.format( "%s-%d", rc.pulsarFrontierToCrawlURLsTopic, topic ))
+        .consumerName(getConsumerName(topic))
+        .topic(topicName)
         .subscribeAsync();
     }
   }
