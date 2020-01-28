@@ -125,7 +125,7 @@ public class MultiWarcStore implements Closeable, Store {
 		if ( guessedCharset != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_CHARSET, guessedCharset ) );
 		if ( guessedLanguage != null ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_GUESSED_LANGUAGE, guessedLanguage ) );
 
-		for(String header: extraHeaders.keySet()) {
+		for (String header: extraHeaders.keySet()) {
 			warcHeaders.updateHeader(new BasicHeader(header, extraHeaders.get(header)));
 		}
 		if ( isDuplicate ) warcHeaders.updateHeader( new WarcHeader( WarcHeader.Name.BUBING_IS_DUPLICATE, "true" ) );
