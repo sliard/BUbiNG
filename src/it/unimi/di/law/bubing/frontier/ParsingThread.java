@@ -152,6 +152,8 @@ public class ParsingThread extends Thread {
       String[] splittedText = TextUtils.splitLine(parseData.boilerpipedContent.toString(), true);
       tinfo.setTextSize(splittedText.length);
       tinfo.setTextQuality((float) TextUtils.computeTextQuality(splittedText)); // FIXME: MIN_CONTENT_LENGTH ?
+      if ( parseData.boilerpipedContent.length() > 0 )
+        fetchInfoBuilder.setBody( parseData.boilerpipedContent.toString() );
       fetchInfoBuilder.setTextSize(splittedText.length);
       fetchInfoBuilder.setTextQuality(tinfo.getTextQuality());
       fetchInfoBuilder.setParsingErrors(parseData.pageInfo.getHtmlErrorCount() );
