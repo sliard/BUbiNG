@@ -285,6 +285,14 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="8080")
 	public int proxyPort;
 
+	/** The robot proxy host, if a proxy should be used; an empty value means that the proxy should not be set. */
+	@OptionalSpecification(value="")
+	public String robotProxyHost;
+
+	/** The robot proxy port, meaningful only if {@link #robotProxyHost} is not empty. */
+	@OptionalSpecification(value="8080")
+	public int robotProxyPort;
+
 	/** The cookie policy to be used. See {@link CookieSpecs}. */
 	public String cookiePolicy;
 
