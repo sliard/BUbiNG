@@ -173,6 +173,7 @@ public final class PulsarManager implements AutoCloseable
       final ProducerBuilder<byte[]> producerBuilder = client.newProducer()
         .enableBatching( true )
         .batchingMaxPublishDelay( 100, TimeUnit.MILLISECONDS )
+        .batchingMaxMessages(16)
         .blockIfQueueFull( true )
         .maxPendingMessages(2048)
         .maxPendingMessagesAcrossPartitions(32768)

@@ -509,7 +509,7 @@ public class Frontier {
 				.setCookieSpec(rc.cookiePolicy)
 				.setRedirectsEnabled(true)
 				.setMaxRedirects(5) // Google's policy
-				.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
+				.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
 				.build();
 
 		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 8 * 1024);

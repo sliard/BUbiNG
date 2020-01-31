@@ -186,6 +186,12 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#proxyPort */
 	public final int proxyPort;
 
+	/** @see StartupConfiguration#robotProxyHost */
+	public final String robotProxyHost;
+
+	/** @see StartupConfiguration#robotProxyPort */
+	public final int robotProxyPort;
+
 	/** @see StartupConfiguration#cookiePolicy */
 	public final String cookiePolicy;
 
@@ -567,6 +573,8 @@ public class RuntimeConfiguration {
 			fetchDataBufferByteSize = startupConfiguration.fetchDataBufferByteSize;
 			proxyHost = startupConfiguration.proxyHost;
 			proxyPort = startupConfiguration.proxyPort;
+			robotProxyHost = startupConfiguration.robotProxyHost;
+			robotProxyPort = startupConfiguration.robotProxyPort;
 			cookiePolicy = startupConfiguration.cookiePolicy;
 			cookieMaxByteSize = startupConfiguration.cookieMaxByteSize;
 			userAgent = startupConfiguration.userAgent;
