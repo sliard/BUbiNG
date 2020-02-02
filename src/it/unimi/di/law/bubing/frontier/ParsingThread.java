@@ -147,15 +147,19 @@ public class ParsingThread extends Thread {
       if ( parseData.title != null )
         fetchInfoBuilder.setTitle( parseData.title );
 
+      /*
       TextInfo tinfo = new TextInfo();
       tinfo.setLang(parseData.getLanguageName());
       String[] splittedText = TextUtils.splitLine(parseData.boilerpipedContent.toString(), true);
       tinfo.setTextSize(splittedText.length);
       tinfo.setTextQuality((float) TextUtils.computeTextQuality(splittedText)); // FIXME: MIN_CONTENT_LENGTH ?
+      */
       if ( parseData.boilerpipedContent.length() > 0 )
         fetchInfoBuilder.setBody( parseData.boilerpipedContent.toString() );
+      /*
       fetchInfoBuilder.setTextSize(splittedText.length);
       fetchInfoBuilder.setTextQuality(tinfo.getTextQuality());
+      */
       fetchInfoBuilder.setParsingErrors(parseData.pageInfo.getHtmlErrorCount() );
 
       fetchInfoBuilder.getRobotsTagBuilder()
@@ -171,8 +175,10 @@ public class ParsingThread extends Thread {
             .addAllValues( meta.getValue() ));
       if (  parseData.digest != null )
         fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
+      /*
       if ( fetchInfoBuilder.getHttpStatus()/100 == 2 )
         categorize( parseData, splittedText, tinfo );
+      */
 
       int linkNum = 0;
       for ( final HTMLLink link : parseData.links )
@@ -210,6 +216,7 @@ public class ParsingThread extends Thread {
       return true;
     }
 
+    /*
     private TextInfo categorize(final ParseData parseData, final String[] splittedText, TextInfo tinfo) {
       try {
         if (classifier != null) {
@@ -252,6 +259,7 @@ public class ParsingThread extends Thread {
         return tinfo;
       }
     }
+    */
 
     private static URI getTargetURI( final String href, final URI base ) {
       final URI target = resolve( href, base );
