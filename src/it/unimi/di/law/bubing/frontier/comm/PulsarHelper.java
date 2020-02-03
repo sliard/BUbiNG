@@ -1,8 +1,6 @@
 package it.unimi.di.law.bubing.frontier.comm;
 
-import com.exensa.util.URIex;
 import com.exensa.util.compression.HuffmanModel;
-import com.exensa.wdl.common.HashingScheme;
 import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.EntityHelper;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
@@ -11,10 +9,8 @@ import com.exensa.wdl.protobuf.url.EnumScheme;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.cache.Weigher;
 import com.google.protobuf.ByteString;
 import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.MurmurHash3_128;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;

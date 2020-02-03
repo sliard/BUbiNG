@@ -859,8 +859,8 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	}
 
 	public static void main(final String arg[]) throws Exception {
-		patchUriField("lowMask", "L_DASH");
-		patchUriField("highMask", "H_DASH");
+		//patchUriField("lowMask", "L_DASH");
+		//patchUriField("highMask", "H_DASH");
 
 		final SimpleJSAP jsap = new SimpleJSAP(Agent.class.getName(), "Starts a BUbiNG agent (note that you must enable JMX by means of the standard Java system properties).",
 				new Parameter[] {
