@@ -1,10 +1,10 @@
 package it.unimi.di.law.bubing.categories;
 
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
-import javafx.util.Pair;
 
 import java.io.Closeable;
 import java.io.IOException;
+
 
 /** A classifier for text content. */
 public interface TextClassifier extends Closeable
