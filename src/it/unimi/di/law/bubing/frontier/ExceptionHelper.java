@@ -23,33 +23,33 @@ public final class ExceptionHelper
 
   static {
     EXCEPTION_TO_WAIT_TIME.defaultReturnValue( TimeUnit.HOURS.toMillis(1));
-    EXCEPTION_TO_WAIT_TIME.put(java.net.NoRouteToHostException.class, TimeUnit.HOURS.toMillis(4));
-    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketException.class, TimeUnit.HOURS.toMillis(1));
-    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, TimeUnit.HOURS.toMillis(1));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.NoRouteToHostException.class, TimeUnit.HOURS.toMillis(16));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketException.class, TimeUnit.HOURS.toMillis(2));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, TimeUnit.HOURS.toMillis(2));
     //EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, 10000);
-    EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, TimeUnit.HOURS.toMillis(2));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, TimeUnit.HOURS.toMillis(6));
     //EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, 5000);
     EXCEPTION_TO_WAIT_TIME.put(javax.net.ssl.SSLPeerUnverifiedException.class, TimeUnit.HOURS.toMillis(1));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.CircularRedirectException.class, 0);
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.RedirectException.class, 0);
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, TimeUnit.HOURS.toMillis(1));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.CircularRedirectException.class, TimeUnit.HOURS.toMillis(2));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.RedirectException.class, TimeUnit.HOURS.toMillis(2));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, TimeUnit.HOURS.toMillis(2));
     //EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, 20000);
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.ConnectionClosedException.class, TimeUnit.MINUTES.toMillis(10));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.HttpHostConnectException.class, TimeUnit.HOURS.toMillis(1));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.NoHttpResponseException.class, TimeUnit.MINUTES.toMillis(10));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.TruncatedChunkException.class, TimeUnit.MINUTES.toMillis(10));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.MalformedChunkCodingException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.ConnectionClosedException.class, TimeUnit.MINUTES.toMillis(55));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.HttpHostConnectException.class, TimeUnit.HOURS.toMillis(4));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.NoHttpResponseException.class, TimeUnit.HOURS.toMillis(12));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.TruncatedChunkException.class, TimeUnit.HOURS.toMillis(12));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.MalformedChunkCodingException.class, TimeUnit.HOURS.toMillis(12));
 
     EXCEPTION_TO_MAX_RETRIES.defaultReturnValue(0);
-    EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 2);
-    EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 1);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 0);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.RedirectException.class, 0);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 0);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.ConnectionClosedException.class, 0);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.NoHttpResponseException.class, 0);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.TruncatedChunkException.class, 0);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.MalformedChunkCodingException.class, 0);
+    EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.RedirectException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.ConnectionClosedException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.NoHttpResponseException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.TruncatedChunkException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.MalformedChunkCodingException.class, 4);
 
     EXCEPTION_HOST_KILLER.add(java.net.NoRouteToHostException.class);
     EXCEPTION_HOST_KILLER.add(java.net.UnknownHostException.class);
