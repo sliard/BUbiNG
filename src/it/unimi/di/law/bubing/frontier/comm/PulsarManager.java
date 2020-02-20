@@ -99,7 +99,7 @@ public final class PulsarManager implements AutoCloseable
     }
 
     public Producer<byte[]> get( final MsgURL.Key urlKey ) {
-      return get( partitionScheme.getHostPartition(urlKey) );
+      return get( partitionScheme.getPartition(urlKey) );
     }
 
     public void close() throws InterruptedException {
