@@ -22,7 +22,7 @@ public final class LinksHelper
     return HttpLinksHeaderParser.tryParse( header );
   }
 
-  public static boolean trySetLinkInfos( final HTMLLink link, final MsgLink.LinkInfo.Builder linkInfoBuilder, final int linkNum ) {
+  public static boolean trySetLinkInfos( final HTMLLink link, final MsgLink.LinkInfo.Builder linkInfoBuilder, final int linkNum, final boolean noFollow ) {
     final String type = link.type;
     if ( type == HTMLLink.Type.A || type == HTMLLink.Type.IMG ) {
       if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
@@ -42,9 +42,8 @@ public final class LinksHelper
     else
       return false;
 
-    // Completely ignores NOFOLLOW links (TODO: ideally, should be done in Frontier Manager)
-    if ( (linkInfoBuilder.getLinkRel() & EnumRel.Enum.NOFOLLOW_VALUE) != 0 )
-      return false;
+    if ( noFollow )
+      linkInfoBuilder.setLinkRel( linkInfoBuilder.getLinkRel() | EnumRel.Enum.NOFOLLOW_VALUE );
 
     if ( link.text != null )
       linkInfoBuilder.setText( link.text );

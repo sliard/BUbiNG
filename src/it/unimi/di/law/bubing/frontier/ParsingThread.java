@@ -181,11 +181,12 @@ public class ParsingThread extends Thread {
       */
 
       int linkNum = 0;
+      final boolean noFollow = fetchInfoBuilder.getRobotsTagOrBuilder().getNOFOLLOW();
       for ( final HTMLLink link : parseData.links )
-        process( link, parseData.baseUri, linkNum++ );
+        process( link, parseData.baseUri, linkNum++, noFollow );
     }
 
-    private boolean process( final HTMLLink link, final URI base, final int linkNum ) {
+    private boolean process( final HTMLLink link, final URI base, final int linkNum, final boolean noFollow ) {
       final URI target = getTargetURI( link.uri, base );
       if ( target == null )
         return false;
@@ -195,10 +196,10 @@ public class ParsingThread extends Thread {
       if ( !scheduleFilter.apply(new Link(source,target)) )
         return false;
       final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum) )
+      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum,noFollow) )
         return false;
 
-      final boolean isInternal = isSameSchemeAndHost( source, target ); // FIXME: was isSameSchemeAndAuthority
+      final boolean isInternal = isSameHost( source, target ); // FIXME: was isSameSchemeAndAuthority
       final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
       crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
       crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
@@ -276,6 +277,10 @@ public class ParsingThread extends Thread {
     private static boolean isSameSchemeAndHost( final URI left, final URI right ) {
       return left.getScheme().equals( right.getScheme() ) &&
         left.getHost().equals( right.getHost() );
+    }
+
+    private static boolean isSameHost( final URI left, final URI right ) {
+      return left.getHost().equals( right.getHost() );
     }
   }
 
