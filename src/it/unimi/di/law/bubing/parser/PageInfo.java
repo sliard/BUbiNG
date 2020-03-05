@@ -236,8 +236,8 @@ public final class PageInfo
     final Header[] headers = httpResponse.getHeaders( "Link" );
     if ( headers.length == 0 ) return false;
     for ( final Header h : headers ) {
-      final HTMLLink link = LinksHelper.fromHttpHeader( h.getValue() );
-      if ( link != null )
+      final Iterable<HTMLLink> links = LinksHelper.fromHttpHeader( h.getValue() );
+      for ( final HTMLLink link : links )
         headerLinks.add( link );
     }
     return true;

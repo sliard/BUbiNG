@@ -5,20 +5,18 @@ import com.exensa.wdl.protobuf.link.EnumType;
 import com.exensa.wdl.protobuf.link.MsgLink;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import org.apache.http.NameValuePair;
-import org.apache.http.ParseException;
-import org.apache.http.message.BasicHeaderValueParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
 public final class LinksHelper
 {
-  static HTMLLink fromHttpHeader( final String header ) {
+  private static final Logger LOGGER = LoggerFactory.getLogger( LinksHelper.class );
+
+  static Iterable<HTMLLink> fromHttpHeader( final String header ) {
     return HttpLinksHeaderParser.tryParse( header );
   }
 
@@ -112,7 +110,9 @@ public final class LinksHelper
     E( "author",    EnumRel.Enum.AUTHOR_VALUE ),
     E( "license",   EnumRel.Enum.LICENSE_VALUE ),
     E( "archives",  EnumRel.Enum.ARCHIVES_VALUE ),
-    E( "archive",   EnumRel.Enum.ARCHIVES_VALUE )
+    E( "archive",   EnumRel.Enum.ARCHIVES_VALUE ),
+    E( "ugc",       EnumRel.Enum.UGC_VALUE ),
+    E( "sponsored", EnumRel.Enum.SPONSORED_VALUE )
   );
 
   private static final Object2IntOpenHashMap<String> allowedRelsMap_Anchors = makeMap(
@@ -140,7 +140,9 @@ public final class LinksHelper
     E( "license",    EnumRel.Enum.LICENSE_VALUE ),
     E( "archives",   EnumRel.Enum.ARCHIVES_VALUE ),
     E( "archive",    EnumRel.Enum.ARCHIVES_VALUE ),
-    E( "external",   EnumRel.Enum.EXTERNAL_VALUE )
+    E( "external",   EnumRel.Enum.EXTERNAL_VALUE ),
+    E( "ugc",        EnumRel.Enum.UGC_VALUE ),
+    E( "sponsored",  EnumRel.Enum.SPONSORED_VALUE )
   );
 
   private static <T> ObjectOpenHashSet<T> makeSet( T... elements ) {
@@ -161,35 +163,73 @@ public final class LinksHelper
   private static final class HttpLinksHeaderParser
   {
     private static final Logger LOGGER = LoggerFactory.getLogger( HttpLinksHeaderParser.class );
-    private static final Pattern PATTERN = Pattern.compile( "\\s*<(.+)>\\s*(.*)" );
+    private static final Pattern PATTERN_ELT = Pattern.compile( "<([^>]+)>((?:\\s*;\\s*[^=\\s,;]+\\s*=\\s*(?:\"[^\"]+\"|[^\\s,;]+))*)" );
+    private static final Pattern PATTERN_PARAM = Pattern.compile( "([^=\\s,;]+)\\s*=\\s*(?:\"([^\"]+)\"|([^\\s,;=<>]+))" );
 
-    static HTMLLink tryParse( final String header ) {
-      final Matcher m = PATTERN.matcher( header );
-      if ( !m.matches() ) {
-        if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "failed to parse '{}'", header );
-        return null;
+    static Iterable<HTMLLink> tryParse( final String elements ) {
+      final var links = new ArrayList<HTMLLink>(2);
+      final var matchElt = PATTERN_ELT.matcher( elements );
+      while ( matchElt.find() ) {
+        final var href = matchElt.group(1);
+        final var link = tryGetLink( href, matchElt.group(2) );
+        links.add( link );
       }
+      return links;
+    }
 
-      final String href = m.group(1);
-      final NameValuePair[] parameters = parseParameters( m.group(2) );
-      final HashMap<String, String> map = new HashMap<>();
-      for ( final NameValuePair nvp : parameters ) {
-        final String name = nvp.getName().toLowerCase( Locale.ENGLISH );
-        final String value = nvp.getValue();
-        map.putIfAbsent( name, value );
+    private static HTMLLink tryGetLink( final String href, final String params ) {
+      final var map = new HashMap<String, String>();
+      if ( params != null ) {
+        final var matchParam = PATTERN_PARAM.matcher( params );
+        while ( matchParam.find() ) {
+          final var key = matchParam.group(1);
+          final var value = or( matchParam.group(2), matchParam.group(3) );
+          if ( key != null && value != null )
+            map.putIfAbsent( key, value );
+        }
       }
-
       return new HTMLLink( HTMLLink.Type.LINK, href, map.get("title"), null, map.get("rel") );
     }
+  }
 
-    private static NameValuePair[] parseParameters( final String parameters ) {
-      try {
-        return BasicHeaderValueParser.parseParameters( parameters, null ); // thread-safe
-      }
-      catch ( ParseException e ) {
-        if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "failed to parse parameters '{}'", parameters );
-        return new NameValuePair[0];
+  private static void test( final String str ) {
+    final var matchElt = HttpLinksHeaderParser.PATTERN_ELT.matcher( str );
+    while ( matchElt.find() ) {
+      final var uri = matchElt.group(1);
+      LOGGER.info( "uri: '{}'", uri );
+      final var matchParam = HttpLinksHeaderParser.PATTERN_PARAM.matcher( matchElt.group(2) );
+      while ( matchParam.find() ) {
+        final var key = matchParam.group(1);
+        final var value = or( matchParam.group(2), matchParam.group(3) );
+        LOGGER.info( "  key: '{}', value: '{}'", key, value );
       }
     }
+  }
+
+  private static String or( final String left, final String right ) {
+    return left != null ? left : right;
+  }
+
+  public static void main( final String[] args ) {
+    final var tests = List.of(
+      "</node/3>; rel=\"shortlink\",</page/cgu>; rel=\"canonical\"",
+      "<https://festival.lemonde.fr/wp-json/>; rel=\"https://api.w.org/\", <https://festival.lemonde.fr/>; rel=shortlink",
+      "<https://www.mangopay.com/fr/?p=807>; rel=shortlink",
+      "<toto>",
+      "<>; rel=pouet"
+    );
+
+    for ( final var test : tests ) {
+      LOGGER.info( "test: '{}'", test );
+      final var links = fromHttpHeader( test );
+      for ( final var link : links ) {
+        LOGGER.error( "'{}' [rel:{}]", link.uri, link.rel );
+      }
+    }
+
+    //for ( var test : tests ) {
+    //  LOGGER.info( "test: '{}'", test );
+    //  test( test );
+    //}
   }
 }
