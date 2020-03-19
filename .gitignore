@@ -13,6 +13,7 @@ docs/
 jars/
 outcomes/
 reports/
+target/
 src/it/unimi/di/law/warc/filters/parser/FilterParser.java
 src/it/unimi/di/law/warc/filters/parser/FilterParserConstants.java
 src/it/unimi/di/law/warc/filters/parser/FilterParserTokenManager.java
