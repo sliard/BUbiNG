@@ -147,19 +147,9 @@ public class ParsingThread extends Thread {
       if ( parseData.title != null )
         fetchInfoBuilder.setTitle( parseData.title );
 
-      /*
-      TextInfo tinfo = new TextInfo();
-      tinfo.setLang(parseData.getLanguageName());
-      String[] splittedText = TextUtils.splitLine(parseData.boilerpipedContent.toString(), true);
-      tinfo.setTextSize(splittedText.length);
-      tinfo.setTextQuality((float) TextUtils.computeTextQuality(splittedText)); // FIXME: MIN_CONTENT_LENGTH ?
-      */
       if ( parseData.boilerpipedContent.length() > 0 )
         fetchInfoBuilder.setBody( parseData.boilerpipedContent.toString() );
-      /*
-      fetchInfoBuilder.setTextSize(splittedText.length);
-      fetchInfoBuilder.setTextQuality(tinfo.getTextQuality());
-      */
+
       fetchInfoBuilder.setParsingErrors(parseData.pageInfo.getHtmlErrorCount() );
 
       fetchInfoBuilder.getRobotsTagBuilder()
@@ -175,10 +165,6 @@ public class ParsingThread extends Thread {
             .addAllValues( meta.getValue() ));
       if (  parseData.digest != null )
         fetchInfoBuilder.setContentDigest(ByteString.copyFrom(parseData.digest));
-      /*
-      if ( fetchInfoBuilder.getHttpStatus()/100 == 2 )
-        categorize( parseData, splittedText, tinfo );
-      */
 
       int linkNum = 0;
       final boolean noFollow = fetchInfoBuilder.getRobotsTagOrBuilder().getNOFOLLOW();
@@ -200,15 +186,15 @@ public class ParsingThread extends Thread {
         return false;
 
       final boolean isInternal = isSameHost( source, target ); // FIXME: was isSameSchemeAndAuthority
-      final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
-      crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
-      crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
+      //final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
+      //crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
+      //crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
       //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
 
       MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
       fetchLinkInfoBuilder.setTarget( urlKey );
       fetchLinkInfoBuilder.setLinkInfo( linkInfoBuilder );
-      fetchLinkInfoBuilder.setCrawlerInfo( crawlerInfoBuilder );
+      //fetchLinkInfoBuilder.setCrawlerInfo( crawlerInfoBuilder );
 
       if ( isInternal )
         fetchInfoBuilder.addInternalLinks( fetchLinkInfoBuilder );
