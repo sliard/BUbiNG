@@ -183,7 +183,7 @@ public class XhtmlContentHandler implements ContentHandler
   private boolean tryAddMetadata( final Attributes attributes, final String name, final String content ) {
     final String key = attributes.getValue( name );
     if ( key == null ) return false;
-    metadata.add( key.toLowerCase(Locale.US), content );
+    metadata.add( key.toLowerCase(Locale.ROOT), content );
     return true;
   }
 }

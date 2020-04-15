@@ -22,29 +22,22 @@ public final class LinksHelper
 
   public static boolean trySetLinkInfos( final HTMLLink link, final MsgLink.LinkInfo.Builder linkInfoBuilder, final int linkNum, final boolean noFollow ) {
     final String type = link.type;
-    if ( type == HTMLLink.Type.A || type == HTMLLink.Type.IMG ) {
-      if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
-        return false;
-      linkInfoBuilder.setLinkType( EnumType.Enum.A );
-    }
+    if ( type == HTMLLink.Type.A && processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
+      linkInfoBuilder.setLinkTypeValue( EnumType.Enum.A_VALUE );
+    else if ( type == HTMLLink.Type.IMG && processRels(linkInfoBuilder,link.rel,allowedRelsMap_Anchors) )
+      linkInfoBuilder.setLinkTypeValue( EnumType.Enum.IMG_VALUE );
+    else if ( type == HTMLLink.Type.LINK && processRels(linkInfoBuilder,link.rel,allowedRelsMap_Links) )
+      linkInfoBuilder.setLinkTypeValue( EnumType.Enum.LINK_VALUE );
+    else if ( type == HTMLLink.Type.REDIRECT )
+      linkInfoBuilder.setLinkTypeValue( EnumType.Enum.REDIRECT_VALUE );
     else
-    if ( type == HTMLLink.Type.LINK ) {
-      if ( !processRels(linkInfoBuilder,link.rel,allowedRelsMap_Links) )
-        return false;
-      linkInfoBuilder.setLinkType( EnumType.Enum.LINK );
-    }
-    else
-    if ( type == HTMLLink.Type.REDIRECT ) {
-      linkInfoBuilder.setLinkType( EnumType.Enum.REDIRECT );
-    }
-    else
-      return false;
+      return false; // FIXME: exclude all other link types
 
     if ( noFollow )
       linkInfoBuilder.setLinkRel( linkInfoBuilder.getLinkRel() | EnumRel.Enum.NOFOLLOW_VALUE );
 
     if ( link.text != null )
-      linkInfoBuilder.setText( link.text );
+      linkInfoBuilder.setText( link.text.toLowerCase(Locale.ROOT).trim() );
     else
       linkInfoBuilder.clearText();
     linkInfoBuilder.setLinkQuality( (float) ( 1. - ( 1. / (1. + Math.exp(-(linkNum - 150.) / 30.)))));
@@ -54,7 +47,7 @@ public final class LinksHelper
   private static boolean processRels( final MsgLink.LinkInfo.Builder linkInfoBuilder, final String rel, final Object2IntOpenHashMap<String> map ) {
     int relValue = 0;
     if ( rel != null ) {
-      final String[] rels = SPLIT_PATTERN.split( rel.toLowerCase().trim() );
+      final String[] rels = SPLIT_PATTERN.split( rel.toLowerCase(Locale.ROOT).trim() );
       for ( final String r : rels ) {
         if ( excludeRels.contains(r) )
           return false;

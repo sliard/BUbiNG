@@ -33,16 +33,16 @@ public final class PageInfo
   private static final int MIN_CLD2_PAGE_CONTENT = 6;
   private static final int MAX_CLD2_PAGE_CONTENT = 5000;
 
-  private static final Pattern HTTP_EQUIV_PATTERN = Pattern.compile( ".*http-equiv\\s*=\\s*(.+)", Pattern.CASE_INSENSITIVE );
-  private static final Pattern CONTENT_TYPE_PATTERN = Pattern.compile( "['\"]?content-type['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-  private static final Pattern CONTENT_LANGUAGE_PATTERN = Pattern.compile( "['\"]?content-language['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-  private static final Pattern CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]([^'\"]+)['\"]", Pattern.CASE_INSENSITIVE );
-  private static final Pattern REFRESH_PATTERN = Pattern.compile( "['\"]?refresh['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-  private static final Pattern ROBOTS_PATTERN = Pattern.compile( "['\"]?robots['\"]?\\s*(.+)", Pattern.CASE_INSENSITIVE );
-  private static final Pattern REFRESH_CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]?(?:\\d+;\\s*)URL\\s*=\\s*['\"]?([^'\"]+)", Pattern.CASE_INSENSITIVE );
-  private static final Pattern CHARSET_PATTERN = Pattern.compile( ".*charset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
-  private static final Pattern VIEWPORT_PATTERN = Pattern.compile( ".*name\\s*=\\s*('|\")?viewport('|\")?.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
-  private static final Pattern LANG_PATTERN = Pattern.compile( ".*lang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
+  private static final Pattern HTTP_EQUIV_PATTERN = Pattern.compile( ".*\\bhttp-equiv\\s*=\\s*(.+)", Pattern.CASE_INSENSITIVE );
+  private static final Pattern CONTENT_TYPE_PATTERN = Pattern.compile( "(?:\"content-type\"|'content-type'|content-type\\b)\\s*(.+)", Pattern.CASE_INSENSITIVE );
+  private static final Pattern CONTENT_LANGUAGE_PATTERN = Pattern.compile( "(?:\"content-language\"|'content-language'|content-language\\b)\\s*(.+)", Pattern.CASE_INSENSITIVE );
+  private static final Pattern REFRESH_PATTERN = Pattern.compile( "(?:\"refresh\"|'refresh'|refresh\\b)\\s*(.+)", Pattern.CASE_INSENSITIVE );
+  private static final Pattern CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]([^'\"]+)['\"].*", Pattern.CASE_INSENSITIVE );
+  private static final Pattern ROBOTS_PATTERN = Pattern.compile( ".*\\bname\\s*=\\s*(?:\"robots\"|'robots'|robots\\b)\\s*(.+)", Pattern.CASE_INSENSITIVE );
+  private static final Pattern VIEWPORT_PATTERN = Pattern.compile( ".*\\bname\\s*=\\s*(?:\"viewport\"|'viewport'|viewport\\b).*", Pattern.CASE_INSENSITIVE );
+  private static final Pattern REFRESH_CONTENT_PATTERN = Pattern.compile( "\\s*content\\s*=\\s*['\"]?(?:\\d+;\\s*)URL\\s*=\\s*['\"]?([^'\"]+).*", Pattern.CASE_INSENSITIVE );
+  private static final Pattern CHARSET_PATTERN = Pattern.compile( ".*\\bcharset\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
+  private static final Pattern LANG_PATTERN = Pattern.compile( ".*\\blang\\s*=\\s*\"?([\\041-\\0176&&[^<>\\{\\}\\\\/:,;@?=\"]]+).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL );
   private static final TextPattern DOCTYPE_PATTERN = new TextPattern( "<!doctype", TextPattern.CASE_INSENSITIVE );
   private static final TextPattern HTML_PATTERN = new TextPattern( "<html", TextPattern.CASE_INSENSITIVE );
   private static final TextPattern META_PATTERN = new TextPattern( "<meta", TextPattern.CASE_INSENSITIVE );
@@ -153,11 +153,11 @@ public final class PageInfo
   public void extractFromHttpHeader( final HttpResponse httpResponse ) {
     final boolean dummy =
       tryExtractCharsetFromHeader( httpResponse ) |
-        tryExtractLanguageFromHeader( httpResponse ) |
-        tryExtractLocationFromHeader( httpResponse ) |
-        tryExtractContentLocationFromHeader( httpResponse ) |
-        tryExtractRobotsTagFromHeader( httpResponse ) |
-        tryExtractLinksFromHeader( httpResponse );
+      tryExtractLanguageFromHeader( httpResponse ) |
+      tryExtractLocationFromHeader( httpResponse ) |
+      tryExtractContentLocationFromHeader( httpResponse ) |
+      tryExtractRobotsTagFromHeader( httpResponse ) |
+      tryExtractLinksFromHeader( httpResponse );
   }
 
   public void extractFromMetas( final HttpResponse httpResponse ) throws IOException {
@@ -166,17 +166,17 @@ public final class PageInfo
     for ( final CharSequence meta : allMetaEntries ) {
       final boolean dummy =
         tryExtractHttpEquivFromMeta( meta ) ||
-          tryExtractCharsetFromMeta( meta ) ||
-          tryExtractViewportFromMeta( meta ) ||
-          tryExtractRobotsFromMeta( meta );
+        tryExtractCharsetFromMeta( meta ) ||
+        tryExtractViewportFromMeta( meta ) ||
+        tryExtractRobotsFromMeta( meta );
     }
   }
 
   public void extractFromHtml( final HttpResponse httpResponse, final char[] buffer ) throws IOException {
     final boolean dummy =
       tryExtractHtmlVersion( httpResponse ) |
-        tryExtractLanguageFromHtml( httpResponse ) |
-        tryGuessCharsetFromHtml( httpResponse, buffer );
+      tryExtractLanguageFromHtml( httpResponse ) |
+      tryGuessCharsetFromHtml( httpResponse, buffer );
   }
 
   public void extractFromContent( final CharSequence content ) {
@@ -452,5 +452,24 @@ public final class PageInfo
       if ( start < end ) return s.substring( start, end );
     }
     return null;
+  }
+
+  public static void main( final String[] args ) {
+    //final var text = "<meta name='robots' content='index, follow, noarchive' />";
+    //final var text = "<meta name=\"viewport\" content=\"pouet\" />";
+    final var text = "<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">";
+    final var bytes = text.getBytes( StandardCharsets.UTF_8 );
+    final var pageInfo = new PageInfo( URI.create("https://www.lemonde.fr/") );
+    final var entries = PageInfo.getAllMetaEntries( bytes, bytes.length );
+    for ( final var seq : entries ) {
+      final var meta = seq.toString();
+      final Matcher mRobots = HTTP_EQUIV_PATTERN.matcher( meta );
+      if ( !mRobots.matches() ) continue;
+      final var group = mRobots.group(1);
+      final Matcher mContent = CONTENT_PATTERN.matcher( mRobots.group(1) );
+      if ( !mContent.matches() ) continue;
+      final String robotsTags = mContent.group(1);
+      if ( LOGGER.isDebugEnabled() ) LOGGER.debug( "Found robots {} in META of {}", robotsTags, pageInfo.uri.toString() );
+    }
   }
 }
