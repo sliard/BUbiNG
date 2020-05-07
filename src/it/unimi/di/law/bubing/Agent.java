@@ -302,7 +302,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setDnsThreads(final int dnsThreads) throws IllegalArgumentException {
-		frontier.dnsThreads(rc.dnsThreads = dnsThreads);
+		rc.dnsThreads = frontier.dnsThreads(dnsThreads);
 	}
 
 	@ManagedAttribute @Description("Number of DNS threads")
@@ -312,7 +312,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setFetchingThreads(final int fetchingThreads) throws IllegalArgumentException, NoSuchAlgorithmException, IOException {
-		frontier.fetchingThreads(rc.fetchingThreads = fetchingThreads);
+		rc.fetchingThreads = frontier.fetchingThreads(fetchingThreads);
 	}
 
 	@ManagedAttribute @Description("Number of fetching threads")
@@ -352,7 +352,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setParsingThreads(final int parsingThreads) throws IllegalArgumentException, NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException, IOException, NoSuchAlgorithmException {
-		frontier.parsingThreads(rc.parsingThreads = parsingThreads);
+		rc.parsingThreads = frontier.parsingThreads(parsingThreads);
 	}
 
 	@ManagedAttribute @Description("Number of parsing threads (usually, no more than the number of available cores)")
