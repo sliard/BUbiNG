@@ -512,8 +512,8 @@ public class Frontier {
 				.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
 				.build();
 
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 8 * 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 32 * 1024);
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 1 * 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 4 * 1024);
 
 		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
@@ -550,7 +550,7 @@ public class Frontier {
 		Lookup.getDefaultCache(DClass.IN).setMaxEntries(rc.dnsCacheMaxSize);
 		Lookup.getDefaultCache(DClass.IN).setMaxCache((int)Math.min(rc.dnsPositiveTtl, Integer.MAX_VALUE));
 		Lookup.getDefaultCache(DClass.IN).setMaxNCache((int)Math.min(rc.dnsNegativeTtl, Integer.MAX_VALUE));
-		Lookup.getDefaultResolver().setTimeout(60);
+		Lookup.getDefaultResolver().setTimeout(5);
 	}
 
 	/** Changes the number of DNS threads.
