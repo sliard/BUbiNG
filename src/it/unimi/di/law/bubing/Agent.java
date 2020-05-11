@@ -11,6 +11,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
@@ -68,6 +69,7 @@ import it.unimi.dsi.jai4j.RemoteJobManager;
 import it.unimi.dsi.jai4j.dropping.DiscardMessagesStrategy;
 import it.unimi.dsi.jai4j.dropping.TimedDroppingThreadFactory;
 import it.unimi.dsi.jai4j.jgroups.JGroupsJobManager;
+import org.xbill.DNS.Lookup;
 
 //RELEASE-STATUS: DIST
 
@@ -481,8 +483,19 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	}
 
 	@ManagedAttribute
+	public void setCookieMaxByteSize(final int cookieMaxByteSize) {
+		rc.cookieMaxByteSize = cookieMaxByteSize;
+	}
+
+	@ManagedAttribute @Description("Maximum size of cookie file")
+	public int getCookieMaxByteSize() {
+		return rc.cookieMaxByteSize;
+	}
+
+	@ManagedAttribute
 	public void setSocketTimeout(final int socketTimeout) {
 		rc.socketTimeout = socketTimeout;
+		frontier.setRequests();
 	}
 
 	@ManagedAttribute @Description("Timeout in milliseconds for opening a socket")
@@ -493,12 +506,55 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute
 	public void setConnectionTimeout(final int connectionTimeout) {
 		rc.connectionTimeout = connectionTimeout;
+		frontier.setRequests();
 	}
 
 	@ManagedAttribute @Description("Socket connection timeout in milliseconds")
 	public int getConnectionTimeout() {
 		return rc.connectionTimeout;
 	}
+
+	@ManagedAttribute
+	public void setDnsTimeout(final int dnsTimeout) {
+		rc.dnsTimeout = dnsTimeout;
+		Lookup.getDefaultResolver().setTimeout(Duration.ofMillis(rc.dnsTimeout));
+	}
+
+	@ManagedAttribute @Description("DNS query timeout in milliseconds")
+	public int getDnsTimeout() {
+		return rc.dnsTimeout;
+	}
+
+	@ManagedAttribute
+	public void setMaximumTimeToFirstByte(final int maximumTimeToFirstByte) {
+		rc.maximumTimeToFirstByte = maximumTimeToFirstByte;
+	}
+
+	@ManagedAttribute @Description("Maximum time allowed to first byte")
+	public int getMaximumTimeToFirstByte() {
+		return rc.maximumTimeToFirstByte;
+	}
+
+	@ManagedAttribute
+	public void setMaximumFetchDuration(final int maximumFetchDuration) {
+		rc.maximumFetchDuration = maximumFetchDuration;
+	}
+
+	@ManagedAttribute @Description("Maximum time allowed for fetching a page")
+	public int getMaximumFetchDuration() {
+		return rc.maximumFetchDuration;
+	}
+	@ManagedAttribute
+	public void setMinimumDownloadSpeed(final int minimumDownloadSpeed) {
+		rc.minimumDownloadSpeed = minimumDownloadSpeed;
+	}
+
+	@ManagedAttribute @Description("Minimum allowable download speed")
+	public int getMinimumDownloadSpeed() {
+		return rc.minimumDownloadSpeed;
+	}
+
+	public int minimumDownloadSpeed;
 
 	@ManagedAttribute
 	public void setRobotsExpiration(final long robotsExpiration) {
