@@ -30,7 +30,7 @@ public class PulsarHelper
       }
     );
 
-  public static MsgURL.Key fromURI(final URI uri) {
+  public static MsgURL.Key fromURI(final URI uri) throws java.net.UnknownHostException {
     return Serializer.URL.Key.from(uri);
   }
 
@@ -66,7 +66,7 @@ public class PulsarHelper
     return hostnameCache.getUnchecked(ByteString.copyFrom(schemeAuthority));
   }
 
-  public static MsgURL.Key.Builder _schemeAuthority(final byte[] schemeAuthority) {
+  public static MsgURL.Key.Builder _schemeAuthority(final byte[] schemeAuthority) throws java.net.UnknownHostException {
     final MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
 
     final String fullHost = BURL.hostFromSchemeAndAuthority(schemeAuthority);
