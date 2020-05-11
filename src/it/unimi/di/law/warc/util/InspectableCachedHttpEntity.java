@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 
+import org.apache.commons.lang.mutable.MutableLong;
 import org.apache.http.HttpEntity;
 import org.apache.http.entity.BasicHttpEntity;
 import org.apache.http.entity.HttpEntityWrapper;
@@ -66,12 +67,50 @@ public class InspectableCachedHttpEntity extends HttpEntityWrapper {
 		}
 	}
 
-	public boolean copyContent(final long maxLength, final long startTime, final long minDelay, final long minBytesPerSecond) throws IOException, TooSlowException {
+	public boolean copyContent(final long maxLength, final long startTime,
+														 final long maximumFetchDuration, final long minimumDownloadSpeed, final long maximumTimeToFirstByte,
+														 final MutableLong mutableFirstByteTime) throws IOException, TooSlowException {
 		if (this.wrappedEntity == THROW_AWAY_ENTITY) throw new IllegalStateException();
 		final InputStream content = this.wrappedEntity.getContent();
 
 		if (maxLength != 0) {
 			long count = 0;
+			int readBytes;
+			boolean endOfStream = false;
+			while ( !(count == maxLength)) {
+				// First, wait for available bytes while checking limits
+				int toRead = Math.max(content.available(), (int)Math.min(BUFFER_SIZE, maxLength - count));
+				// the idea here is not to be stuck in a read
+				if (toRead == 0 && count < maxLength) { // there is nothing to read, but we haven't finished, sleep for a bit
+					try {
+						Thread.sleep(20);
+					} catch (InterruptedException e) {
+						return false; // consider interruption as abort
+					}
+				}
+
+				readBytes = content.read(buffer, 0, toRead);
+				if (readBytes == -1)
+					break;
+				final long now = System.currentTimeMillis();
+				final long delay = now - startTime;
+				final double bytesPerSecond = count / (delay / 1000.);
+				if (delay > maximumFetchDuration && bytesPerSecond < minimumDownloadSpeed)
+					throw new TooSlowException(bytesPerSecond + " B/s");
+				endOfStream = (readBytes == -1);
+				if (endOfStream) break;
+				if (readBytes > 0) {
+					if (count == 0) {
+						mutableFirstByteTime.setValue(now);
+						if (now - startTime > maximumTimeToFirstByte)
+							throw new TooSlowException("Time to first byte = " + (now - startTime) + "ms");
+					}
+					byteBuffer.clear().limit(readBytes);
+					cachedContent.write(byteBuffer);
+					count += readBytes;
+				}
+			}
+			/*
 			for (int r; ((r = content.read(buffer, 0, (int)Math.min(BUFFER_SIZE, maxLength - count)))) != -1;) {
 				byteBuffer.clear().limit(r);
 				cachedContent.write(byteBuffer);
@@ -80,10 +119,9 @@ public class InspectableCachedHttpEntity extends HttpEntityWrapper {
 				final long delay = System.currentTimeMillis() - startTime;
 				final double bytesPerSecond = count / (delay / 1000.);
 				if (delay > minDelay && bytesPerSecond < minBytesPerSecond) throw new TooSlowException(bytesPerSecond + " B/s");
-			}
+			}*/
 		}
-
-        return content.read(buffer, 0, 1) != -1;
+		return content.read(buffer, 0, 1) != -1;
 	}
 
 

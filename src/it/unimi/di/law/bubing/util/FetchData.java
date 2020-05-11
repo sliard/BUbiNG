@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Queue;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.mutable.MutableLong;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
@@ -152,6 +153,9 @@ public class FetchData implements URIResponse, Closeable {
 
 	/** {@link System#currentTimeMillis()} when the GET request was issued. */
 	public volatile long startTime;
+
+	/** {@link System#currentTimeMillis()} when the GET request returned its first byte. */
+	public volatile long firstByteTime;
 
 	/** {@link System#currentTimeMillis()} when the GET request was completed. */
 	public volatile long endTime;
@@ -334,7 +338,7 @@ public class FetchData implements URIResponse, Closeable {
       fakeEntity.setContentLength(content.length());
       fakeEntity.setContentType(FAKE_CONTENT_TYPE);
       wrappedEntity.setEntity(fakeEntity);
-      wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.connectionTimeout, 10);
+      wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.maximumFetchDuration, rc.minimumDownloadSpeed, rc.maximumTimeToFirstByte, new MutableLong());
       (response = FAKE_RESPONSE).setEntity(wrappedEntity);
     }
     catch ( IOException e ) {
@@ -354,20 +358,25 @@ public class FetchData implements URIResponse, Closeable {
       if (LOGGER.isTraceEnabled()) LOGGER.trace("Fetching {}", url);
 
       httpGet.setURI(url);
+
       if (requestConfig != null)
         httpGet.setConfig(requestConfig);
-
+			MutableLong mutableFirstByteTime = new MutableLong();
+			mutableFirstByteTime.setValue(startTime);
       httpClient.execute( httpHost, httpGet, new ResponseHandler<Void>() {
+
         @Override
         public Void handleResponse(HttpResponse response) throws ClientProtocolException, IOException {
           FetchData.this.response = response;
+
           final HttpEntity entity = response.getEntity();
 
           if (entity == null)
             LOGGER.warn( "Null entity for URL " + url );
           else {
             wrappedEntity.setEntity(entity);
-            truncated = wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.connectionTimeout, 10);
+            truncated = wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.maximumFetchDuration, rc.minimumDownloadSpeed, rc.maximumTimeToFirstByte, mutableFirstByteTime);
+            firstByteTime = mutableFirstByteTime.longValue();
             if (truncated)
               httpGet.abort();
           }
