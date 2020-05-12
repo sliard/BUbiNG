@@ -177,6 +177,18 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#connectionTimeout */
 	public volatile int connectionTimeout;
 
+	/** @see StartupConfiguration#dnsTimeout */
+	public volatile int dnsTimeout;
+
+	/** @see StartupConfiguration#maximumTimeToFirstByte */
+	public int maximumTimeToFirstByte;
+
+	/** @see StartupConfiguration#maximumFetchDuration */
+	public int maximumFetchDuration;
+
+	/** @see StartupConfiguration#minimumDownloadSpeed */
+	public int minimumDownloadSpeed;
+
 	/** @see StartupConfiguration#fetchDataBufferByteSize */
 	public final int fetchDataBufferByteSize;
 
@@ -196,7 +208,7 @@ public class RuntimeConfiguration {
 	public final String cookiePolicy;
 
 	/** @see StartupConfiguration#cookieMaxByteSize */
-	public final int cookieMaxByteSize;
+	public int cookieMaxByteSize;
 
 	/** @see StartupConfiguration#userAgent */
 	public final String userAgent;
@@ -566,6 +578,10 @@ public class RuntimeConfiguration {
 			this.seed = Iterators.concat(seedSequence.iterator());
 			socketTimeout = startupConfiguration.socketTimeout;
 			connectionTimeout = startupConfiguration.connectionTimeout;
+			minimumDownloadSpeed = startupConfiguration.minimumDownloadSpeed;
+			maximumFetchDuration = startupConfiguration.maximumFetchDuration;
+			maximumTimeToFirstByte = startupConfiguration.maximumTimeToFirstByte;
+			dnsTimeout = startupConfiguration.dnsTimeout;
 			rootDir = new File(startupConfiguration.rootDir);
 			storeDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.storeDir);
 			responseCacheDir = StartupConfiguration.subDir(startupConfiguration.rootDir, startupConfiguration.responseCacheDir);

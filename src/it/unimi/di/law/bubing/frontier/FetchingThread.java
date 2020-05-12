@@ -400,6 +400,7 @@ public final class FetchingThread extends Thread implements Closeable {
     MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
     fetchInfoBuilder
       .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
+      .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
       .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
 

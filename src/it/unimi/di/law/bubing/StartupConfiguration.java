@@ -274,6 +274,25 @@ public class StartupConfiguration {
 	@TimeSpecification
 	public int connectionTimeout;
 
+	/** The dns query timeout in milliseconds. */
+	@OptionalSpecification(value="5000")
+	@TimeSpecification
+	public int dnsTimeout;
+
+	/** The maximum time to first byte in milliseconds. */
+	@OptionalSpecification(value="1500")
+	@TimeSpecification
+	public int maximumTimeToFirstByte;
+
+	/** The maximum fetch duration in milliseconds. */
+	@OptionalSpecification(value="15000")
+	@TimeSpecification
+	public int maximumFetchDuration;
+
+	/** The minimum download speed bytes/s. */
+	@OptionalSpecification(value="10")
+	public int minimumDownloadSpeed;
+
 	/** Size of the buffer for {@link InspectableFileCachedInputStream} instances, in bytes. Each {@linkplain FetchingThread fetching thread} holds such a buffer. */
 	public int fetchDataBufferByteSize;
 
