@@ -176,31 +176,37 @@ public class ParsingThread extends Thread {
       final URI target = getTargetURI( link.uri, base );
       if ( target == null )
         return false;
-      MsgURL.Key urlKey = PulsarHelper.fromURI(target);
-      if (urlKey == null)
-        return false;
-      if ( !scheduleFilter.apply(new Link(source,target)) )
-        return false;
-      final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-      if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum,noFollow) )
-        return false;
+      try {
+        MsgURL.Key urlKey = PulsarHelper.fromURI(target);
+        if (urlKey == null)
+          return false;
+        if (!scheduleFilter.apply(new Link(source, target)))
+          return false;
+        final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
+        if (!LinksHelper.trySetLinkInfos(link, linkInfoBuilder, linkNum, noFollow))
+          return false;
 
-      final boolean isInternal = isSameHost( source, target ); // FIXME: was isSameSchemeAndAuthority
-      //final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
-      //crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
-      //crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
-      //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
+        final boolean isInternal = isSameHost(source, target); // FIXME: was isSameSchemeAndAuthority
+        //final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
+        //crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
+        //crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
+        //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
 
-      MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
-      fetchLinkInfoBuilder.setTarget( urlKey );
-      fetchLinkInfoBuilder.setLinkInfo( linkInfoBuilder );
-      //fetchLinkInfoBuilder.setCrawlerInfo( crawlerInfoBuilder );
+        MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
+        fetchLinkInfoBuilder.setTarget(urlKey);
+        fetchLinkInfoBuilder.setLinkInfo(linkInfoBuilder);
+        //fetchLinkInfoBuilder.setCrawlerInfo( crawlerInfoBuilder );
 
-      if ( isInternal )
-        fetchInfoBuilder.addInternalLinks( fetchLinkInfoBuilder );
-      else
-        fetchInfoBuilder.addExternalLinks( fetchLinkInfoBuilder );
-      return true;
+        if (isInternal)
+          fetchInfoBuilder.addInternalLinks(fetchLinkInfoBuilder);
+        else
+          fetchInfoBuilder.addExternalLinks(fetchLinkInfoBuilder);
+        return true;
+      }
+      catch (java.net.UnknownHostException uhe) {
+        LOGGER.debug(String.format("Warn: UnknownHostException", target.toString()), uhe);
+      }
+      return false;
     }
 
     /*

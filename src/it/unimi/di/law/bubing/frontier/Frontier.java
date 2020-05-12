@@ -559,7 +559,7 @@ public class Frontier {
 	 * their execution as soon as they check the {@link DNSThread#stop} field.
 	 *
 	 * @param newDnsThreads the new number of threads. */
-	public void dnsThreads(final int newDnsThreads) throws IllegalArgumentException {
+	public int dnsThreads(final int newDnsThreads) throws IllegalArgumentException {
 		if (newDnsThreads <= 0) throw new IllegalArgumentException();
 
 		synchronized (dnsThreads) {
@@ -567,7 +567,8 @@ public class Frontier {
 				for (int i = newDnsThreads; i < dnsThreads.size(); i++)
 					dnsThreads.get(i).stop = true;
 				dnsThreads.size(newDnsThreads);
-				return;
+				LOGGER.info("Number of DNS Threads set to " + dnsThreads.size());
+				return dnsThreads.size();
 			}
 
 			for (int i = newDnsThreads - dnsThreads.size(); i-- != 0;) {
@@ -577,7 +578,8 @@ public class Frontier {
 			}
 		}
 
-		LOGGER.info("Number of DNS Threads set to " + newDnsThreads);
+		LOGGER.info("Number of DNS Threads set to " + dnsThreads.size());
+		return dnsThreads.size();
 	}
 
 
@@ -587,8 +589,8 @@ public class Frontier {
 	 * their execution as soon as they check the {@link ParsingThread#stop} field.
 	 *
 	 * @param numFetchingThreads the new number of threads. */
-	public void fetchingThreads(final int numFetchingThreads) throws IllegalArgumentException, NoSuchAlgorithmException, IOException {
-		if (numFetchingThreads <= 0) throw new IllegalArgumentException();
+	public int fetchingThreads(final int numFetchingThreads) throws IllegalArgumentException, NoSuchAlgorithmException, IOException {
+		if (numFetchingThreads < 0) throw new IllegalArgumentException();
 
 		synchronized (fetchingThreads) {
 			if (numFetchingThreads < fetchingThreads.size()) {
@@ -596,7 +598,8 @@ public class Frontier {
 				for (int i = numFetchingThreads; i < fetchingThreads.size(); i++)
 					fetchingThreads.get(i).stop = true;
 				fetchingThreads.size(numFetchingThreads);
-				return;
+				LOGGER.info("Number of Fetching Threads set to " + fetchingThreads.size());
+				return fetchingThreads.size();
 			}
 
 			for (int i = numFetchingThreads - fetchingThreads.size(); i-- != 0;) {
@@ -606,7 +609,8 @@ public class Frontier {
 			}
 		}
 
-		LOGGER.info("Number of Fetching Threads set to " + numFetchingThreads);
+		LOGGER.info("Number of Fetching Threads set to " + fetchingThreads.size());
+		return fetchingThreads.size();
 	}
 
 	/** Changes the number of parsing threads.
@@ -615,15 +619,16 @@ public class Frontier {
 	 * their execution as soon as they check the {@link ParsingThread#stop} field.
 	 *
 	 * @param newParsingThreads the new number of threads. */
-	public void parsingThreads(final int newParsingThreads) throws IllegalArgumentException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, IOException, NoSuchAlgorithmException {
-		if (newParsingThreads <= 0) throw new IllegalArgumentException();
+	public int parsingThreads(final int newParsingThreads) throws IllegalArgumentException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, IOException, NoSuchAlgorithmException {
+		if (newParsingThreads < 0) throw new IllegalArgumentException();
 
 		synchronized (parsingThreads) {
 			if (newParsingThreads < parsingThreads.size()) {
 				for (int i = newParsingThreads; i < parsingThreads.size(); i++)
 					parsingThreads.get(i).stop = true;
 				parsingThreads.size(newParsingThreads);
-				return;
+				LOGGER.info("Number of Parsing Threads set to " + parsingThreads.size());
+				return parsingThreads.size();
 			}
 
 			for (int i = newParsingThreads - parsingThreads.size(); i-- != 0;) {
@@ -632,7 +637,8 @@ public class Frontier {
 				parsingThreads.add(thread);
 			}
 		}
-		LOGGER.info("Number of Parsing Threads set to " + newParsingThreads);
+		LOGGER.info("Number of Parsing Threads set to " + parsingThreads.size());
+		return parsingThreads.size();
 	}
 
 	/** Enqueues a URL to the the BUbiNG crawl.
