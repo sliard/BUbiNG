@@ -95,8 +95,10 @@ public class InspectableCachedHttpEntity extends HttpEntityWrapper {
 				final long now = System.currentTimeMillis();
 				final long delay = now - startTime;
 				final double bytesPerSecond = count / (delay / 1000.);
-				if (delay > maximumFetchDuration && bytesPerSecond < minimumDownloadSpeed)
-					throw new TooSlowException(bytesPerSecond + " B/s");
+				if (delay > maximumFetchDuration )
+					throw new TooSlowException("Fetch duration exceed maximum allowed duration (" + delay + "ms > " + maximumFetchDuration + "ms");
+				if (bytesPerSecond < minimumDownloadSpeed)
+					throw new TooSlowException("Download speed " + bytesPerSecond + " B/s");
 				endOfStream = (readBytes == -1);
 				if (endOfStream) break;
 				if (readBytes > 0) {
