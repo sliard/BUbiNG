@@ -466,7 +466,7 @@ public final class FetchingThread extends Thread implements Closeable {
     final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
 
     if (LOGGER.isDebugEnabled()) LOGGER.debug("Exception while fetching " + fetchData.uri(), fetchData.exception);
-    else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + " while fetching " + fetchData.uri());
+    else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + "(" + fetchData.exception.getMessage() + ") while fetching " + fetchData.uri());
 
     if (visitState.lastExceptionClass == exceptionClass )
       visitState.retries += 1; // An old problem
