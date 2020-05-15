@@ -60,6 +60,8 @@ public class FetchInfoHelper {
     while ( !visitState.isEmpty() ) {
       frontier.rc.ensureNotPaused();
       final byte[] zpath = visitState.dequeue(); // contains a zPathQuery
+      if (zpath == VisitState.ROBOTS_PATH) // skip for robots.txt
+        continue;
       final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest( schemeAuthorityProto, zpath );
       frontier.enqueue(fetchInfoFailedGeneric( crawlRequest, visitState, EnumFetchStatus.Enum.HOST_INVALID));
       frontier.fetchingFailedHostCount.incrementAndGet();

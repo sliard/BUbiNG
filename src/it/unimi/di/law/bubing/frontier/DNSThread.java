@@ -114,13 +114,19 @@ public final class DNSThread extends Thread {
 					visitState.lastExceptionClass = null; // In case we had previously set UnknownHostException.class
 					// Fetch or create atomically a new workbench entry.
 					WorkbenchEntry entry = null;
-					ThreadLocalRandom tlrng = ThreadLocalRandom.current();
 					int overflowCounter = 0;
+					long maxDelay = 0;
 					do {
-						// First entry is 0, then 1 or 2, then 3,4,5 or 6, and so on
-						entry = frontier.workbench.getWorkbenchEntry(address, tlrng.nextInt(1 << overflowCounter,1 << (overflowCounter+1))-1);
+						// Try entries until one is not full
+						entry = frontier.workbench.getWorkbenchEntry(address, overflowCounter);
+						if (entry.size() > 0)
+							maxDelay = Math.max(maxDelay, entry.delay);
 						overflowCounter++;
-					} while (entry.size() > frontier.rc.maxInstantSchemeAuthorityPerIP);
+					} while (entry.size() > frontier.rc.maxInstantSchemeAuthorityPerIP * overflowCounter);
+					entry.delay = maxDelay;
+					if (entry.size() == 0) // it's a new one
+						entry.delay = maxDelay + overflowCounter;
+
 					visitState.setWorkbenchEntry(entry);
 					frontier.resolvedVisitStates.incrementAndGet();
 				}
