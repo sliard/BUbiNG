@@ -1029,10 +1029,16 @@ public class Frontier {
 					WorkbenchEntry entry = null;
 					byte[] address = Util.readByteArray(workbenchStream);
 					int overflowCounter = 0;
+					long maxDelay = 0;
 					do {
-						entry = workbench.getWorkbenchEntry(address, tlrng.nextInt(1 << overflowCounter,1 << (overflowCounter+1))-1);
+						entry = workbench.getWorkbenchEntry(address, overflowCounter);
+						if (entry.size() > 0)
+							maxDelay = Math.max(maxDelay, entry.delay);
 						overflowCounter++;
-					} while (entry.size() >= rc.maxInstantSchemeAuthorityPerIP);
+					} while (entry.size() >= rc.maxInstantSchemeAuthorityPerIP * overflowCounter);
+					entry.delay = maxDelay;
+					if (entry.size() == 0) // it's a new one
+						entry.delay = maxDelay + overflowCounter;
 					visitState.setWorkbenchEntry(entry);
 				}
 				else
