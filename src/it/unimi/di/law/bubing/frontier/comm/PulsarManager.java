@@ -175,8 +175,8 @@ public final class PulsarManager implements AutoCloseable
         .batchingMaxPublishDelay( 100, TimeUnit.MILLISECONDS )
         .batchingMaxMessages(16)
         .blockIfQueueFull( true )
-        .maxPendingMessages(2048)
-        .maxPendingMessagesAcrossPartitions(32768)
+        .maxPendingMessages(128)
+        .maxPendingMessagesAcrossPartitions(1024)
         .sendTimeout( 30000, TimeUnit.MILLISECONDS )
         .compressionType( CompressionType.ZSTD )
         .producerName( rc.name );
@@ -299,8 +299,8 @@ public final class PulsarManager implements AutoCloseable
 
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
-        //.receiverQueueSize(512)
-        //.maxTotalReceiverQueueSizeAcrossPartitions(4096)
+        .receiverQueueSize(512)
+        .maxTotalReceiverQueueSizeAcrossPartitions(4096)
         .acknowledgmentGroupTime( 500, TimeUnit.MILLISECONDS )
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
         .subscriptionInitialPosition( SubscriptionInitialPosition.Latest )

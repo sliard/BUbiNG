@@ -166,6 +166,7 @@ public final class FetchingThread extends Thread implements Closeable {
                       "SSLv3",
                       "TLSv1.1",
                       "TLSv1.2",
+                      "TLSv1.3"
                   }, null, new NoopHostnameVerifier()))
           .build();
     }
@@ -400,6 +401,7 @@ public final class FetchingThread extends Thread implements Closeable {
     MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
     fetchInfoBuilder
       .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
+      .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
       .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
 
@@ -420,7 +422,7 @@ public final class FetchingThread extends Thread implements Closeable {
     final int knownCount = frontier.agent.getKnownCount();
     if (knownCount > 1 && rc.ipDelayFactor != 0)
       ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
-    visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay / Math.pow(entrySize, 0.25));
+    visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay + visitState.workbenchEntry.delay);
 
     if ( !checkFetchDataException() )
       return false; // don't parse
@@ -465,7 +467,7 @@ public final class FetchingThread extends Thread implements Closeable {
     final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
 
     if (LOGGER.isDebugEnabled()) LOGGER.debug("Exception while fetching " + fetchData.uri(), fetchData.exception);
-    else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + " while fetching " + fetchData.uri());
+    else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + "(" + fetchData.exception.getMessage() + ") while fetching " + fetchData.uri());
 
     if (visitState.lastExceptionClass == exceptionClass )
       visitState.retries += 1; // An old problem
@@ -541,15 +543,30 @@ public final class FetchingThread extends Thread implements Closeable {
        * performed by a ParsingThread. */
       LOGGER.error( "Unexpected exception during fetch of " + url, shouldntHappen );
       final long endTime = System.currentTimeMillis();
-      visitState.workbenchEntry.nextFetch = endTime + frontier.rc.ipDelay;
+      visitState.workbenchEntry.nextFetch = endTime + frontier.rc.ipDelay + visitState.workbenchEntry.delay;
       visitState.nextFetch = endTime + frontier.rc.schemeAuthorityDelay;
       return false;
     }
     finally {
-      frontier.fetchingCount.incrementAndGet();
-      if (robots)
-        frontier.fetchingRobotsCount.incrementAndGet();
-      frontier.fetchingDurationTotal.addAndGet(fetchData.endTime - fetchData.startTime);
+      if (fetchData.response() != null && fetchData.response().getStatusLine() != null && fetchData.response().getStatusLine().getStatusCode() == 429) {
+        final long endTime = System.currentTimeMillis();
+        visitState.workbenchEntry.nextFetch = endTime + 3*frontier.rc.ipDelay + 3*visitState.workbenchEntry.delay;
+        visitState.nextFetch = endTime + 3*frontier.rc.schemeAuthorityDelay;
+        if (robots)
+          visitState.forciblyEnqueueRobotsFirst();
+        else
+          visitState.enqueueCrawlRequest(crawlRequest.build().toByteArray());
+
+        LOGGER.info("Received HTTP code 429 for {}, waiting extratime, slow down and retrying later", url.toString());
+        visitState.workbenchEntry.increaseDelay();
+
+        return false;
+      } else {
+        frontier.fetchingCount.incrementAndGet();
+        if (robots)
+          frontier.fetchingRobotsCount.incrementAndGet();
+        frontier.fetchingDurationTotal.addAndGet(fetchData.endTime - fetchData.startTime);
+      }
     }
 
     if (fetchData.exception != null && (

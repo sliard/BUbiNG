@@ -137,6 +137,7 @@ public class ParsingThread extends Thread {
         .setUrlKey( fetchData.getCrawlRequest().getUrlKey() )
         .setContentLength( (int)fetchData.response().getEntity().getContentLength() )
         .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
+        .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
         .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
         .setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
         .setLanguage( fetchData.lang )

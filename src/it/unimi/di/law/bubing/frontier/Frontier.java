@@ -40,6 +40,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -395,12 +396,41 @@ public class Frontier {
 	/** An estimation of the number of path+query objects that the workbench can store. */
 	public volatile long workbenchSizeInPathQueries;
 	/** The default configuration for a non-<code>robots.txt</code> request. */
-	public final RequestConfig defaultRequestConfig;
+	public RequestConfig defaultRequestConfig;
 	/** The default configuration for a <code>robots.txt</code> request. */
-	public final RequestConfig robotsRequestConfig;
+	public RequestConfig robotsRequestConfig;
 
 	/** The global instance for the text classifier */
 	public final TextClassifier textClassifier;
+
+	private void setDefaultRequest() {
+		defaultRequestConfig = RequestConfig.custom()
+			.setSocketTimeout(rc.socketTimeout)
+			.setConnectTimeout(rc.connectionTimeout)
+			.setConnectionRequestTimeout(rc.connectionTimeout)
+			.setCookieSpec(rc.cookiePolicy)
+			.setRedirectsEnabled(false)
+			.setContentCompressionEnabled(true)
+			.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
+			.build();
+	}
+
+	private void setRobotsRequest() {
+		robotsRequestConfig = RequestConfig.custom()
+			.setSocketTimeout(rc.socketTimeout)
+			.setConnectTimeout(rc.connectionTimeout)
+			.setConnectionRequestTimeout(rc.connectionTimeout)
+			.setCookieSpec(rc.cookiePolicy)
+			.setRedirectsEnabled(true)
+			.setMaxRedirects(5) // Google's policy
+			.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
+			.build();
+	}
+
+	public void setRequests() {
+		setDefaultRequest();
+		setRobotsRequest();
+	}
 
 	/** Creates the frontier.
 	 *
@@ -492,28 +522,11 @@ public class Frontier {
 		fetchingThreadWaits = new AtomicLong();
 		fetchingThreadWaitingTimeSum = new AtomicLong();
 
-		defaultRequestConfig = RequestConfig.custom()
-				.setSocketTimeout(rc.socketTimeout)
-				.setConnectTimeout(rc.connectionTimeout)
-				.setConnectionRequestTimeout(rc.connectionTimeout)
-				.setCookieSpec(rc.cookiePolicy)
-				.setRedirectsEnabled(false)
-				.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
-				.build();
+		setDefaultRequest();
+		setRobotsRequest();
 
-
-		robotsRequestConfig = RequestConfig.custom()
-				.setSocketTimeout(rc.socketTimeout)
-				.setConnectTimeout(rc.connectionTimeout)
-				.setConnectionRequestTimeout(rc.connectionTimeout)
-				.setCookieSpec(rc.cookiePolicy)
-				.setRedirectsEnabled(true)
-				.setMaxRedirects(5) // Google's policy
-				.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
-				.build();
-
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 8 * 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 32 * 1024);
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 2 * 1024);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 16 * 1024);
 
 		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
@@ -550,7 +563,7 @@ public class Frontier {
 		Lookup.getDefaultCache(DClass.IN).setMaxEntries(rc.dnsCacheMaxSize);
 		Lookup.getDefaultCache(DClass.IN).setMaxCache((int)Math.min(rc.dnsPositiveTtl, Integer.MAX_VALUE));
 		Lookup.getDefaultCache(DClass.IN).setMaxNCache((int)Math.min(rc.dnsNegativeTtl, Integer.MAX_VALUE));
-		Lookup.getDefaultResolver().setTimeout(60);
+		Lookup.getDefaultResolver().setTimeout(Duration.ofMillis(rc.dnsTimeout));
 	}
 
 	/** Changes the number of DNS threads.
@@ -1016,10 +1029,16 @@ public class Frontier {
 					WorkbenchEntry entry = null;
 					byte[] address = Util.readByteArray(workbenchStream);
 					int overflowCounter = 0;
+					long maxDelay = 0;
 					do {
-						entry = workbench.getWorkbenchEntry(address, tlrng.nextInt(1 << overflowCounter,1 << (overflowCounter+1))-1);
+						entry = workbench.getWorkbenchEntry(address, overflowCounter);
+						if (entry.size() > 0)
+							maxDelay = Math.max(maxDelay, entry.delay);
 						overflowCounter++;
-					} while (entry.size() >= rc.maxInstantSchemeAuthorityPerIP);
+					} while (entry.size() >= rc.maxInstantSchemeAuthorityPerIP * overflowCounter);
+					entry.delay = maxDelay;
+					if (entry.size() == 0) // it's a new one
+						entry.delay = maxDelay + overflowCounter;
 					visitState.setWorkbenchEntry(entry);
 				}
 				else
