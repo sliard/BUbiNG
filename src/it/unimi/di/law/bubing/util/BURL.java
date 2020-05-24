@@ -27,9 +27,11 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.util.Arrays;
+import java.util.*;
+import java.util.regex.Pattern;
 
 // RELEASE-STATUS: DIST
 
@@ -96,6 +98,8 @@ public final class BURL {
 		return parse(new MutableString(spec));
 	}
 
+	public static URI parseAndNormalize(String spec) { return parseAndNormalize(new MutableString(spec), true);}
+
 	/** Creates a new BUbiNG URL from a {@linkplain MutableString mutable string}
 	 * specification if possible, or returns {@code null} otherwise.
 	 *
@@ -128,6 +132,10 @@ public final class BURL {
 	 */
 
 	public static URI parse(MutableString spec) {
+		return parseAndNormalize(spec, false);
+	}
+
+	public static URI parseAndNormalize(MutableString spec, boolean normalize) {
 
 		if (DEBUG) LOGGER.debug("parse(" + spec + ")");
 		spec.loose().trim();
@@ -187,8 +195,13 @@ public final class BURL {
 
 			if (host != null && (rawPath == null || rawPath.length() == 0)) rawPath = "/";
 
+
+
 			// Rebuild, discarding fragment, parsing again a purely ASCII string and renormalizing (convoluted, but it does work).
-			return new URI(sanitizeAndRepack(scheme, uri.getRawUserInfo(), host, uri.getPort(), rawPath, uri.getRawQuery())).normalize();
+			if (normalize)
+				return new URI(sanitizeAndRepack(scheme, uri.getRawUserInfo(), host, uri.getPort(), rawPath, normalizeQuery(uri.getRawQuery()))).normalize();
+			else
+				return new URI(sanitizeAndRepack(scheme, uri.getRawUserInfo(), host, uri.getPort(), rawPath, uri.getRawQuery())).normalize();
 		}
 		catch (URISyntaxException e) {
 			return null;
@@ -197,6 +210,44 @@ public final class BURL {
 			LOGGER.warn("Unexpected exception while parsing " + spec, e);
 			return null;
 		}
+	}
+	private static final Set<String> blackListedParams = new HashSet<>();
+	static {
+		blackListedParams.addAll(Arrays.asList("PHPSESSID","jsessionid","osCsid","token","zenid",
+			"add-to-cart","orderby","order-by","order_by","sortby","sort_by","sort-by","filterby","filter-by","filter_by",
+			"referrerPage",
+			"campaign_id","campaign",
+			"affiliation","affiliate",
+			"utm_campaign","utm_source","utm_medium","utm_term","utm_content",
+			"pk_campaign","pk_kwd"));
+	}
+
+	private static final Pattern normalizeQueryPattern;
+	static {
+		StringBuilder normalizeQueryPatternStringBuilder = new StringBuilder();
+		normalizeQueryPatternStringBuilder.append("(");
+		boolean first = true;
+		for (String param : blackListedParams) {
+			if (!first)
+				normalizeQueryPatternStringBuilder.append("|");
+			first = true;
+			normalizeQueryPatternStringBuilder.append(param);
+		}
+		normalizeQueryPatternStringBuilder.append(")=[^;&]*[;&$]");
+		normalizeQueryPattern = Pattern.compile(normalizeQueryPatternStringBuilder.toString());
+	}
+
+	private static String normalizeQuery(String query) {
+		if (query == null)
+			return null;
+		if (query.length() == 0)
+			return query;
+		String result = normalizeQueryPattern.matcher(query).replaceAll("");
+
+		if (LOGGER.isDebugEnabled())
+			if (query.length() != result.length())
+				LOGGER.debug("Normalized {} to {}", query,result);
+		return result;
 	}
 
 	/** If the argument string does not contain non-ASCII characters, returns the string itself;

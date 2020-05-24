@@ -217,7 +217,7 @@ public class ParsingThread extends Thread {
     private static URI resolve( final String href, final URI base ) {
       if ( href.length() == 0 || href.charAt(0) == '#' )
         return base;
-      final URI url = BURL.parse( href );
+      final URI url = BURL.parseAndNormalize( href );
       return url == null ? null : base.resolve( url );
     }
 
