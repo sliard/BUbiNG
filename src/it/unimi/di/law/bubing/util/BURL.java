@@ -237,11 +237,12 @@ public final class BURL {
 		normalizeQueryPattern = Pattern.compile(normalizeQueryPatternStringBuilder.toString());
 	}
 
-	private static String normalizeQuery(String query) {
+  private static String normalizeQuery(String query) {
 		if (query == null)
 			return null;
 		if (query.length() == 0)
 			return query;
+
 		String result = normalizeQueryPattern.matcher(query).replaceAll("");
 
 		if (LOGGER.isDebugEnabled())
