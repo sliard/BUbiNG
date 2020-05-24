@@ -244,7 +244,7 @@ public final class BURL {
 			return query;
 
 		String result = normalizeQueryPattern.matcher(query).replaceAll("");
-
+		
 		if (LOGGER.isDebugEnabled())
 			if (query.length() != result.length())
 				LOGGER.debug("Normalized {} to {}", query,result);
