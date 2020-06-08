@@ -182,7 +182,7 @@ public class Frontier {
 	public static final long MIN_FLUSH_INTERVAL = 10000;
 
 	/** The increase of the front size used by {@link #updateRequestedFrontSize()}. */
-	private static final long FRONT_INCREASE = 1000;
+	private static final long FRONT_INCREASE = 250;
 
 	/** Minimum number of available fetchdata required before we decide to drop one */
 	final AtomicInteger fetchDataCount = new AtomicInteger(0);
@@ -397,14 +397,16 @@ public class Frontier {
 	public volatile long workbenchSizeInPathQueries;
 	/** The default configuration for a non-<code>robots.txt</code> request. */
 	public RequestConfig defaultRequestConfig;
+	/** The configuration for a no redirect request. */
+	public RequestConfig noRedirectRequestConfig;
 	/** The default configuration for a <code>robots.txt</code> request. */
 	public RequestConfig robotsRequestConfig;
 
 	/** The global instance for the text classifier */
 	public final TextClassifier textClassifier;
 
-	private void setDefaultRequest() {
-		defaultRequestConfig = RequestConfig.custom()
+	private void setNoRedirectRequest() {
+		noRedirectRequestConfig = RequestConfig.custom()
 			.setSocketTimeout(rc.socketTimeout)
 			.setConnectTimeout(rc.connectionTimeout)
 			.setConnectionRequestTimeout(rc.connectionTimeout)
@@ -413,6 +415,23 @@ public class Frontier {
 			.setContentCompressionEnabled(true)
 			.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
 			.build();
+		LOGGER.info("Set default request config to {}", defaultRequestConfig.toString());
+	}
+
+	private void setDefaultRequest() {
+		defaultRequestConfig = RequestConfig.custom()
+			.setSocketTimeout(rc.socketTimeout)
+			.setConnectTimeout(rc.connectionTimeout)
+			.setConnectionRequestTimeout(rc.connectionTimeout)
+			.setCookieSpec(rc.cookiePolicy)
+			.setRedirectsEnabled(true)
+			.setRelativeRedirectsAllowed(true)
+			.setCircularRedirectsAllowed(true) // allow for cookie-based redirects
+			.setMaxRedirects(10) // 2xGoogle's policy
+			.setContentCompressionEnabled(true)
+			.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
+			.build();
+		LOGGER.info("Set default request config to {}", defaultRequestConfig.toString());
 	}
 
 	private void setRobotsRequest() {
@@ -422,14 +441,18 @@ public class Frontier {
 			.setConnectionRequestTimeout(rc.connectionTimeout)
 			.setCookieSpec(rc.cookiePolicy)
 			.setRedirectsEnabled(true)
-			.setMaxRedirects(5) // Google's policy
+			.setRelativeRedirectsAllowed(true)
+			.setCircularRedirectsAllowed(true) // allow for cookie-based redirects
+			.setMaxRedirects(10) // 2xGoogle's policy
 			.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
 			.build();
+		LOGGER.info("Set robots request config to {}", robotsRequestConfig.toString());
 	}
 
 	public void setRequests() {
 		setDefaultRequest();
 		setRobotsRequest();
+		setNoRedirectRequest();
 	}
 
 	/** Creates the frontier.
@@ -518,15 +541,15 @@ public class Frontier {
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
 		numberOfSentURLs = new AtomicLong();
-		requiredFrontSize = new AtomicLong(10000);
+		requiredFrontSize = new AtomicLong(1500);
 		fetchingThreadWaits = new AtomicLong();
 		fetchingThreadWaitingTimeSum = new AtomicLong();
 
 		setDefaultRequest();
 		setRobotsRequest();
-
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>( 2 * 1024);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 16 * 1024);
+		setNoRedirectRequest();
+		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(  512);
+		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 4 * 1024);
 
 		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
 		dnsThreads = new ObjectArrayList<>();
