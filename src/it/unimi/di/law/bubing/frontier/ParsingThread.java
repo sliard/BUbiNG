@@ -14,13 +14,13 @@ import com.exensa.wdl.protobuf.link.MsgLink;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
-import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.parser.*;
 import it.unimi.di.law.bubing.parser.html.RobotsTagState;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.mutable.MutableInt;
@@ -82,13 +82,11 @@ public class ParsingThread extends Thread {
    */
   private static final class FrontierEnqueuer
   {
-    private static final boolean ASSERTS = false;
+    private static final int DEFAULT_EXPECTED_NUM_TARGET_KEYS = 100;
     private final Frontier frontier;
-    private final TextClassifier classifier;
     private final Filter<Link> scheduleFilter;
-    private byte[] schemeAuthority; // FIXME: TODO: not used anymore
+    private final ObjectOpenHashSet<MsgURL.Key> targetKeys;
     private URI source;
-    private URLRespectsRobots.RobotsRules robotsFilter;
     private MsgCrawler.FetchInfo.Builder fetchInfoBuilder;
 
     /** Creates the enqueuer.
@@ -98,19 +96,19 @@ public class ParsingThread extends Thread {
      */
     FrontierEnqueuer(final Frontier frontier, final RuntimeConfiguration rc) {
       this.frontier = frontier;
-      this.classifier = frontier.textClassifier;
       this.scheduleFilter = rc.scheduleFilter;
+      this.targetKeys = new ObjectOpenHashSet<>( DEFAULT_EXPECTED_NUM_TARGET_KEYS );
     }
 
     /** Initializes the enqueuer for parsing a page with a specific scheme+authority and robots filter.
      *
      * @param crawlRequest the crawl request for which the fetch was done
-     * @param robotsFilter the robots filter of the (authority of the) page to be parsed.
      */
-    void init( final MsgFrontier.CrawlRequest crawlRequest, final URLRespectsRobots.RobotsRules robotsFilter ) {
+    void init( final MsgFrontier.CrawlRequest crawlRequest ) {
       this.source = PulsarHelper.toURI( crawlRequest.getUrlKey() );
-      this.robotsFilter = robotsFilter;
       this.fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder();
+      this.targetKeys.clear();
+      this.targetKeys.trim( DEFAULT_EXPECTED_NUM_TARGET_KEYS );
     }
 
     void process( final FetchData fetchData, final ParseData parseData ) {
@@ -170,82 +168,31 @@ public class ParsingThread extends Thread {
       if ( target == null )
         return false;
       try {
-        MsgURL.Key urlKey = PulsarHelper.fromURI(target);
-        if (urlKey == null)
+        final MsgURL.Key urlKey = PulsarHelper.fromURI( target );
+        if ( !targetKeys.add(urlKey) )
           return false;
-        if (!scheduleFilter.apply(new Link(source, target)))
+        if ( !scheduleFilter.apply(new Link(source,target)) )
           return false;
         final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
-        if (!LinksHelper.trySetLinkInfos(link, linkInfoBuilder, linkNum, noFollow))
+        if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum,noFollow) )
           return false;
 
-        final boolean isInternal = isSameHost(source, target); // FIXME: was isSameSchemeAndAuthority
-        //final MsgCrawler.CrawlerInfo.Builder crawlerInfoBuilder = MsgCrawler.CrawlerInfo.newBuilder();
-        //crawlerInfoBuilder.setIsBlackListed( BlackListing.checkBlacklistedHost(frontier,target) );
-        //crawlerInfoBuilder.setDoesRespectRobots( RuntimeConfiguration.FETCH_ROBOTS && robotsFilter != null && isInternal && !URLRespectsRobots.apply(robotsFilter,target) ); // FIXME: wrong !
-        //crawlerInfoBuilder.setMatchesScheduleRule( scheduleFilter.apply(new Link(source,target)) ); // FIXME: filtered out above
+        final MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
+        fetchLinkInfoBuilder.setTarget( urlKey );
+        fetchLinkInfoBuilder.setLinkInfo( linkInfoBuilder );
 
-        MsgCrawler.FetchLinkInfo.Builder fetchLinkInfoBuilder = MsgCrawler.FetchLinkInfo.newBuilder();
-        fetchLinkInfoBuilder.setTarget(urlKey);
-        fetchLinkInfoBuilder.setLinkInfo(linkInfoBuilder);
-        //fetchLinkInfoBuilder.setCrawlerInfo( crawlerInfoBuilder );
-
-        if (isInternal)
+        final boolean isInternal = isSameHost( source, target );
+        if ( isInternal )
           fetchInfoBuilder.addInternalLinks(fetchLinkInfoBuilder);
         else
           fetchInfoBuilder.addExternalLinks(fetchLinkInfoBuilder);
         return true;
       }
-      catch (java.net.UnknownHostException uhe) {
-        LOGGER.debug(String.format("Warn: UnknownHostException", target.toString()), uhe);
-      }
-      return false;
-    }
-
-    /*
-    private TextInfo categorize(final ParseData parseData, final String[] splittedText, TextInfo tinfo) {
-      try {
-        if (classifier != null) {
-          long startClassifTime = System.nanoTime();
-          TextInfo extendedTinfo = classifier.predictTokenizedInfo(splittedText, tinfo);
-          if (extendedTinfo != null) {
-            if (extendedTinfo.gotCategorization()) {
-              long endClassifTime = System.nanoTime();
-              if (LOGGER.isTraceEnabled())
-                LOGGER.trace("content " + Arrays.toString(splittedText) + " lang: [" + extendedTinfo.getLang() + "] text/vocab size: " + tinfo.getTextSize() + "/" + tinfo.getVocabSize());
-              LOGGER.debug("Predict time: " + (double) (endClassifTime - startClassifTime) / 1000000000.0 + "s");
-              if (LOGGER.isDebugEnabled()) {
-                StringBuilder sb = new StringBuilder("categorization: [");
-                for (MsgCrawler.Topic topic : tinfo.getCategorization().getTopicList()) {
-                  sb.append('(');
-                  sb.append(topic.getId());
-                  sb.append(", ");
-                  sb.append(topic.getScore());
-                  sb.append(")");
-                }
-                sb.append(']');
-                LOGGER.debug(sb.toString());
-              }
-              fetchInfoBuilder.setCategorisation(tinfo.getCategorization());
-            }
-            if (extendedTinfo.gotEmbedding()) {
-              Float[] embedding = extendedTinfo.getEmbedding();
-              ByteBuffer bb = ByteBuffer.allocate(embedding.length * 4);
-              for (float f : embedding) bb.putFloat(f);
-              fetchInfoBuilder.setSemanticVector(ByteString.copyFrom(bb.array()));
-            }
-          }
-          return extendedTinfo;
-        }
-        else
-          return tinfo;
-      }
-      catch (Exception e) {
-        LOGGER.error("Failed to categorize " + parseData.baseUri, e);
-        return tinfo;
+      catch ( java.net.UnknownHostException e ) {
+        LOGGER.debug( String.format("Warn: UnknownHostException for '%s'",target.toString()), e );
+        return false;
       }
     }
-    */
 
     private static URI getTargetURI( final String href, final URI base ) {
       final URI target = resolve( href, base );
@@ -415,7 +362,7 @@ public class ParsingThread extends Thread {
     //if (LOGGER.isTraceEnabled()) LOGGER.trace("Decided that for {} isDuplicate={}", fetchData.uri(), isDuplicate);
     fetchData.isDuplicate( isDuplicate );
 
-    frontierLinkReceiver.init( fetchData.getCrawlRequest(), visitState.robotsFilter );
+    frontierLinkReceiver.init( fetchData.getCrawlRequest() );
     if ( !isDuplicate && rc.followFilter.apply(fetchData) ) {
       frontierLinkReceiver.process( fetchData, parseData );
       frontierLinkReceiver.flush();
