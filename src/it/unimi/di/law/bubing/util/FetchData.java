@@ -34,10 +34,11 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.nio.channels.ClosedChannelException;
 import java.security.NoSuchAlgorithmException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
@@ -205,6 +206,8 @@ public class FetchData implements URIResponse, Closeable {
 
 	public volatile byte lang; // FIXME: already in ParseData
 
+	public volatile String eTag;
+
 	public volatile Map<String,String> extraMap;
 
 	/** Creates a fetched response according to the given properties.
@@ -364,6 +367,19 @@ public class FetchData implements URIResponse, Closeable {
       if (LOGGER.isTraceEnabled()) LOGGER.trace("Fetching {}", url);
 
       httpGet.setURI(url);
+			httpGet.removeHeaders(HttpHeaders.IF_MODIFIED_SINCE);
+			httpGet.removeHeaders(HttpHeaders.IF_NONE_MATCH);
+
+			if (crawlRequest.hasCrawlInfo()) {
+      	if (crawlRequest.getCrawlInfo().getETag().length() > 0) {
+					httpGet.setHeader(HttpHeaders.IF_NONE_MATCH, crawlRequest.getCrawlInfo().getETag());
+				}
+					if (crawlRequest.getCrawlInfo().getLastFetchTimeMinutes() > 0) {
+						DateTimeFormatter dtf = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneId.of("GMT")).withLocale(Locale.ENGLISH);
+						httpGet.setHeader(new BasicHeader(HttpHeaders.IF_MODIFIED_SINCE,
+							dtf.format(Instant.EPOCH.plus(Duration.ofMinutes(crawlRequest.getCrawlInfo().getLastFetchTimeMinutes() )))));
+					}
+			}
 
       if (requestConfig != null) {
 				httpGet.setConfig(requestConfig);

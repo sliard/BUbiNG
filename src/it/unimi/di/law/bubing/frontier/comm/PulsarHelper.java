@@ -50,10 +50,25 @@ public class PulsarHelper
     return getScheme(url.getScheme()) + "://" + url.getHost() + url.getPathQuery();
   }
 
-  public static byte[] keepZPathQuery(MsgFrontier.CrawlRequest crawlRequest) {
-    return  crawlRequest.getUrlKey().getZPathQuery().toByteArray();
+  /**
+   * Removes the scheme+authority part of a crawl request
+   * @param crawlRequest the original crawl request
+   * @return serialized stripped crawl request
+   */
+  public static byte[] toMinimalCrawlRequestSerialized(MsgFrontier.CrawlRequest crawlRequest) {
+    MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = crawlRequest.toBuilder();
+    MsgURL.Key.Builder urlKeyBuilder = crawlRequestBuilder.getUrlKeyBuilder();
+    urlKeyBuilder.clearScheme().clearZDomain().clearZHostPart();
+    crawlRequestBuilder.setUrlKey(urlKeyBuilder);
+    return  crawlRequestBuilder.build().toByteArray();
   }
 
+  public static MsgFrontier.CrawlRequest minimalCrawlRequestFromPathQuery(String pathQuery) {
+    MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = MsgFrontier.CrawlRequest.newBuilder();
+    MsgURL.Key.Builder urlKeyBuilder = MsgURL.Key.newBuilder();
+    urlKeyBuilder.setZPathQuery(ByteString.copyFrom(toZ(toASCII(pathQuery))));
+    return crawlRequestBuilder.setUrlKey(urlKeyBuilder).build();
+  }
   public static byte[] schemeAuthority( final MsgURL.KeyOrBuilder urlKey ) {
     return schemeAuthority( Serializer.URL.from(urlKey) );
   }

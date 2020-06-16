@@ -79,7 +79,7 @@ public class VisitState implements Delayed, Serializable {
 	private static final long serialVersionUID = 1L;
 
 	/** A special path marking a <code>robots.txt</code> refresh request. */
-	public final static byte[] ROBOTS_PATH = PulsarHelper.toZ(PulsarHelper.toASCII( "/robots.txt" ));
+	public final static byte[] ROBOTS_PATH = PulsarHelper.toMinimalCrawlRequestSerialized(PulsarHelper.minimalCrawlRequestFromPathQuery( "/robots.txt" ));
 
 	/** A singleton empty cookie array. */
 	public final static Cookie[] EMPTY_COOKIE_ARRAY = {};
