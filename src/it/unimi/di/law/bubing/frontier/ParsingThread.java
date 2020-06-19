@@ -14,6 +14,7 @@ import com.exensa.wdl.protobuf.link.MsgLink;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
+import crawlercommons.robots.SimpleRobotRules;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.di.law.bubing.parser.*;
 import it.unimi.di.law.bubing.parser.html.RobotsTagState;
@@ -336,13 +337,15 @@ public class ParsingThread extends Thread {
     if ( fetchData.robots ) {
       frontier.parsingRobotsCount.incrementAndGet();
       frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
-      MutableInt crawlDelay = new MutableInt(0);
-      if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgentId, crawlDelay)) == null) {
+      if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgentId)) == null) {
         // We go on getting/creating a workbench entry only if we have robots permissions.
         visitState.schedulePurge();
         LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
       }
-      visitState.setCrawlDelayMS(crawlDelay.intValue()*1000);
+      if (visitState.robotsFilter != null && visitState.robotsFilter.getCrawlDelay() != SimpleRobotRules.UNSET_CRAWL_DELAY) {
+        LOGGER.debug("Setting crawl delay for {} to {}", visitState.toString(), visitState.robotsFilter.getCrawlDelay());
+        visitState.setCrawlDelayMS((int) visitState.robotsFilter.getCrawlDelay() * 1000);
+      }
       return;
     }
 

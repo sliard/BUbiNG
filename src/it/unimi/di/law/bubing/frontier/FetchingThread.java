@@ -19,6 +19,7 @@ import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.InvalidProtocolBufferException;
+import crawlercommons.robots.SimpleRobotRules;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
@@ -382,7 +383,7 @@ public final class FetchingThread extends Thread implements Closeable {
           continue; // skip to next PathQuery
         }
 
-        if (visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter, url)) {
+        if (visitState.robotsFilter != null && !visitState.robotsFilter.isAllowed(url.toString())) {
           if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
           frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest, visitState));
           frontier.fetchingFailedRobotsCount.incrementAndGet();

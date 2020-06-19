@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import crawlercommons.robots.SimpleRobotRules;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
@@ -96,7 +97,7 @@ public class VisitState implements Delayed, Serializable {
 	/** {@link System#currentTimeMillis()} when we fetched the robots we are {@linkplain #robotsFilter caching}. */
 	public volatile long lastRobotsFetch;
 	/** The robots-forbidden prefixes we are caching, as returned from the {@link URLRespectsRobots#parseRobotsReader(Reader, String,org.apache.commons.lang.mutable.MutableInt)} method. */
-	public volatile URLRespectsRobots.RobotsRules robotsFilter;
+	public volatile SimpleRobotRules robotsFilter;
 	/** The workbench entry this visit state belongs to. Note that this field is always
 	 * non-{@code null}, regardless of whether this visit state is actually in the queue of
 	 * its workbench entry, unless {@link #lastExceptionClass} is not {@code null}. */
@@ -130,7 +131,6 @@ public class VisitState implements Delayed, Serializable {
 		this.schemeAuthority = schemeAuthority;
 		cookies = EMPTY_COOKIE_ARRAY;
 		crawlRequests = new ObjectArrayFIFOQueue<>();
-		Frontier frontier = Agent.getFrontier();
 		purgeRequired = false;
 		crawlDelayMS = 0;
 		nbFetched = 0;
