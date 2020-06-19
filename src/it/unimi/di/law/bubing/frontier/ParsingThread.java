@@ -129,12 +129,12 @@ public class ParsingThread extends Thread {
         .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
         .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
         .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
-        .setFetchTimeMillis( (int)(fetchData.startTime % (24*60*60*1000)))
+        .setFetchTimeMinutes( (int)(fetchData.startTime / (60*1000)))
         .setHttpStatus( fetchData.response().getStatusLine().getStatusCode() )
         .setLanguage( fetchData.lang )
         .setIpAddress( ByteString.copyFrom(fetchData.visitState.workbenchEntry.ipAddress) );
       if (fetchData.eTag != null) {
-        LOGGER.warn("Found ETag : {}", fetchData.eTag);
+        LOGGER.trace("Found ETag : {}", fetchData.eTag);
         fetchInfoBuilder.setETag(fetchData.eTag);
       }
 
@@ -422,7 +422,7 @@ public class ParsingThread extends Thread {
         fetchData.lang = LanguageCodes.getByte( parseData.getLanguageName() );
       }
       if ( parseData.getETag() != null ) {
-        LOGGER.debug("URL {} has ETag {}", fetchData.uri(), parseData.getETag());
+        LOGGER.trace("URL {} has ETag {}", fetchData.uri(), parseData.getETag());
         fetchData.eTag = parseData.getETag();
       }
     }

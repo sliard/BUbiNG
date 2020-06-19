@@ -270,6 +270,7 @@ public final class FetchingThread extends Thread implements Closeable {
         if ( visitState != null ) {
           frontier.workingFetchingThreads.incrementAndGet(); // decrement is done below or in processFetchData()
           if (!processVisitState(visitState) ) {
+            frontier.done.add(visitState);
             frontier.workingFetchingThreads.decrementAndGet();
           } else
             processFetchData();
@@ -343,8 +344,13 @@ public final class FetchingThread extends Thread implements Closeable {
       try {
         final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
         // First check that the crawlRequest is still valid
-        if (ProtoHelper.hasTTLexpired(crawlRequest, frontier.rc.crawlRequestTTL))
+        if (ProtoHelper.hasTTLexpired(crawlRequest, frontier.rc.crawlRequestTTL)) {
+          if (LOGGER.isTraceEnabled()) {
+            final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
+            LOGGER.trace("CrawlRequest for {} has expired", url.toString());
+          }
           continue;
+        }
 
         final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
 
@@ -395,7 +401,6 @@ public final class FetchingThread extends Thread implements Closeable {
         throw new UnexpectedException(ipbe);
       }
     }
-
     return false; // skip to next SchemeAuthority
   }
 

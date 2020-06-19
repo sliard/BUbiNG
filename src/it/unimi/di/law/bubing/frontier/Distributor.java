@@ -19,6 +19,7 @@ package it.unimi.di.law.bubing.frontier;
 
 import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.Serializer;
+import com.exensa.wdl.protobuf.ProtoHelper;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.dsi.Util;
 
@@ -110,6 +111,11 @@ public final class Distributor extends Thread {
 		try {
 			if (LOGGER.isTraceEnabled())
 				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
+			if (ProtoHelper.hasTTLexpired(crawlRequest, frontier.rc.crawlRequestTTL)) {
+				if (LOGGER.isTraceEnabled())
+					LOGGER.trace("CrawlRequest has expired for {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
+				return false;
+			}
 			VisitState visitState;
 			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrlKey());
 			boolean addedNewVisitState = false;
