@@ -19,6 +19,7 @@ package it.unimi.di.law.bubing.frontier;
 
 import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.Serializer;
+import com.exensa.wdl.protobuf.ProtoHelper;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.dsi.Util;
 
@@ -63,13 +64,13 @@ public final class Distributor extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Distributor.class);
 	/** We purge {@linkplain VisitState visit states} from {@link #schemeAuthority2VisitState} when
 	 * this amount of time has passed (approximately) since the last fetch. */
-	private static final long PURGE_DELAY = TimeUnit.HOURS.toMillis(12);
+	private static final long PURGE_DELAY = TimeUnit.MINUTES.toMillis(149);
 	/** We prints low-cost stats at this interval. */
-	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(10);
+	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(11);
 	/** We prints high-cost stats at this interval. */
-	private static final long HIGH_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(45);
+	private static final long HIGH_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(47);
 	/** We check for visit states to be purged at this interval. */
-	private static final long PURGE_CHECK_INTERVAL = TimeUnit.HOURS.toMillis(2);
+	private static final long PURGE_CHECK_INTERVAL = TimeUnit.MINUTES.toMillis(97);
 
 	/** A reference to the frontier. */
 	private final Frontier frontier;
@@ -110,6 +111,11 @@ public final class Distributor extends Thread {
 		try {
 			if (LOGGER.isTraceEnabled())
 				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
+			if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
+				if (LOGGER.isTraceEnabled())
+					LOGGER.trace("CrawlRequest has expired for {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
+				return false;
+			}
 			VisitState visitState;
 			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrlKey());
 			boolean addedNewVisitState = false;
@@ -122,7 +128,7 @@ public final class Distributor extends Thread {
 					visitState = new VisitState(schemeAuthority);
 					visitState.lastRobotsFetch = Long.MAX_VALUE; // This inhibits further enqueueing until robots.txt is fetched.
 					visitState.enqueueRobots();
-					visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
+					visitState.enqueueCrawlRequest(PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
 					synchronized (schemeAuthority2VisitState) {
 						schemeAuthority2VisitState.add(visitState);
 					}
@@ -136,7 +142,7 @@ public final class Distributor extends Thread {
 				if (frontier.virtualizer.count(visitState) > 0) {
 					// Safe: there are URLs on disk, and this fact cannot change concurrently.
 					movedFromSieveToVirtualizer++;
-					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
+					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
 				}
 				else
 				if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
@@ -145,13 +151,13 @@ public final class Distributor extends Thread {
 					if (visitState.size() == 0)
 						addedNewVisitState = true;
 					visitState.checkRobots(now);
-					visitState.enqueueCrawlRequest(PulsarHelper.keepZPathQuery(crawlRequest));
+					visitState.enqueueCrawlRequest(PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
 					movedFromSieveToWorkbench++;
 				}
 				else { // visitState.urlsOnDisk == 0
 					// FIXME: we are here not only because visitState.urlsOnDisk == 0
 					movedFromSieveToVirtualizer++;
-					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.keepZPathQuery(crawlRequest));
+					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
 				}
 			}
 		}

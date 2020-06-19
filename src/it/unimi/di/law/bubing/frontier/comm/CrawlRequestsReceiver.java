@@ -17,6 +17,7 @@ package it.unimi.di.law.bubing.frontier.comm;
  */
 
 import com.exensa.wdl.common.Serializer;
+import com.exensa.wdl.protobuf.ProtoHelper;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.Frontier;
 import it.unimi.di.law.bubing.util.*;
@@ -62,9 +63,11 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 		try {
 			final MsgFrontier.CrawlRequest crawlRequest = MsgFrontier.CrawlRequest.parseFrom( message.getData() );
 			if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
-			frontier.quickReceivedCrawlRequests.put( crawlRequest ); // Will block until not full
-			frontier.numberOfReceivedURLs.addAndGet( 1 );
-			messageCount++;
+			if (!ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
+				frontier.quickReceivedCrawlRequests.put(crawlRequest); // Will block until not full
+				frontier.numberOfReceivedURLs.addAndGet(1);
+				messageCount++;
+			}
 			if (messageCount == 1000)
 				LOGGER.warn("PULSAR Consumer for topic {} is active", topic);
 			consumer.acknowledge( message );
