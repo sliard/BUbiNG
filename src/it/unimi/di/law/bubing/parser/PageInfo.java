@@ -516,21 +516,19 @@ public final class PageInfo
     l.setLevel(Level.DEBUG);
     for ( final var seq : entries ) {
       final var meta = seq.toString();
-      System.out.println(MessageFormat.format("Processing {0}", meta));
-     /* {
-        final Matcher mRobots = HTTP_EQUIV_PATTERN.matcher(meta);
-        if (!mRobots.matches()) continue;
+      LOGGER.debug("Processing {}", meta);
+      final Matcher mRobots = ROBOTS_PATTERN.matcher(meta);
+      if (mRobots.matches()) {
         final var group = mRobots.group(1);
         final Matcher mContent = CONTENT_PATTERN.matcher(mRobots.group(1));
         if (!mContent.matches()) continue;
         final String robotsTags = mContent.group(1);
         if (LOGGER.isDebugEnabled()) LOGGER.debug("Found robots {} in META of {}", robotsTags, pageInfo.uri.toString());
-      }*/
-      {
-        final Matcher mMeta = HTTP_EQUIV_PATTERN.matcher(meta);
-        if (!mMeta.matches()) continue;
-        LOGGER.debug("Processing meta {}", mMeta.group(1));
-        final Matcher mRefresh = REFRESH_PATTERN.matcher(mMeta.group(1));
+      }
+      final Matcher mHTTPEquiv = HTTP_EQUIV_PATTERN.matcher(meta);
+      if (mHTTPEquiv.matches()) {
+        LOGGER.debug("Processing meta {}", mHTTPEquiv.group(1));
+        final Matcher mRefresh = REFRESH_PATTERN.matcher(mHTTPEquiv.group(1));
         if (!mRefresh.matches()) continue;
         final Matcher mContent = CONTENT_PATTERN.matcher(mRefresh.group(1));
         if (!mContent.matches()) continue;
