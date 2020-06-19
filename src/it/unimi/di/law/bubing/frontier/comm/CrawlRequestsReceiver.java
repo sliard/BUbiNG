@@ -63,7 +63,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 		try {
 			final MsgFrontier.CrawlRequest crawlRequest = MsgFrontier.CrawlRequest.parseFrom( message.getData() );
 			if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
-			if (!ProtoHelper.hasTTLexpired(crawlRequest, frontier.rc.crawlRequestTTL)) {
+			if (!ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
 				frontier.quickReceivedCrawlRequests.put(crawlRequest); // Will block until not full
 				frontier.numberOfReceivedURLs.addAndGet(1);
 				messageCount++;

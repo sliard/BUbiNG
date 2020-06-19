@@ -111,7 +111,7 @@ public final class Distributor extends Thread {
 		try {
 			if (LOGGER.isTraceEnabled())
 				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
-			if (ProtoHelper.hasTTLexpired(crawlRequest, frontier.rc.crawlRequestTTL)) {
+			if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
 				if (LOGGER.isTraceEnabled())
 					LOGGER.trace("CrawlRequest has expired for {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
 				return false;

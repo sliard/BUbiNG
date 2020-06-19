@@ -20,7 +20,6 @@ import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
-import org.apache.http.Header;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
@@ -344,7 +343,7 @@ public final class FetchingThread extends Thread implements Closeable {
       try {
         final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
         // First check that the crawlRequest is still valid
-        if (ProtoHelper.hasTTLexpired(crawlRequest, frontier.rc.crawlRequestTTL)) {
+        if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
           if (LOGGER.isTraceEnabled()) {
             final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
             LOGGER.trace("CrawlRequest for {} has expired", url.toString());
