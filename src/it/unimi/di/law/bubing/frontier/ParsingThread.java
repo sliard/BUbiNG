@@ -344,7 +344,7 @@ public class ParsingThread extends Thread {
       }
       if (visitState.robotsFilter != null && visitState.robotsFilter.getCrawlDelay() != SimpleRobotRules.UNSET_CRAWL_DELAY) {
         LOGGER.debug("Setting crawl delay for {} to {}", visitState.toString(), visitState.robotsFilter.getCrawlDelay());
-        visitState.setCrawlDelayMS((int) visitState.robotsFilter.getCrawlDelay() * 1000);
+        visitState.setCrawlDelayMS((int) visitState.robotsFilter.getCrawlDelay());
       }
       return;
     }
