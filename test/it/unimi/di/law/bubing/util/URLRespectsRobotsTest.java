@@ -66,10 +66,10 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any", crawlDelay);
-		assertFalse(URLRespectsRobots.apply(filter, disallowedUri1));
-		assertFalse(URLRespectsRobots.apply(filter, disallowedUri2));
-		assertFalse(URLRespectsRobots.apply(filter, disallowedUri3));
+		var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any", crawlDelay);
+		assertFalse(filter.isAllowed(disallowedUri1.toString()));
+		assertFalse(filter.isAllowed(disallowedUri2.toString()));
+		assertFalse(filter.isAllowed(disallowedUri3.toString()));
 		assertTrue(crawlDelay.intValue() == 0);
 	}
 
