@@ -34,9 +34,12 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.nio.channels.ClosedChannelException;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.mutable.MutableLong;
@@ -50,6 +53,7 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.ResponseHandler;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.concurrent.FutureCallback;
 import org.apache.http.entity.BasicHttpEntity;
 import org.apache.http.message.BasicHeader;
@@ -190,6 +194,9 @@ public class FetchData implements URIResponse, Closeable {
 	/** The request used by this response. */
 	private final HttpGet httpGet;
 
+	/** The HttpClientContext of this fetch */
+	private HttpClientContext httpClientContext;
+
 	/** If true, this istance has been enqueued to the list of results and we are waiting
 	 * for the signal of the {@link ParsingThread} that is analyzing it. */
 	//public volatile boolean inUse;
@@ -198,6 +205,8 @@ public class FetchData implements URIResponse, Closeable {
 	private final RuntimeConfiguration rc;
 
 	public volatile byte lang; // FIXME: already in ParseData
+
+	public volatile String eTag;
 
 	public volatile Map<String,String> extraMap;
 
@@ -358,9 +367,24 @@ public class FetchData implements URIResponse, Closeable {
       if (LOGGER.isTraceEnabled()) LOGGER.trace("Fetching {}", url);
 
       httpGet.setURI(url);
+			httpGet.removeHeaders(HttpHeaders.IF_MODIFIED_SINCE);
+			httpGet.removeHeaders(HttpHeaders.IF_NONE_MATCH);
 
-      if (requestConfig != null)
-        httpGet.setConfig(requestConfig);
+			if (crawlRequest.hasCrawlInfo()) {
+      	if (crawlRequest.getCrawlInfo().getETag().length() > 0) {
+					httpGet.setHeader(HttpHeaders.IF_NONE_MATCH, crawlRequest.getCrawlInfo().getETag());
+				}
+					if (crawlRequest.getCrawlInfo().getLastFetchTimeMinutes() > 0) {
+						DateTimeFormatter dtf = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneId.of("GMT")).withLocale(Locale.ENGLISH);
+						httpGet.setHeader(new BasicHeader(HttpHeaders.IF_MODIFIED_SINCE,
+							dtf.format(Instant.EPOCH.plus(Duration.ofMinutes(crawlRequest.getCrawlInfo().getLastFetchTimeMinutes() )))));
+					}
+			}
+
+      if (requestConfig != null) {
+				httpGet.setConfig(requestConfig);
+			}
+			httpClientContext = HttpClientContext.create();
 			MutableLong mutableFirstByteTime = new MutableLong();
 			mutableFirstByteTime.setValue(startTime);
       httpClient.execute( httpHost, httpGet, new ResponseHandler<Void>() {
@@ -382,7 +406,11 @@ public class FetchData implements URIResponse, Closeable {
           }
           return null;
         }
-      } );
+      }, httpClientContext );
+
+      if (httpClientContext.getRedirectLocations() != null && httpClientContext.getRedirectLocations().size() > 0)
+      	LOGGER.debug("Redirection chain : {}", String.join(" -> ",
+					httpClientContext.getRedirectLocations().stream().map(Object::toString).collect(Collectors.toList())));
 
       response.setEntity(wrappedEntity);
     }
@@ -396,6 +424,20 @@ public class FetchData implements URIResponse, Closeable {
       httpGet.reset(); // Release resources.
     }
   }
+
+	public boolean hasRedirects() {
+		return (httpClientContext != null &&
+			httpClientContext.getRedirectLocations() != null &&
+			httpClientContext.getRedirectLocations().size() > 0);
+	}
+
+  public URI getTerminalURI() {
+		if (httpClientContext != null &&
+		httpClientContext.getRedirectLocations() != null &&
+		httpClientContext.getRedirectLocations().size() > 0)
+			return httpClientContext.getRedirectLocations().get(httpClientContext.getRedirectLocations().size() - 1);
+		return this.url;
+	}
 
 	/**
 	 * Set the digest with a given value

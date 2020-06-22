@@ -425,6 +425,7 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute
 	public void setKeepAliveTime(final int keepAliveTime) {
 		rc.keepAliveTime = keepAliveTime;
+		frontier.setRequests();
 	}
 
 	@ManagedAttribute @Description("If zero, connections are closed at each downloaded resource. Otherwise, the time span to download continuously from the same site using the same connection")
@@ -444,12 +445,23 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setIpDelay(final long ipDelay) {
-		rc.ipDelay = ipDelay;
+		if (ipDelay > 250)
+			rc.ipDelay = ipDelay;
 	}
 
 	@ManagedAttribute @Description("Delay in milliseconds between two consecutive fetches from the same IP address")
 	public long getIpDelay() {
 		return rc.ipDelay;
+	}
+
+	@ManagedAttribute
+	public void setCrawlRequestTTL(final long crawlRequestTTL) {
+		rc.crawlRequestTTL = crawlRequestTTL;
+	}
+
+	@ManagedAttribute @Description("Time-to-live of a crawl request")
+	public long getCrawlRequestTTL() {
+		return rc.crawlRequestTTL;
 	}
 
 	@ManagedAttribute
@@ -888,6 +900,11 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	@ManagedAttribute @Description("Current required front size")
 	public long getRequiredFrontSize() {
 		return frontier.requiredFrontSize.get();
+	}
+
+	@ManagedAttribute
+	public void setRequiredFrontSize(long requiredFrontSize) {
+		frontier.requiredFrontSize.set(requiredFrontSize);
 	}
 
 	@ManagedAttribute @Description("Current required front size")

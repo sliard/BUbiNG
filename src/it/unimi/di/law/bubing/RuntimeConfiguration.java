@@ -144,6 +144,9 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#ipDelay */
 	public volatile long ipDelay;
 
+	/** @see StartupConfiguration#crawlRequestTTL */
+	public volatile long crawlRequestTTL;
+
 	/** @see StartupConfiguration#ipDelayFactor */
 	public volatile double ipDelayFactor;
 
@@ -212,6 +215,9 @@ public class RuntimeConfiguration {
 
 	/** @see StartupConfiguration#userAgent */
 	public final String userAgent;
+
+	/** @see StartupConfiguration#userAgentId */
+	public final String userAgentId;
 
 	/** @see StartupConfiguration#userAgentFrom */
 	public final String userAgentFrom;
@@ -518,6 +524,7 @@ public class RuntimeConfiguration {
 			keepAliveTime = startupConfiguration.keepAliveTime;
 			schemeAuthorityDelay = startupConfiguration.schemeAuthorityDelay;
 			ipDelay = startupConfiguration.ipDelay;
+			crawlRequestTTL = startupConfiguration.crawlRequestTTL;
 			ipDelayFactor = startupConfiguration.ipDelayFactor;
 			maxUrls = startupConfiguration.maxUrls;
 			bloomFilterPrecision = startupConfiguration.bloomFilterPrecision;
@@ -594,6 +601,7 @@ public class RuntimeConfiguration {
 			cookiePolicy = startupConfiguration.cookiePolicy;
 			cookieMaxByteSize = startupConfiguration.cookieMaxByteSize;
 			userAgent = startupConfiguration.userAgent;
+			userAgentId = startupConfiguration.userAgentId;
 			userAgentFrom = startupConfiguration.userAgentFrom;
 			robotsExpiration = startupConfiguration.robotsExpiration;
 			acceptAllCertificates = startupConfiguration.acceptAllCertificates;

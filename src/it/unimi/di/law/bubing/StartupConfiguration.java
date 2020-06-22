@@ -228,6 +228,11 @@ public class StartupConfiguration {
 	@TimeSpecification
 	public long ipDelay;
 
+	/** The time to live of a crawl request */
+	@OptionalSpecification(value="0") // default : no crawl request TTL
+	@TimeSpecification
+	public long crawlRequestTTL;
+
 	/** An attenuation factor for the multiple-agent IP delay mechanism.
 	 *
 	 * <p>BUbiNG uses a simple model to predict how many agents are accessing the same IP: if
@@ -320,6 +325,9 @@ public class StartupConfiguration {
 
 	/** The User Agent header used for HTTP requests. */
 	public String userAgent;
+
+	/** The User Agent Id used for robots.txt. */
+	public String userAgentId;
 
 	/** The From header used for HTTP requests. It can be empty, in which case no <code>From</code> header will be emitted. */
 	@OptionalSpecification(value="")
