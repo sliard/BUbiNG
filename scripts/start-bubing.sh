@@ -3,9 +3,9 @@
 if [ -z ${LOG_DIR} ]; then LOG_DIR=/data1/crawling/logs ; fi
 if [ -z ${DATA_DIR} ]; then DATA_DIR=/data1/crawling/data ; fi
 if [ -z ${XMS} ]; then XMS=16G ; fi
-if [ -z ${XMS} ]; then XMX=16G ; fi
-if [ -z ${PROPERTIES} ]; then PROPERTIES=./crawl.4cores.properties ; fi
-if [ -z ${JMXPORT} ]; then JMXPORT=9999 ; fi
+if [ -z ${XMX} ]; then XMX=16G ; fi
+if [ -z ${PROPERTIES} ]; then PROPERTIES=./bubing.beta384.properties ; fi
+if [ -z ${JMX_PORT} ]; then JMX_PORT=9999 ; fi
 if [ -z ${PROMETHEUS_PORT} ]; then PROMETHEUS_PORT=8880 ; fi
 
 LOGBACK_CONFIG=./logback-bubing.xml
@@ -20,14 +20,6 @@ echo "node id = $NODE_ID"
   KEEP_STORE=1
   AGENT_NAME=${AGENT_NAME}-PRIORITY
   XTRAOPT="-p -r ${DATA_DIR}"
-#  PROPERTIES=./crawl.priority.properties
-#  JMXPORT=9998
-#  PROMETHEUS_PORT=8881
-#  LOG_DIR=${ROOT_DIR}/logs-priority
-#  PID_FILE=./priority.bubing.pid
-#  DATA_DIR=${ROOT_DIR}/data-priority
-#  XMS=4G
-#  XMX=4G
 }
 
 # remove old crawling data
@@ -49,7 +41,7 @@ java -server -cp jars/"*":dependencies/"*":extjars/"*":. \
   -Djavax.net.ssl.sessionCacheSize=65536 \
   -Dlogback.configurationFile=${LOGBACK_CONFIG} \
   -Dcom.sun.management.jmxremote.host=127.0.0.1 \
-  -Dcom.sun.management.jmxremote.port=${JMXPORT} \
+  -Dcom.sun.management.jmxremote.port=${JMX_PORT} \
   -Dcom.sun.management.jmxremote.ssl=false \
   -Dcom.sun.management.jmxremote.authenticate=false \
   -DBUBING_LOG_DIR=${LOG_DIR} \
