@@ -1,6 +1,5 @@
 package it.unimi.di.law.bubing;
 
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -12,8 +11,6 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 
 import it.unimi.di.law.bubing.frontier.*;
@@ -21,7 +18,6 @@ import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.util.FetchData;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
-import org.jgroups.JChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.softee.management.annotation.Description;
@@ -56,20 +52,16 @@ import com.martiansoftware.jsap.UnflaggedOption;
  */
 
 
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.BubingJob;
 import it.unimi.di.law.bubing.util.Link;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.di.law.warc.filters.parser.FilterParser;
 import it.unimi.di.law.warc.filters.parser.ParseException;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import it.unimi.dsi.jai4j.ConsistentHashAssignmentStrategy;
-import it.unimi.dsi.jai4j.NoSuchJobManagerException;
-import it.unimi.dsi.jai4j.RemoteJobManager;
-import it.unimi.dsi.jai4j.dropping.DiscardMessagesStrategy;
-import it.unimi.dsi.jai4j.dropping.TimedDroppingThreadFactory;
-import it.unimi.dsi.jai4j.jgroups.JGroupsJobManager;
+import org.softee.management.exception.ManagementException;
+import org.softee.management.helper.MBeanRegistration;
 import org.xbill.DNS.Lookup;
+
+import javax.management.ObjectName;
+import javax.management.remote.JMXServiceURL;
 
 //RELEASE-STATUS: DIST
 
@@ -77,14 +69,10 @@ import org.xbill.DNS.Lookup;
  * that expose internal settings. In many cases settings can be changed while BUbiNG is running. */
 
 @MBean @Description("A BUbiNG agent")
-public class Agent extends JGroupsJobManager<BubingJob> {
+public class Agent {
 	private final static Logger LOGGER = LoggerFactory.getLogger(Agent.class);
 	/** The name of the standard Java system property that sets the JMX service port (it must be set for the agent to start). */
 	public static final String JMX_REMOTE_PORT_SYSTEM_PROPERTY = "com.sun.management.jmxremote.port";
-	/** The name of the system property that, if set, makes it possible to choose a JGroups configuration file. */
-	public static final String JGROUPS_CONFIGURATION_PROPERTY_NAME = "it.unimi.di.law.bubing.jgroups.configurationFile";
-
-	private static final String DEFAULT_JGROUPS_CONFIGURATION_FILE = "/" + JGroupsJobManager.class.getPackage().getName().replace('.', '/') + "/jgroups.xml";
 
 	/** The only instance of global data in this agent. */
 	private final RuntimeConfiguration rc;
@@ -96,38 +84,33 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 	private static Agent theAgent;
 	private static volatile boolean hasStopped = false;
 
-	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
-		// TODO: configure strategies
+	protected final String name;
+	protected final JMXServiceURL jmxServiceURL;
+	protected final ObjectName selfObjectName;
 
-		super(rc.name, rc.weight,
-			new InetSocketAddress(hostname, jmxPort),
-			new JChannel( System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME) != null
-				? new FileInputStream(System.getProperty(JGROUPS_CONFIGURATION_PROPERTY_NAME))
-				: JGroupsJobManager.class.getResourceAsStream(DEFAULT_JGROUPS_CONFIGURATION_FILE) ),
-			rc.group,
-			new ConsistentHashAssignmentStrategy<>(),
-			new LinkedBlockingQueue<>(),
-			new TimedDroppingThreadFactory<>(1800000),
-			new DiscardMessagesStrategy<>()
-		);
+	public Agent(final String hostname, final int jmxPort, final RuntimeConfiguration rc) throws Exception {
+		// Initialize JMX related elements
+		this.name = rc.name;
+		final var jmxSocket = new InetSocketAddress(hostname, jmxPort);
+		final String jmxServiceURLString = "service:jmx:rmi:///jndi/rmi://" + jmxSocket.getAddress().getHostAddress() + ":" + jmxSocket.getPort() + "/jmxrmi";
+		this.jmxServiceURL = new JMXServiceURL(jmxServiceURLString);
+		final String selfObjectNameString = this.getClass().getPackage().getName() + ":type=" + this.getClass().getSimpleName() + ",name=" + name;
+		this.selfObjectName = new ObjectName(selfObjectNameString);
 
 		theAgent = this;
 
-		LOGGER.info("Creating Agent instance with properties {}", rc);
+		LOGGER.trace("Creating Agent instance with properties {}", rc);
 
 		// TODO: check crawlIsNew for all components.
 		this.rc = rc;
 
-		register();
+		register(); // Register the MBean
 
 		pulsarManager = new PulsarManager( rc );
 		pulsarManager.createFetchInfoProducers();
 
 		frontier = new Frontier(rc, this, pulsarManager );
 		frontier.init();
-		//setListener(frontier);
-
-		//connect();
 
 		// It is important that threads are allocated here, that is, after the agent has been connected.
 		frontier.dnsThreads(rc.dnsThreads);
@@ -188,10 +171,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			frontier.close();
 			LOGGER.warn( "Frontier closed" );
 
-			LOGGER.warn( "Closing Job Manager {}", this );
-			close();
-			LOGGER.warn( "Job Manager {} closed", this );
-
 			LOGGER.warn( "Closing FetchInfo producers" );
 			pulsarManager.closeFetchInfoProducers();
 			LOGGER.warn( "FetchInfo producers closed" );
@@ -210,34 +189,9 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		}
 	}
 
-	/* Methods required to extend JGroupsJobManager. */
-
-	@Override
-	public BubingJob fromString(final String s) {
-		final URI url = BURL.parse(s);
-		if (url != null && url.isAbsolute()) return new BubingJob(ByteArrayList.wrap(BURL.toByteArray(url)));
-		throw new IllegalArgumentException();
-	}
-
-	@Override
-	public byte[] toByteArray(final BubingJob job) throws IllegalArgumentException {
-		return job.url.toByteArray();
-	}
-
-	@Override
-	public BubingJob fromByteArray(byte[] array, int offset) throws IllegalArgumentException {
-		return new BubingJob(ByteArrayList.wrap(Arrays.copyOfRange(array, offset, array.length)));
-	}
-
-	/** Returns the number of agents currently known to the JAI4J {@link RemoteJobManager}.
-	 *
-	 * <p>Note that this number will be larger than that returned by {@link #getAliveCount()}
-	 * if there are {@linkplain #getSuspectedCount() suspected agents}.
-	 *
-	 * @return the number of agents currently known to the JAI4J {@link RemoteJobManager}.
-	 */
-	public int getKnownCount() {
-		return identifier2RemoteJobManager.size();
+	public void register() throws ManagementException {
+		LOGGER.info("Registering " + this + "...");
+		(new MBeanRegistration(this, this.selfObjectName)).register();
 	}
 
 	/* Main Managed Operations */
@@ -250,7 +204,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 			rc.notifyAll();
 		}
 	}
-
 
 	@ManagedOperation @Description("Pause this agent")
 	public void pause() {
@@ -290,12 +243,6 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 		} finally {
 			lock.unlock();
 		}
-	}
-
-
-	@ManagedOperation @Description("Get manager for this URL")
-	public String getManager(@org.softee.management.annotation.Parameter("url") @Description("A URL") final String url) throws NoSuchJobManagerException {
-		return assignmentStrategy.manager(new BubingJob(ByteArrayList.wrap(BURL.toByteArray(BURL.parse(url))))).toString();
 	}
 
 	/* Properties, the same as RuntimeConfiguration: final fields in RuntimeConfiguration are not reported since they can be seen in the file .properties;

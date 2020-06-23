@@ -11,7 +11,6 @@ import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 
 import com.exensa.util.compression.HuffmanModel;
-import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.UnexpectedException;
 import com.exensa.wdl.protobuf.ProtoHelper;
 import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
@@ -19,7 +18,6 @@ import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.InvalidProtocolBufferException;
-import crawlercommons.robots.SimpleRobotRules;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
@@ -443,9 +441,7 @@ public final class FetchingThread extends Thread implements Closeable {
     // This is always the same, independently of what will happen.
     final int entrySize = visitState.workbenchEntry.size();
     long ipDelay = rc.ipDelay;
-    final int knownCount = frontier.agent.getKnownCount();
-    if (knownCount > 1 && rc.ipDelayFactor != 0)
-      ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
+
     visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay + visitState.workbenchEntry.delay);
 
     if ( !checkFetchDataException() )

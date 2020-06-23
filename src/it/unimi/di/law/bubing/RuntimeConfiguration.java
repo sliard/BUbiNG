@@ -147,9 +147,6 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#crawlRequestTTL */
 	public volatile long crawlRequestTTL;
 
-	/** @see StartupConfiguration#ipDelayFactor */
-	public volatile double ipDelayFactor;
-
 	/** @see StartupConfiguration#maxUrls */
 	public volatile long maxUrls;
 
@@ -525,7 +522,6 @@ public class RuntimeConfiguration {
 			schemeAuthorityDelay = startupConfiguration.schemeAuthorityDelay;
 			ipDelay = startupConfiguration.ipDelay;
 			crawlRequestTTL = startupConfiguration.crawlRequestTTL;
-			ipDelayFactor = startupConfiguration.ipDelayFactor;
 			maxUrls = startupConfiguration.maxUrls;
 			bloomFilterPrecision = startupConfiguration.bloomFilterPrecision;
 			startPaused = startupConfiguration.startPaused;
