@@ -426,7 +426,8 @@ public final class FetchingThread extends Thread implements Closeable {
       .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
       .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
-      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
+      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
+      .setFetchTimeMinutes( (int)(fetchData.startTime / ( 60*1000)) );
 
     if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception))
       fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(fetchData.exception));
