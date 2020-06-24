@@ -445,12 +445,23 @@ public class Agent extends JGroupsJobManager<BubingJob> {
 
 	@ManagedAttribute
 	public void setIpDelay(final long ipDelay) {
-		rc.ipDelay = ipDelay;
+		if (ipDelay > 250)
+			rc.ipDelay = ipDelay;
 	}
 
 	@ManagedAttribute @Description("Delay in milliseconds between two consecutive fetches from the same IP address")
 	public long getIpDelay() {
 		return rc.ipDelay;
+	}
+
+	@ManagedAttribute
+	public void setCrawlRequestTTL(final long crawlRequestTTL) {
+		rc.crawlRequestTTL = crawlRequestTTL;
+	}
+
+	@ManagedAttribute @Description("Time-to-live of a crawl request")
+	public long getCrawlRequestTTL() {
+		return rc.crawlRequestTTL;
 	}
 
 	@ManagedAttribute
