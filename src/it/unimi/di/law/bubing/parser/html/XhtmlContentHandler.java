@@ -18,7 +18,7 @@ import org.xml.sax.ContentHandler;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 
-import java.util.*;
+import java.util.Locale;
 
 import static net.htmlparser.jericho.HTMLElementName.*;
 

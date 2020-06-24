@@ -1,6 +1,5 @@
 package it.unimi.di.law.bubing.parser;
 
-import com.kohlschutter.boilerpipe.extractors.ArticleExtractor;
 import com.kohlschutter.boilerpipe.extractors.KeepEverythingExtractor;
 import it.unimi.di.law.bubing.parser.html.*;
 import it.unimi.di.law.bubing.util.BURL;
@@ -8,7 +7,9 @@ import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
 import net.htmlparser.jericho.HTMLElementName;
 import net.htmlparser.jericho.StreamedSource;
-import org.apache.http.*;
+import org.apache.http.Header;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +21,9 @@ import org.xml.sax.SAXException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 
 public final class XHTMLParser implements Parser<Void>

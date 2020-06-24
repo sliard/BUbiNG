@@ -1,5 +1,27 @@
 package it.unimi.di.law.bubing;
 
+import com.martiansoftware.jsap.*;
+import it.unimi.di.law.bubing.frontier.Frontier;
+import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
+import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.Link;
+import it.unimi.di.law.warc.filters.URIResponse;
+import it.unimi.di.law.warc.filters.parser.FilterParser;
+import it.unimi.di.law.warc.filters.parser.ParseException;
+import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.configuration.ConfigurationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.softee.management.annotation.Description;
+import org.softee.management.annotation.MBean;
+import org.softee.management.annotation.ManagedAttribute;
+import org.softee.management.annotation.ManagedOperation;
+import org.softee.management.exception.ManagementException;
+import org.softee.management.helper.MBeanRegistration;
+import org.xbill.DNS.Lookup;
+
+import javax.management.ObjectName;
+import javax.management.remote.JMXServiceURL;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -12,28 +34,6 @@ import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.concurrent.locks.Lock;
-
-import it.unimi.di.law.bubing.frontier.*;
-import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
-import it.unimi.di.law.bubing.util.FetchData;
-import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.commons.configuration.ConfigurationException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.softee.management.annotation.Description;
-import org.softee.management.annotation.MBean;
-import org.softee.management.annotation.ManagedAttribute;
-import org.softee.management.annotation.ManagedOperation;
-
-import com.martiansoftware.jsap.FlaggedOption;
-import com.martiansoftware.jsap.JSAP;
-import com.martiansoftware.jsap.JSAPResult;
-import com.martiansoftware.jsap.Parameter;
-import com.martiansoftware.jsap.SimpleJSAP;
-import com.martiansoftware.jsap.Switch;
-import com.martiansoftware.jsap.UnflaggedOption;
-
-
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -50,18 +50,6 @@ import com.martiansoftware.jsap.UnflaggedOption;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
-import it.unimi.di.law.bubing.util.Link;
-import it.unimi.di.law.warc.filters.URIResponse;
-import it.unimi.di.law.warc.filters.parser.FilterParser;
-import it.unimi.di.law.warc.filters.parser.ParseException;
-import org.softee.management.exception.ManagementException;
-import org.softee.management.helper.MBeanRegistration;
-import org.xbill.DNS.Lookup;
-
-import javax.management.ObjectName;
-import javax.management.remote.JMXServiceURL;
 
 //RELEASE-STATUS: DIST
 
@@ -412,16 +400,6 @@ public class Agent {
 	}
 
 	@ManagedAttribute
-	public void setMaxUrls(final long maxUrls) {
-		rc.maxUrls = maxUrls;
-	}
-
-	@ManagedAttribute @Description("Maximum number of URLs to crawl")
-	public long getMaxUrls() {
-		return rc.maxUrls;
-	}
-
-	@ManagedAttribute
 	public void setMaxInstantSchemeAuthorityPerIP(final int maxInstantSchemeAuthorityPerIP) {
 		rc.maxInstantSchemeAuthorityPerIP = maxInstantSchemeAuthorityPerIP;
 	}
@@ -533,16 +511,6 @@ public class Agent {
 	@ManagedAttribute @Description("Maximum size of the workbench in bytes")
 	public long getWorkbenchMaxByteSize() {
 		return rc.workbenchMaxByteSize;
-	}
-
-	@ManagedAttribute
-	public void setUrlCacheMaxByteSize(final long urlCacheSize) {
-		rc.urlCacheMaxByteSize = urlCacheSize;
-	}
-
-	@ManagedAttribute @Description("Size in bytes of the URL cache")
-	public long getUrlCacheMaxByteSize() {
-		return rc.urlCacheMaxByteSize;
 	}
 
 	/*Statistical Properties, as reported by StatsThread */
@@ -673,7 +641,7 @@ public class Agent {
 
 	@ManagedAttribute @Description("Number of ready URLs")
 	public long getReadyURLs() {
-		return frontier.quickReceivedCrawlRequests.size();
+		return frontier.receivedCrawlRequests.size();
 	}
 
 	@ManagedAttribute @Description("Number of FetchingThread waits")
@@ -884,8 +852,6 @@ public class Agent {
 
 		final SimpleJSAP jsap = new SimpleJSAP(Agent.class.getName(), "Starts a BUbiNG agent (note that you must enable JMX by means of the standard Java system properties).",
 				new Parameter[] {
-					new FlaggedOption("weight", JSAP.INTEGER_PARSER, "1", JSAP.NOT_REQUIRED, 'w', "weight", "The agent weight."),
-					new FlaggedOption("group", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.REQUIRED, 'g', "group", "The JGroups group identifier (must be the same for all cooperating agents)."),
 					new FlaggedOption("jmxHost", JSAP.STRING_PARSER, InetAddress.getLocalHost().getHostAddress(), JSAP.REQUIRED, 'h', "jmx-host", "The IP address (possibly specified by a host name) that will be used to expose the JMX RMI connector to other agents."),
 					new FlaggedOption("rootDir", JSAP.STRING_PARSER, JSAP.NO_DEFAULT, JSAP.NOT_REQUIRED, 'r', "root-dir", "The root directory."),
 					new Switch("new", 'n', "new", "Start a new crawl"),
@@ -907,17 +873,13 @@ public class Agent {
 		if (portProperty == null) throw new IllegalArgumentException("You must specify a JMX service port using the property " + JMX_REMOTE_PORT_SYSTEM_PROPERTY);
 
 		final String name = jsapResult.getString("name");
-		final int weight = jsapResult.getInt("weight");
 		final int id = jsapResult.getInt("id");
-		final String group = jsapResult.getString("group");
 		final String host = jsapResult.getString("jmxHost");
 		final int port = Integer.parseInt(portProperty);
 
 		final BaseConfiguration additional = new BaseConfiguration();
 		additional.addProperty("name", name);
-		additional.addProperty("group", group);
 		additional.addProperty("pulsarFrontierNodeId", Integer.toString(id));
-		additional.addProperty("weight", Integer.toString(weight));
 		additional.addProperty("crawlIsNew", jsapResult.getBoolean("new"));
 		additional.addProperty("priorityCrawl", jsapResult.getBoolean("priority"));
 		if (jsapResult.userSpecified("rootDir")) additional.addProperty("rootDir", jsapResult.getString("rootDir"));

@@ -16,6 +16,10 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import org.apache.http.conn.DnsResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
@@ -24,10 +28,6 @@ import java.util.concurrent.DelayQueue;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
-import org.apache.http.conn.DnsResolver;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 //RELEASE-STATUS: DIST
 

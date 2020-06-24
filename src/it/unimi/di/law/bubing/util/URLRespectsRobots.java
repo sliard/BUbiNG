@@ -1,27 +1,15 @@
 package it.unimi.di.law.bubing.util;
 
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.io.StreamTokenizer;
-import java.net.URI;
-import java.nio.CharBuffer;
-import java.util.Arrays;
-import java.util.Set;
-
-import org.apache.commons.io.input.BOMInputStream;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.mutable.MutableInt;
+import crawlercommons.robots.SimpleRobotRules;
+import crawlercommons.robots.SimpleRobotRulesParser;
+import it.unimi.di.law.warc.filters.URIResponse;
 import org.apache.http.Header;
 import org.apache.http.HttpHeaders;
-import org.apache.http.HttpHost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Charsets;
-
-import crawlercommons.robots.*;
+import java.io.IOException;
+import java.net.URI;
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -38,8 +26,6 @@ import crawlercommons.robots.*;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import it.unimi.di.law.warc.filters.URIResponse;
 
 //RELEASE-STATUS: DIST
 
