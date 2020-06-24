@@ -1,26 +1,20 @@
 package it.unimi.di.law.bubing.frontier;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.net.URI;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLContext;
-
 import com.exensa.util.compression.HuffmanModel;
-import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.UnexpectedException;
 import com.exensa.wdl.protobuf.ProtoHelper;
 import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
-import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.protobuf.InvalidProtocolBufferException;
-import crawlercommons.robots.SimpleRobotRules;
+import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
+import it.unimi.di.law.bubing.util.BURL;
+import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.URLRespectsRobots;
+import it.unimi.dsi.bits.Fast;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
@@ -45,6 +39,16 @@ import org.apache.http.ssl.TrustStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLContext;
+import java.io.Closeable;
+import java.io.IOException;
+import java.net.URI;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
@@ -60,13 +64,6 @@ import org.slf4j.LoggerFactory;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.bubing.util.URLRespectsRobots;
-import it.unimi.dsi.bits.Fast;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 //RELEASE-STATUS: DIST
 
@@ -429,8 +426,8 @@ public final class FetchingThread extends Thread implements Closeable {
       .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
       .setFetchTimeMinutes( (int)(fetchData.startTime / ( 60*1000)) );
 
-    if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception))
-      fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(fetchData.exception));
+    if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception.getClass()))
+      fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(fetchData.exception.getClass()));
     else
       fetchInfoBuilder.setFetchStatusValue(EnumFetchStatus.Enum.UNKNOWN_FAILURE_VALUE);
     return fetchInfoBuilder.build();
@@ -443,9 +440,7 @@ public final class FetchingThread extends Thread implements Closeable {
     // This is always the same, independently of what will happen.
     final int entrySize = visitState.workbenchEntry.size();
     long ipDelay = rc.ipDelay;
-    final int knownCount = frontier.agent.getKnownCount();
-    if (knownCount > 1 && rc.ipDelayFactor != 0)
-      ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
+
     visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay + visitState.workbenchEntry.delay);
 
     if ( !checkFetchDataException() )

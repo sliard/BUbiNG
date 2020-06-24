@@ -16,40 +16,23 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.hadoop.compression.fourmc.ZstdCodec;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.categories.TextClassifier;
 import it.unimi.di.law.bubing.frontier.comm.FetchInfoSendThread;
 import it.unimi.di.law.bubing.frontier.comm.PulsarManager;
 import it.unimi.di.law.bubing.util.*;
 import it.unimi.di.law.warc.io.UncompressedWarcWriter;
 import it.unimi.di.law.warc.io.WarcWriter;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import it.unimi.dsi.fastutil.io.FastBufferedInputStream;
 import it.unimi.dsi.fastutil.io.FastBufferedOutputStream;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import it.unimi.dsi.jai4j.Job;
-import it.unimi.dsi.jai4j.JobManager;
 import it.unimi.dsi.stat.SummaryStats;
 import it.unimi.dsi.sux4j.mph.AbstractHashFunction;
-import it.unimi.dsi.util.Properties;
-
-import java.io.*;
-import java.lang.reflect.InvocationTargetException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicLongArray;
-
 import net.htmlparser.jericho.Config;
 import net.htmlparser.jericho.LoggerProvider;
-
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.compress.CompressionCodec;
@@ -61,8 +44,19 @@ import org.slf4j.LoggerFactory;
 import org.xbill.DNS.DClass;
 import org.xbill.DNS.Lookup;
 
-import com.exensa.wdl.protobuf.crawler.MsgCrawler;
-import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import java.io.*;
+import java.lang.reflect.InvocationTargetException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.DelayQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 //RELEASE-STATUS: DIST
 
@@ -81,13 +75,11 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  *
  * <h2>How the frontier handles URLs</h2>
  *
- * <p>URLs in BUbiNG belong to one of four states:
+ * <p>URLs in BUbiNG belong to one of two states:
  *
  * <ul>
  *
- * <li><em>ready</em>: the URL has come out of the sieve, so it will be visited at some point in the
- * future unless some limiting parameters (e.g.,
- * {@link RuntimeConfiguration#maxUrlsPerSchemeAuthority}) forbid it;
+ * <li><em>received</em>: the URL has come from the ouside frontier
  *
  * <li><em>visited</em>: the URL became ready and was somehow handled (e.g., fetched and possibly
  * stored).
@@ -97,7 +89,7 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  * <p>Note that waiting URLs that happen to be ready or visited will never come out of the sieve: it
  * is the logic of the sieve itself that inhibits the same object to be emitted twice.
  *
- * <p>All ready URLs are initially stored in a {@link ByteArrayDiskQueue} called {@link #quickReceivedCrawlRequests},
+ * <p>All ready URLs are initially stored in a {@link ByteArrayDiskQueue} called {@link #receivedCrawlRequests},
  * from which they are moved to the FIFO queue of their {@link VisitState} by the
  * {@link Distributor}. Inside a {@link VisitState}, we only store a byte-array represention of the
  * path+query of ready URLs. Some of them may be stored outside of the visit state, through
@@ -108,9 +100,8 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  * <h2>The lifecycle of a URL</h2>
  *
  * <p>URLs are {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued to the frontier} either because
- * they are part of the visit seed, or because a {@link ParsingThread} has found them, or because
- * they have been {@linkplain JobManager#submit(Job) submitted using JAI4J} (this includes both
- * manual submission and URLs sent by other agents). The method {@link #enqueue(com.exensa.wdl.protobuf.crawler.MsgCrawler.FetchInfo)} will
+ * they are part of the visit seed, or because a {@link ParsingThread} has found them.
+ * The method {@link #enqueue(com.exensa.wdl.protobuf.crawler.MsgCrawler.FetchInfo)} will
  * first check whether we have stored already too many URLs for the URL scheme+authority, in which
  * case the URL is discarded; then, it will check whether the URL already appears in the URL cache
  * (also in this case, the URL is discarded); finally it will check whether there is another agent
@@ -123,7 +114,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 public class Frontier {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Frontier.class);
 
-	/** Names of the scalar fields saved by {@link #snap()}. */
 	public static enum PropertyKeys {
 		PATHQUERIESINQUEUES,
 		WEIGHTOFPATHQUERIESINQUEUES,
@@ -178,9 +168,6 @@ public class Frontier {
 	 * <code>robots.txt</code> files. */
 	private static final String ROBOTS_STORE = "robots.warc.gz";
 
-	/** The minimum number of milliseconds between two flushes. */
-	public static final long MIN_FLUSH_INTERVAL = 10000;
-
 	/** The increase of the front size used by {@link #updateRequestedFrontSize()}. */
 	private static final long FRONT_INCREASE = 250;
 
@@ -216,14 +203,11 @@ public class Frontier {
 	/** The manager for pulsar consumers and producers */
 	public final PulsarManager pulsarManager;
 
-	/** An array of queues to quickly buffer discovered URLs that will have to be filtered and either dispatch or enqueued locally. */
-	//public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToQueueURLLists[];
-
 	/** A queue to quickly buffer Outgoing Discovered URLs that will be submitted to pulsar. */
-	public final ArrayBlockingQueue<MsgCrawler.FetchInfo> quickToSendDiscoveredURLs;
+	public final ArrayBlockingQueue<MsgCrawler.FetchInfo> fetchInfoSendQueue;
 
 	/** A queue to quickly buffer URLs to be crawled. */
-	public final ArrayBlockingQueue<MsgFrontier.CrawlRequest> quickReceivedCrawlRequests;
+	public final ArrayBlockingQueue<MsgFrontier.CrawlRequest> receivedCrawlRequests;
 
 	/** The parsing threads. */
 	public final ObjectArrayList<ParsingThread> parsingThreads;
@@ -257,9 +241,6 @@ public class Frontier {
 	public final AtomicLong numberOfReceivedURLs;
 	public final AtomicLong numberOfSentURLs;
 
-	/** The time at which the next flush can happen. */
-	protected volatile long nextFlush;
-
 	/** The workbench. */
 	public final Workbench workbench;
 
@@ -280,10 +261,6 @@ public class Frontier {
 
 	/** The thread constantly moving ready URLs into the {@linkplain #workbench}. */
 	protected final Distributor distributor;
-
-	/** The URL cache. This cache stores the most recent URLs that have been
-	 * {@linkplain Frontier#enqueue(MsgCrawler.FetchInfo) enqueued}. */
-	//public final FastApproximateByteArrayCache urlCache; // FIXME: seive ?
 
 	/** The workbench virtualizer used by this frontier. */
 	protected final WorkbenchVirtualizer virtualizer;
@@ -402,9 +379,6 @@ public class Frontier {
 	/** The default configuration for a <code>robots.txt</code> request. */
 	public RequestConfig robotsRequestConfig;
 
-	/** The global instance for the text classifier */
-	public final TextClassifier textClassifier;
-
 	private void setNoRedirectRequest() {
 		noRedirectRequestConfig = RequestConfig.custom()
 			.setSocketTimeout(rc.socketTimeout)
@@ -492,8 +466,6 @@ public class Frontier {
 			}
 		};
 
-		this.textClassifier = rc.classifierClass.getConstructor(RuntimeConfiguration.class).newInstance(rc);
-
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();
 		this.virtualizer = new WorkbenchVirtualizer(this);
@@ -548,10 +520,10 @@ public class Frontier {
 		setDefaultRequest();
 		setRobotsRequest();
 		setNoRedirectRequest();
-		quickToSendDiscoveredURLs = new ArrayBlockingQueue<>(  512);
-		quickReceivedCrawlRequests = new ArrayBlockingQueue<>( 4 * 1024);
+		fetchInfoSendQueue = new ArrayBlockingQueue<>(  512);
+		receivedCrawlRequests = new ArrayBlockingQueue<>( 4 * 1024);
 
-		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, quickToSendDiscoveredURLs );
+		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, fetchInfoSendQueue);
 		dnsThreads = new ObjectArrayList<>();
 		fetchingThreads = new ObjectArrayList<>();
 		parsingThreads = new ObjectArrayList<>();
@@ -571,9 +543,6 @@ public class Frontier {
 	public void init() throws IOException, IllegalArgumentException, ConfigurationException, ClassNotFoundException, InterruptedException {
 		if (rc.crawlIsNew) {
 			distributor.statsThread.start(0);
-		}
-		else {
-			restore();
 		}
 
 		// Never start child threads before every data structure is created or restored
@@ -677,42 +646,15 @@ public class Frontier {
 		return parsingThreads.size();
 	}
 
-	/** Enqueues a URL to the the BUbiNG crawl.
+	/** Enqueues a fetchInfo to be sent to the external Frontier.
 	 *
-	 * <ul>
-	 *
-	 * <li>if there are too many URLs for the URL scheme+authority, we discard the URL;
-	 *
-	 * <li>if the URL appears in the URL cache, we discard it; otherwise, we add it to the cache;
-	 *
-	 * <li>if another agent is responsible for the URL, we
-	 * {@linkplain JobManager#submit(it.unimi.dsi.jai4j.Job) submit} it to the agent.
-	 *
-	 * </ul>
 	 *
 	 * @param fetchInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
 	public void enqueue( final MsgCrawler.FetchInfo fetchInfo ) {
-		if ( quickToSendDiscoveredURLs.remainingCapacity() == 0 )
+		if ( fetchInfoSendQueue.remainingCapacity() == 0 )
 			LOGGER.warn( "quickToSendDiscoveredURLs is full" );
-		quickToSendDiscoveredURLs.offer( fetchInfo );
+		fetchInfoSendQueue.offer( fetchInfo );
 	}
-
-	/*
-	public void enqueue(final MsgCrawler.FetchInfo crawledPageInfo)  {
-
-		try {
-			if (LOGGER.isTraceEnabled()) LOGGER.trace("Sending out {}",
-					crawledPageInfo.toString());
-			quickToSendDiscoveredURLs.offer(crawledPageInfo);
-		}
-		catch (IllegalStateException e) {
-			// This just shouldn't happen.
-			LOGGER.warn("Impossible to submit URL " + crawledPageInfo.toString(), e);
-		}
-
-		return;
-	}
-	*/
 
 	/** Returns whether the workbench is full.
 	 *
@@ -897,204 +839,6 @@ public class Frontier {
 		//fetchingThreadWaits.set(0);
 		//fetchingThreadWaitingTimeSum.set(0);
 	}
-
-	/** Snaps fields to files in the given directory. Fields that are of scalar are written into a
-	 * single file named <code>frontier.data</code>. Other fields are written each in a file of its
-	 * own, named with the name of the field. */
-	public void snap() throws ConfigurationException, IllegalArgumentException, IOException {
-
-		// Purge ROBOTS_PATH path+queries and set a fake last robots fetch so that ROBOTS_PATH will
-		// be put back immediately after restart.
-		for (VisitState visitState : distributor.schemeAuthority2VisitState.visitStates())
-			if (visitState != null) visitState.removeRobots();
-
-		LOGGER.info("Final statistics");
-		distributor.statsThread.emit();
-		distributor.statsThread.run();
-
-		final File snapDir = new File(rc.frontierDir, "snap");
-		LOGGER.info("Started snapping to " + snapDir);
-		if (snapDir.exists()) LOGGER.warn("Already existing snap directory " + snapDir + ": data will be overwritten (this shouldn't happen)");
-		else if (!snapDir.mkdir()) {
-			LOGGER.error("Could not create snap directory " + snapDir + ": will not produce snap");
-			return;
-		}
-
-		LOGGER.info("Snapping scalar data");
-		Properties scalarData = new Properties();
-		final long epoch = System.currentTimeMillis();
-		scalarData.addProperty(PropertyKeys.EPOCH, epoch);
-		// TODO: make this locale-independent
-		scalarData.setHeader("Snap started at " + new Date());
-
-		// Scalar properties
-		scalarData.addProperty(PropertyKeys.PATHQUERIESINQUEUES, pathQueriesInQueues.get());
-		scalarData.addProperty(PropertyKeys.WEIGHTOFPATHQUERIESINQUEUES, weightOfpathQueriesInQueues.get());
-		scalarData.addProperty(PropertyKeys.BROKENVISITSTATES, brokenVisitStates.get());
-		scalarData.addProperty(PropertyKeys.NUMBEROFRECEIVEDURLS, numberOfReceivedURLs.get());
-		scalarData.addProperty(PropertyKeys.REQUIREDFRONTSIZE, requiredFrontSize.get());
-		scalarData.addProperty(PropertyKeys.FETCHINGTHREADWAITS, fetchingThreadWaits.get());
-		scalarData.addProperty(PropertyKeys.FETCHINGTHREADWAITINGTIMESUM, fetchingThreadWaitingTimeSum.get());
-		scalarData.addProperty(PropertyKeys.ARCHETYPESOTHERS, archetypesStatus[0].get());
-		scalarData.addProperty(PropertyKeys.ARCHETYPES1XX, archetypesStatus[1].get());
-		scalarData.addProperty(PropertyKeys.ARCHETYPES2XX, archetypesStatus[2].get());
-		scalarData.addProperty(PropertyKeys.ARCHETYPES3XX, archetypesStatus[3].get());
-		scalarData.addProperty(PropertyKeys.ARCHETYPES4XX, archetypesStatus[4].get());
-		scalarData.addProperty(PropertyKeys.ARCHETYPES5XX, archetypesStatus[5].get());
-		scalarData.addProperty(PropertyKeys.DUPLICATES, duplicates.get());
-		scalarData.addProperty(PropertyKeys.FETCHEDRESOURCES, fetchedResources.get());
-		scalarData.addProperty(PropertyKeys.FETCHEDROBOTS, fetchedRobots.get());
-		scalarData.addProperty(PropertyKeys.TRANSFERREDBYTES, transferredBytes.get());
-		scalarData.addProperty(PropertyKeys.AVERAGESPEED, averageSpeed);
-		// scalarData.addProperty(PropertyKeys.DISTRIBUTORWARMUP, distributor.warmup);
-		scalarData.addProperty(PropertyKeys.CRAWLDURATION, distributor.statsThread.requestLogger.millis());
-
-		scalarData.addProperty(PropertyKeys.VISITSTATESETSIZE, distributor.schemeAuthority2VisitState.size());
-		scalarData.addProperty(PropertyKeys.WORKBENCHENTRYSETSIZE, workbench.numberOfWorkbenchEntries());
-
-
-		LOGGER.info("Storing virtualizer states");
-		virtualizer.close();
-
-		// readyURLs and receivedURLs
-		LOGGER.info("Freezing byte disk queues");
-
-		scalarData.save(new File(snapDir, "frontier.data"));
-
-		LOGGER.info("Storing visit states");
-		final ObjectOutputStream workbenchStream = new ObjectOutputStream(new FastBufferedOutputStream(new FileOutputStream(new File(snapDir, "workbench"))));
-
-		long c = 0;
-		for (VisitState visitState : distributor.schemeAuthority2VisitState.visitStates())
-			if (visitState != null) {
-				if (visitState.acquired) LOGGER.error("Acquired visit state: " + visitState);
-				c++;
-			}
-
-		workbenchStream.writeLong(c);
-
-		for (VisitState visitState : distributor.schemeAuthority2VisitState.visitStates())
-			if (visitState != null) {
-				workbenchStream.writeObject(visitState);
-				workbenchStream.writeBoolean(visitState.workbenchEntry != null);
-				if (visitState.workbenchEntry != null) Util.writeByteArray(visitState.workbenchEntry.ipAddress, workbenchStream);
-			}
-
-		workbenchStream.close();
-	}
-
-	/** Restores data from the given directory.
-         * @see #snap() */
-	@SuppressWarnings("unchecked")
-	public void restore() throws ConfigurationException, IllegalArgumentException, IOException, ClassNotFoundException {
-		File snapDir = new File(rc.frontierDir, "snap");
-		if (!snapDir.exists() || !snapDir.isDirectory()) {
-			LOGGER.error("Trying to restore state from snap directory " + snapDir + ", but it does not exist or is not a directory");
-			return;
-		}
-
-		LOGGER.info("Restoring data from " + snapDir);
-
-		LOGGER.info("Restoring scalar data");
-		Properties scalarData = new Properties(new File(snapDir, "frontier.data"));
-		final long epoch = scalarData.getLong(PropertyKeys.EPOCH);
-
-		// Scalar properties
-		transferredBytes.set(scalarData.getLong(PropertyKeys.TRANSFERREDBYTES));
-		pathQueriesInQueues.set(scalarData.getLong(PropertyKeys.PATHQUERIESINQUEUES));
-		weightOfpathQueriesInQueues.set(scalarData.getLong(PropertyKeys.WEIGHTOFPATHQUERIESINQUEUES));
-		brokenVisitStates.set(scalarData.getLong(PropertyKeys.BROKENVISITSTATES));
-		numberOfReceivedURLs.set(scalarData.getLong(PropertyKeys.NUMBEROFRECEIVEDURLS));
-		requiredFrontSize.set(scalarData.getLong(PropertyKeys.REQUIREDFRONTSIZE));
-		fetchingThreadWaits.set(scalarData.getLong(PropertyKeys.FETCHINGTHREADWAITS));
-		fetchingThreadWaitingTimeSum.set(scalarData.getLong(PropertyKeys.FETCHINGTHREADWAITINGTIMESUM));
-		archetypesStatus[0].set(scalarData.getLong(PropertyKeys.ARCHETYPESOTHERS));
-		archetypesStatus[1].set(scalarData.getLong(PropertyKeys.ARCHETYPES1XX));
-		archetypesStatus[2].set(scalarData.getLong(PropertyKeys.ARCHETYPES2XX));
-		archetypesStatus[3].set(scalarData.getLong(PropertyKeys.ARCHETYPES3XX));
-		archetypesStatus[4].set(scalarData.getLong(PropertyKeys.ARCHETYPES4XX));
-		archetypesStatus[5].set(scalarData.getLong(PropertyKeys.ARCHETYPES5XX));
-		duplicates.set(scalarData.getLong(PropertyKeys.DUPLICATES));
-		fetchedResources.set(scalarData.getLong(PropertyKeys.FETCHEDRESOURCES));
-		fetchedRobots.set(scalarData.getLong(PropertyKeys.FETCHEDROBOTS));
-		transferredBytes.set(scalarData.getLong(PropertyKeys.TRANSFERREDBYTES));
-		averageSpeed = scalarData.getDouble(PropertyKeys.AVERAGESPEED);
-		// distributor.warmup = scalarData.getBoolean(PropertyKeys.DISTRIBUTORWARMUP);
-
-		distributor.schemeAuthority2VisitState.ensureCapacity(scalarData.getInt(PropertyKeys.VISITSTATESETSIZE));
-		workbench.address2WorkbenchEntry.ensureCapacity(scalarData.getInt(PropertyKeys.WORKBENCHENTRYSETSIZE));
-
-		/* LOGGER.info("Restoring virtualizer states and defreezing virtual queues");
-		 * virtualizer.currentQueue = scalarData.getInt(PropertyKeys.CURRENTQUEUE); String[]
-		 * virtualQueueSizes = scalarData.getStringArray(PropertyKeys.VIRTUALQUEUESIZES); final
-		 * int numVirtualQueues = virtualQueueSizes.length; virtualizer.virtualQueue = new
-		 * ByteArrayDiskQueue[numVirtualQueues]; virtualizer.virtualQueuesBirthTime =
-		 * scalarData.getLong(PropertyKeys.VIRTUALQUEUESBIRTHTIME); for(int i = 0; i <
-		 * numVirtualQueues; i++) { long virtualQueueSize = Long.parseLong(virtualQueueSizes[i]
-		 *); virtualizer.virtualQueue[i] = virtualQueueSize == -1? null :
-		 * WorkbenchVirtualizer.createOrOpenQueue(this, virtualizer.virtualQueuesBirthTime, i,
-		 * numVirtualQueues, false, virtualQueueSize); } */
-
-		LOGGER.info("Restoring workbench");
-		final ObjectInputStream workbenchStream = new ObjectInputStream(new FastBufferedInputStream(new FileInputStream(new File(snapDir, "workbench"))));
-
-		final long workbenchSize = workbenchStream.readLong();
-		long w = workbenchSize;
-		try {
-			ThreadLocalRandom tlrng = ThreadLocalRandom.current();
-			while(w-- != 0) {
-				final VisitState visitState = (VisitState)workbenchStream.readObject();
-				distributor.schemeAuthority2VisitState.add(visitState);
-				final boolean nonNullWorkbenchEntry = workbenchStream.readBoolean();
-				if (visitState.lastRobotsFetch == Long.MAX_VALUE) visitState.forciblyEnqueueRobotsFirst();
-
-				if (nonNullWorkbenchEntry) {
-					WorkbenchEntry entry = null;
-					byte[] address = Util.readByteArray(workbenchStream);
-					int overflowCounter = 0;
-					long maxDelay = 0;
-					do {
-						entry = workbench.getWorkbenchEntry(address, overflowCounter);
-						if (entry.size() > 0)
-							maxDelay = Math.max(maxDelay, entry.delay);
-						overflowCounter++;
-					} while (entry.size() >= rc.maxInstantSchemeAuthorityPerIP * overflowCounter);
-					entry.delay = maxDelay;
-					if (entry.size() == 0) // it's a new one
-						entry.delay = maxDelay + overflowCounter;
-					visitState.setWorkbenchEntry(entry);
-				}
-				else
-					newVisitStates.add(visitState);
-
-				if (visitState.isEmpty() && virtualizer.count(visitState) > 0) {
-					LOGGER.error("Empty visit state, URLs on disk: " + visitState);
-					refill.add(visitState);
-				}
-			}
-		}
-		catch(EOFException e) {
-			LOGGER.error("Workbench stream too short: " + w + " visit states missing out of " + workbenchSize);
-		}
-		workbenchStream.close();
-
-		virtualizer.readMetadata();
-
-		// readyURLs and receivedURLs
-		LOGGER.info("Defreezing byte disk queues");
-
-		// Move away snap directory, as its contents will become unsynchronized with queue data.
-		final File renameDir = new File(snapDir + "-" + epoch);
-		LOGGER.info("Renaming snap directory " + snapDir + " to " + renameDir);
-		if (!snapDir.renameTo(renameDir)) LOGGER.error("Could not rename snap directory");
-
-		// Starting stats
-		distributor.statsThread.start(scalarData.getLong(PropertyKeys.CRAWLDURATION));
-		LOGGER.info("Starting statistics");
-		distributor.statsThread.emit();
-		distributor.statsThread.run();
-	}
-
 	/** Returns the {@link StatsThread}.
 	 *
 	 * @return the stats thread. */

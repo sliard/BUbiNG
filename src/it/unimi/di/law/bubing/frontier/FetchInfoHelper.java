@@ -1,6 +1,5 @@
 package it.unimi.di.law.bubing.frontier;
 
-import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.UnexpectedException;
 import com.exensa.wdl.protobuf.ProtoHelper;
@@ -10,13 +9,8 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
-import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
-import it.unimi.di.law.bubing.util.BURL;
-import mx4j.log.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.net.URI;
 
 public class FetchInfoHelper {
   private final static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(FetchInfoHelper.class);

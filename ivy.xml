@@ -61,7 +61,6 @@
 		<dependency org="net.java.dev.jna" name="jna" rev="4.1.0"/>
 
 		<dependency org="org.softee" name="pojo-mbean" rev="latest.release"/>
-		<!-- <dependency org="org.jgroups" name="jgroups" rev="latest.release"/> -->
 		<dependency org="com.google.guava" name="guava" rev="latest.release"/>
 
 		<dependency org="net.java.dev.javacc" name="javacc" rev="5.0" conf="compile"/>

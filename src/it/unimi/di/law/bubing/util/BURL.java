@@ -16,8 +16,13 @@ package it.unimi.di.law.bubing.util;
  * limitations under the License.
  */
 
+import com.google.common.base.Charsets;
+import com.google.common.primitives.Bytes;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.lang.MutableString;
+import org.apache.commons.lang.ArrayUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -25,13 +30,6 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.util.Arrays;
-
-import org.apache.commons.lang.ArrayUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.google.common.base.Charsets;
-import com.google.common.primitives.Bytes;
 
 // RELEASE-STATUS: DIST
 

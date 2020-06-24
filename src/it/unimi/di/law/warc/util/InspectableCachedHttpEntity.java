@@ -20,15 +20,14 @@ package it.unimi.di.law.warc.util;
 
 import it.unimi.di.law.bubing.util.TooSlowException;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-
 import org.apache.commons.lang.mutable.MutableLong;
 import org.apache.http.HttpEntity;
 import org.apache.http.entity.BasicHttpEntity;
 import org.apache.http.entity.HttpEntityWrapper;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 
 /** An implementation of a {@link HttpEntity} that is reusable and can copy its content from another entity at a controlled rate.
  *

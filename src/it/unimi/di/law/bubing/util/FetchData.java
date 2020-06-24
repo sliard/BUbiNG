@@ -16,6 +16,9 @@ package it.unimi.di.law.bubing.util;
  * limitations under the License.
  */
 
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import com.google.common.base.Charsets;
+import com.google.common.net.HttpHeaders;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.ParsingThread;
 import it.unimi.di.law.bubing.frontier.VisitState;
@@ -25,29 +28,9 @@ import it.unimi.di.law.bubing.test.RandomNamedGraphServer;
 import it.unimi.di.law.warc.filters.URIResponse;
 import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
 import it.unimi.dsi.fastutil.io.InspectableFileCachedInputStream;
-import com.exensa.wdl.protobuf.frontier.MsgFrontier;
-
-import java.io.Closeable;
-import java.io.File;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.URI;
-import java.nio.channels.ClosedChannelException;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.stream.Collectors;
-
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.mutable.MutableLong;
-import org.apache.http.Header;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpHost;
-import org.apache.http.HttpResponse;
-import org.apache.http.ProtocolVersion;
+import org.apache.http.*;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.ResponseHandler;
@@ -61,8 +44,22 @@ import org.apache.http.message.BasicHttpResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Charsets;
-import com.google.common.net.HttpHeaders;
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.URI;
+import java.nio.channels.ClosedChannelException;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Queue;
+import java.util.stream.Collectors;
 
 //RELEASE-STATUS: DIST
 
