@@ -239,7 +239,7 @@ public final class FetchingThread extends Thread implements Closeable {
 
     BasicHeader[] headers = {
         new BasicHeader("From", frontier.rc.userAgentFrom),
-        new BasicHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.95,text/*;q=0.9,*/*;q=0.8"),
+        new BasicHeader("Accept", "text/html;q=0.95,text/*;q=0.9,*/*;q=0.8"),
         new BasicHeader("Accept-Language", "*"),
         new BasicHeader("Accept-Charset", "*")
     };
@@ -542,6 +542,45 @@ public final class FetchingThread extends Thread implements Closeable {
     return fetchData;
   }
 
+  /**
+   * Check whether two URIs are equivalent. For instance http://example.com/p?PHPSESSID=SDFSFZ4352356 is equivalent to http://example.com/p
+   * @param a first URI
+   * @param b second URI
+   * @return
+   */
+  private boolean _isEquivalentURI(URI a, URI b) {
+    if ((a.getScheme() == null || b.getScheme() == null) && a.getScheme() != b.getScheme())
+      return false;
+    if (!a.getScheme().equals(b.getScheme()))
+      return false;
+    if ((a.getAuthority() == null || b.getAuthority() == null) && a.getAuthority() != b.getAuthority())
+      return false;
+    if (!a.getAuthority().equals(b.getAuthority()))
+      return false;
+    if (!a.getHost().equals(b.getHost()))
+      return false;
+    if ((a.getPath() == null || b.getPath() == null) && a.getPath() != b.getPath())
+      return false;
+      if (!a.getPath().equals(b.getPath()))
+      return false;
+    if (a.getQuery() == null || b.getQuery() == null)
+      return a.getQuery() == b.getQuery();
+    return (BURL.normalizeQuery(a.getQuery()).equals(BURL.normalizeQuery(b.getQuery())));
+  }
+
+  private boolean isEquivalentURI(URI a, URI b) {
+    if((a.toString().equals(b.toString()))) {
+      if (LOGGER.isTraceEnabled())
+        LOGGER.trace("IsSame : {}, {}", a.toString(), b.toString());
+      return true;
+    }
+
+    boolean isEquivalent = _isEquivalentURI(a,b);
+    if (LOGGER.isTraceEnabled() && isEquivalent)
+      LOGGER.trace("IsEquivalent : {}, {}", a.toString(), b.toString());
+    return isEquivalent;
+  }
+
   private boolean tryFetch( final VisitState visitState, final MsgFrontier.CrawlRequest.Builder crawlRequest, final URI url, final boolean robots ) {
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Processing {}",url);
 
@@ -575,7 +614,7 @@ public final class FetchingThread extends Thread implements Closeable {
           return false;
         }
         // Special case redirected to another url
-        if (attempt == 1 && fetchData.hasRedirects() &&  !fetchData.getTerminalURI().equals(fetchData.uri())) {
+        if (attempt == 1 && fetchData.hasRedirects() &&  !isEquivalentURI(fetchData.getTerminalURI(),fetchData.uri())) {
           LOGGER.debug("Redirecting {} to ({}) : retrying without redirection to get first hop", url.toString(), fetchData.getTerminalURI());
           finished = false;
           continue; // retry with cookies
