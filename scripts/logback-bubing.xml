@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true">
   <appender name="all" class="ch.qos.logback.core.rolling.RollingFileAppender">
-	  <file>${BUBING_LOG_DIR}/bubing.${jgroups.bind_addr}.log</file>
+	  <file>${BUBING_LOG_DIR}/bubing.log</file>
     <encoder>
 	    <pattern>%highlight(%.-3p)|%date{dd/HHmmss.SSS} %cyan(%logger{1})@%red(%.16t) %m%n</pattern>
     </encoder>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
       <maxHistory>10</maxHistory>
-      <FileNamePattern>${BUBING_LOG_DIR}/bubing.${jgroups.bind_addr}.%d{yyyy-MM-dd_HH}.log.gz</FileNamePattern>
+      <FileNamePattern>${BUBING_LOG_DIR}/bubing.%d{yyyy-MM-dd_HH}.log.gz</FileNamePattern>
     </rollingPolicy>
   </appender>
   <appender name="warn" class="ch.qos.logback.core.rolling.RollingFileAppender">
-	  <file>${BUBING_LOG_DIR}/bubing.${jgroups.bind_addr}.warn</file>
+	  <file>${BUBING_LOG_DIR}/bubing.warn</file>
     <encoder>
 	    <pattern>%highlight(%.-3p)|%date{dd/HHmmss.SSS} %cyan(%logger{1})@%red(%.16t) %m%n</pattern>
     </encoder>
@@ -20,11 +20,11 @@
     </filter>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
       <maxHistory>10</maxHistory>
-      <FileNamePattern>${BUBING_LOG_DIR}/bubing.${jgroups.bind_addr}.%d.warn.gz</FileNamePattern>
+      <FileNamePattern>${BUBING_LOG_DIR}/bubing.%d.warn.gz</FileNamePattern>
     </rollingPolicy>
   </appender>
   <appender name="debug" class="ch.qos.logback.core.rolling.RollingFileAppender">
-	  <file>${BUBING_LOG_DIR}/bubing.${jgroups.bind_addr}.debug</file>
+	  <file>${BUBING_LOG_DIR}/bubing.debug</file>
     <encoder>
 	    <pattern>%highlight(%.-3p)|%date{dd/HHmmss.SSS} %cyan(%logger{1})@%red(%.16t) %m%n</pattern>
     </encoder>
@@ -33,7 +33,7 @@
     </filter>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
       <maxHistory>10</maxHistory>
-      <FileNamePattern>${BUBING_LOG_DIR}/bubing.${jgroups.bind_addr}.%d.debug.gz</FileNamePattern>
+      <FileNamePattern>${BUBING_LOG_DIR}/bubing.%d.debug.gz</FileNamePattern>
     </rollingPolicy>
   </appender>
 

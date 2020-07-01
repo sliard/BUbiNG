@@ -18,21 +18,15 @@ package it.unimi.di.law.bubing.frontier.comm;
 
 import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.protobuf.ProtoHelper;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.Frontier;
-import it.unimi.di.law.bubing.util.*;
-import org.apache.pulsar.client.api.*;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.MessageListener;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.exensa.wdl.protobuf.frontier.MsgFrontier;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 //RELEASE-STATUS: DIST
 
@@ -64,7 +58,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 			final MsgFrontier.CrawlRequest crawlRequest = MsgFrontier.CrawlRequest.parseFrom( message.getData() );
 			if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
 			if (!ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
-				frontier.quickReceivedCrawlRequests.put(crawlRequest); // Will block until not full
+				frontier.receivedCrawlRequests.put(crawlRequest); // Will block until not full
 				frontier.numberOfReceivedURLs.addAndGet(1);
 				messageCount++;
 			}

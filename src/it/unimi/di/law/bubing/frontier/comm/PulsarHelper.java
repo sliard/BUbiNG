@@ -1,11 +1,11 @@
 package it.unimi.di.law.bubing.frontier.comm;
 
 import com.exensa.util.compression.HuffmanModel;
-import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.EntityHelper;
+import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
-import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.url.EnumScheme;
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;

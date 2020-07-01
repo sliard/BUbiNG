@@ -1,8 +1,5 @@
 package it.unimi.di.law.bubing.util.detection;
 
-import java.net.URI;
-
-
 public class ETagInfo
 {
   public String httpHeaderETag = null;
