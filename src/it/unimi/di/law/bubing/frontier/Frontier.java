@@ -441,30 +441,33 @@ public class Frontier {
 		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
 
-		robotsWarcParallelOutputStream = new ThreadLocal<WarcWriter>() {
-			@Override
-			protected WarcWriter initialValue() {
-				final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID() + ".zstm");
-				LOGGER.trace("Opening file " + robotsFile + " to write robots.txt");
-				Configuration conf = new Configuration(true);
-				CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
-				String codecName = ZstdCodec.class.getName();
-				CompressionCodec codec = ccf.getCodecByClassName(codecName);
-				OutputStream warcOutputStream = null;
-				if ( codec == null )
-					LOGGER.error( "failed to load compression codec {}", codecName );
-				else {
-					try {
-						warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
-					} catch (IOException e) {
-						LOGGER.error("Unable to create file", e);
-						System.exit(1);
+		robotsWarcParallelOutputStream = null;
+		if (false) {
+			robotsWarcParallelOutputStream = new ThreadLocal<WarcWriter>() {
+				@Override
+				protected WarcWriter initialValue() {
+					final File robotsFile = new File(rc.storeDir, "robots-" + UUID.randomUUID() + ".zstm");
+					LOGGER.trace("Opening file " + robotsFile + " to write robots.txt");
+					Configuration conf = new Configuration(true);
+					CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
+					String codecName = ZstdCodec.class.getName();
+					CompressionCodec codec = ccf.getCodecByClassName(codecName);
+					OutputStream warcOutputStream = null;
+					if (codec == null)
+						LOGGER.error("failed to load compression codec {}", codecName);
+					else {
+						try {
+							warcOutputStream = new FastBufferedOutputStream(codec.createOutputStream(new FileOutputStream(robotsFile)), 1024 * 1024);
+						} catch (IOException e) {
+							LOGGER.error("Unable to create file", e);
+							System.exit(1);
+						}
 					}
+					WarcWriter warcWriter = new UncompressedWarcWriter(warcOutputStream);
+					return warcWriter;
 				}
-				WarcWriter warcWriter = new UncompressedWarcWriter(warcOutputStream);
-				return warcWriter;
-			}
-		};
+			};
+		}
 
 		this.workbench = new Workbench();
 		this.unknownHosts = new DelayQueue<>();

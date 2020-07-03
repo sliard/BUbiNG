@@ -330,7 +330,8 @@ public class ParsingThread extends Thread {
   private void close() {
     try {
       store.close();
-      frontier.robotsWarcParallelOutputStream.get().close();
+      if (frontier.robotsWarcParallelOutputStream != null)
+        frontier.robotsWarcParallelOutputStream.get().close();
     }
     catch ( IOException e ) {
       LOGGER.error( "Error while closing store", e );
@@ -344,7 +345,8 @@ public class ParsingThread extends Thread {
 
     if ( fetchData.robots ) {
       frontier.parsingRobotsCount.incrementAndGet();
-      frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+      if (frontier.robotsWarcParallelOutputStream != null)
+        frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
       if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgentId)) == null) {
         // We go on getting/creating a workbench entry only if we have robots permissions.
         visitState.schedulePurge();
