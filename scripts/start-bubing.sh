@@ -1,0 +1,58 @@
+#!/bin/bash
+
+if [ -z ${LOG_DIR} ]; then LOG_DIR=/data1/crawling/logs ; fi
+if [ -z ${DATA_DIR} ]; then DATA_DIR=/data1/crawling/data ; fi
+if [ -z ${XMS} ]; then XMS=16G ; fi
+if [ -z ${XMS} ]; then XMX=16G ; fi
+if [ -z ${PROPERTIES} ]; then PROPERTIES=./crawl.4cores.properties ; fi
+if [ -z ${JMXPORT} ]; then JMXPORT=9999 ; fi
+if [ -z ${PROMETHEUS_PORT} ]; then PROMETHEUS_PORT=8880 ; fi
+
+LOGBACK_CONFIG=./logback-bubing.xml
+
+AGENT_NAME=$(uname -n)
+IP=$(hostname -i | cut -d' ' -f 1)
+NODE_ID=$( hostname | sed -e 's/[^0-9]//g' )
+NODE_ID=$(( $NODE_ID - 1 ))
+echo "node id = $NODE_ID"
+
+[[ -n $PRIORITY ]] && {
+  KEEP_STORE=1
+  AGENT_NAME=${AGENT_NAME}-PRIORITY
+  XTRAOPT="-p -r ${DATA_DIR}"
+#  PROPERTIES=./crawl.priority.properties
+#  JMXPORT=9998
+#  PROMETHEUS_PORT=8881
+#  LOG_DIR=${ROOT_DIR}/logs-priority
+#  PID_FILE=./priority.bubing.pid
+#  DATA_DIR=${ROOT_DIR}/data-priority
+#  XMS=4G
+#  XMX=4G
+}
+
+# remove old crawling data
+[[ -z ${KEEP_STORE} ]] && rm -rf ${DATA_DIR}
+mkdir -p ${DATA_DIR}
+
+[[ -d ${LOG_DIR}/oldies ]] && rm -rf ${LOG_DIR}/oldies
+mkdir -p ${LOG_DIR}/oldies
+find ${LOG_DIR} -maxdepth 1 -name "bubing*" -exec mv {} ${LOG_DIR}/oldies/ \;
+
+[[ -f ${LOG_DIR}/console.log.err ]] && rm ${LOG_DIR}/console.log.err
+[[ -f ${LOG_DIR}/console.log.out ]] && rm ${LOG_DIR}/console.log.out
+
+java -server -cp jars/"*":dependencies/"*":extjars/"*":. \
+  -Xss256K -Xms${XMS} -Xmx${XMX} \
+  -Djava.rmi.server.hostname=127.0.0.1 \
+  -Djava.net.preferIPv4Stack=true \
+  -Djavax.net.ssl.sessionCacheSize=65536 \
+  -Dlogback.configurationFile=${LOGBACK_CONFIG} \
+  -Dcom.sun.management.jmxremote.host=127.0.0.1 \
+  -Dcom.sun.management.jmxremote.port=${JMXPORT} \
+  -Dcom.sun.management.jmxremote.ssl=false \
+  -Dcom.sun.management.jmxremote.authenticate=false \
+  -DBUBING_LOG_DIR=${LOG_DIR} \
+  -javaagent:./jmx_prometheus_javaagent-0.3.1.jar=${PROMETHEUS_PORT}:jmxexporter.yml \
+  it.unimi.di.law.bubing.Agent \
+  -h ${IP} -P ${PROPERTIES} -i ${NODE_ID} ${AGENT_NAME} -n $(echo ${XTRAOPT}) 2> ${LOG_DIR}/console.log.err > ${LOG_DIR}/console.log.out 
+

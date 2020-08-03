@@ -1,11 +1,11 @@
 package it.unimi.di.law.bubing.frontier.comm;
 
 import com.exensa.util.compression.HuffmanModel;
-import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.EntityHelper;
+import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
-import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.url.EnumScheme;
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -30,7 +30,7 @@ public class PulsarHelper
       }
     );
 
-  public static MsgURL.Key fromURI(final URI uri) {
+  public static MsgURL.Key fromURI(final URI uri) throws java.net.UnknownHostException {
     return Serializer.URL.Key.from(uri);
   }
 
@@ -50,10 +50,25 @@ public class PulsarHelper
     return getScheme(url.getScheme()) + "://" + url.getHost() + url.getPathQuery();
   }
 
-  public static byte[] keepZPathQuery(MsgFrontier.CrawlRequest crawlRequest) {
-    return  crawlRequest.getUrlKey().getZPathQuery().toByteArray();
+  /**
+   * Removes the scheme+authority part of a crawl request
+   * @param crawlRequest the original crawl request
+   * @return serialized stripped crawl request
+   */
+  public static byte[] toMinimalCrawlRequestSerialized(MsgFrontier.CrawlRequest crawlRequest) {
+    MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = crawlRequest.toBuilder();
+    MsgURL.Key.Builder urlKeyBuilder = crawlRequestBuilder.getUrlKeyBuilder();
+    urlKeyBuilder.clearScheme().clearZDomain().clearZHostPart();
+    crawlRequestBuilder.setUrlKey(urlKeyBuilder);
+    return  crawlRequestBuilder.build().toByteArray();
   }
 
+  public static MsgFrontier.CrawlRequest minimalCrawlRequestFromPathQuery(String pathQuery) {
+    MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = MsgFrontier.CrawlRequest.newBuilder();
+    MsgURL.Key.Builder urlKeyBuilder = MsgURL.Key.newBuilder();
+    urlKeyBuilder.setZPathQuery(ByteString.copyFrom(toZ(toASCII(pathQuery))));
+    return crawlRequestBuilder.setUrlKey(urlKeyBuilder).build();
+  }
   public static byte[] schemeAuthority( final MsgURL.KeyOrBuilder urlKey ) {
     return schemeAuthority( Serializer.URL.from(urlKey) );
   }
@@ -66,7 +81,7 @@ public class PulsarHelper
     return hostnameCache.getUnchecked(ByteString.copyFrom(schemeAuthority));
   }
 
-  public static MsgURL.Key.Builder _schemeAuthority(final byte[] schemeAuthority) {
+  public static MsgURL.Key.Builder _schemeAuthority(final byte[] schemeAuthority) throws java.net.UnknownHostException {
     final MsgURL.Key.Builder urlBuilder = MsgURL.Key.newBuilder();
 
     final String fullHost = BURL.hostFromSchemeAndAuthority(schemeAuthority);
