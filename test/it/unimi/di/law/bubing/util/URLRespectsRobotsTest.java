@@ -66,10 +66,10 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any", crawlDelay);
-		assertFalse(URLRespectsRobots.apply(filter, disallowedUri1));
-		assertFalse(URLRespectsRobots.apply(filter, disallowedUri2));
-		assertFalse(URLRespectsRobots.apply(filter, disallowedUri3));
+		var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any");
+		assertFalse(filter.isAllowed(disallowedUri1.toString()));
+		assertFalse(filter.isAllowed(disallowedUri2.toString()));
+		assertFalse(filter.isAllowed(disallowedUri3.toString()));
 		assertTrue(crawlDelay.intValue() == 0);
 	}
 
@@ -95,10 +95,10 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay), url));
-		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo", crawlDelay), url));
-		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy", crawlDelay), url));
-		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy foo", crawlDelay), url));
+		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy"), url));
+		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo"), url));
+		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy"), url));
+		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy foo"), url));
 	}
 
 	@Test
@@ -121,34 +121,12 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay), url));
-		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo", crawlDelay), url));
-		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy", crawlDelay), url));
-		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy foo", crawlDelay), url));
+		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy"), url));
+		assertTrue(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo"), url));
+		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy"), url));
+		assertFalse(URLRespectsRobots.apply(URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy foo"), url));
 	}
 
-	@Test
-	public void test4xxSync() throws Exception {
-		proxy = new SimpleFixedHttpProxy();
-		URI robotsURL = URI.create("http://foo.bor/robots.txt");
-		proxy.addNon200(robotsURL, "HTTP/1.1 404 Not Found\n",
-				"# goodguy can do anything\n" +
-				"User-agent: goodguy\n" +
-				"Disallow:\n\n" +
-				"# every other guy can do nothing\n" +
-				"User-agent: *\n" +
-				"Disallow: /\n"
-		);
-		proxy.start();
-
-		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), false);
-
-		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
-		MutableInt crawlDelay = new MutableInt(0);
-		assertEquals(0, URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay).disallow.length);
-		assertEquals(0, URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo", crawlDelay).disallow.length);
-	}
 
 
 	@Test
@@ -171,7 +149,7 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		final URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay);
+		final var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy");
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c")));
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/d")));
 		assertFalse(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c/d")));
@@ -205,7 +183,7 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		final URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay);
+		final var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy");
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c")));
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/d")));
 		assertFalse(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c/d")));
@@ -240,7 +218,7 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		final URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay);
+		final var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy");
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c")));
 		assertTrue(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/d")));
 		assertFalse(URLRespectsRobots.apply(filter, URI.create("http://foo.bor/c/d")));
@@ -279,16 +257,15 @@ public class URLRespectsRobotsTest {
 		HttpClient httpClient = FetchDataTest.getHttpClient(new HttpHost("localhost", proxy.port()), true);
 
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
-		MutableInt crawlDelay = new MutableInt(0);
 		fetchData.fetch(URI.create(BURL.schemeAndAuthority(url) + "/robots.txt"), null, httpClient, null, null, true);
-		URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy", crawlDelay);
+		var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy");
 		assertTrue(URLRespectsRobots.apply(filter, url));
-		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy", crawlDelay);
+		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy");
 		assertFalse(URLRespectsRobots.apply(filter, url));
 
-		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo", crawlDelay);
+		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "goodGuy foo");
 		assertTrue(URLRespectsRobots.apply(filter, url));
-		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy foo", crawlDelay);
+		filter = URLRespectsRobots.parseRobotsResponse(fetchData, "badGuy foo");
 		assertFalse(URLRespectsRobots.apply(filter, url));
 
 		fetchData = new FetchData(Helpers.getTestConfiguration(this));
@@ -298,83 +275,6 @@ public class URLRespectsRobotsTest {
 		fetchData.close();
 	}
 
-
-	public void testLiebert() throws IOException {
-		URLRespectsRobots.RobotsRules robots;
-		MutableInt crawlDelay = new MutableInt(0);
-		robots = URLRespectsRobots.parseRobotsReader(new StringReader("User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nDisallow: /action\n"), "BUbiNG", crawlDelay);
-		assertFalse(URLRespectsRobots.apply(robots, URI.create("http://online.liebertpub.com/doi/abs/10.1089/dna.2012.1756")));
-
-		robots = URLRespectsRobots.parseRobotsReader(new StringReader("User-agent: *\nDisallow: /\nDisallow: /action\n"), "BUbiNG", crawlDelay);
-		assertFalse(URLRespectsRobots.apply(robots, URI.create("http://online.liebertpub.com/doi/abs/10.1089/dna.2012.1756")));
-	}
-
-	@Test
-	public void testLiebert2() throws IOException {
-		MutableInt crawlDelay = new MutableInt(0);
-		URLRespectsRobots.RobotsRules robots = URLRespectsRobots.parseRobotsReader(new StringReader("User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nDisallow: /action\n"), "BUbiNG", crawlDelay);
-		assertEquals(1, robots.disallow.length);
-		assertEquals("/", new String(robots.disallow[0]));
-	}
-
-	@Test
-	public void testPrefixes() throws IOException {
-		URLRespectsRobots.RobotsRules robots;
-		MutableInt crawlDelay = new MutableInt(0);
-		robots = URLRespectsRobots.parseRobotsReader(new StringReader("User-agent: *\nDisallow: /a\nDisallow: /a/a\nDisallow: /a/a\n"), "BUbiNG", crawlDelay);
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/")));
-		assertFalse(URLRespectsRobots.apply(robots, URI.create("http://example.com/a")));
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/b")));
-		assertFalse(URLRespectsRobots.apply(robots, URI.create("http://example.com/a/b")));
-
-		robots = URLRespectsRobots.parseRobotsReader(new StringReader("User-agent: *\nDisallow: /a/b\nDisallow: /a\nDisallow: /b/c\nDisallow: /b\n"), "BUbiNG", crawlDelay);
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/c")));
-		assertFalse(URLRespectsRobots.apply(robots, URI.create("http://example.com/a")));
-		assertFalse(URLRespectsRobots.apply(robots, URI.create("http://example.com/b")));
-	}
-
-	@Test
-	public void testDisallowStar() throws IOException{
-		URLRespectsRobots.RobotsRules robots;
-		MutableInt crawlDelay = new MutableInt(0);
-		robots = URLRespectsRobots.parseRobotsReader(new StringReader("User-agent: *\nDisallow: /*buy_now*\n"), "BUbiNG", crawlDelay);
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/hi")));
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/hi_buy_now")));
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/buy_now_hi")));
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/buy_now/page")));
-		assertTrue(URLRespectsRobots.apply(robots, URI.create("http://example.com/page/buy_now")));
-	}
-
-
-	@Test
-	public void testPrefixesDeep() {
-		Set<String> inset = new ObjectOpenHashSet<>();
-		Set<String> pfset = new ObjectOpenHashSet<>();
-		Random rand = new Random(0);
-		for (int i = 100; i < 999; i++) {
-			if (rand.nextDouble() < 0.3) {
-				String commonPref = String.valueOf(i);
-				boolean putPrefix = rand.nextDouble() < 0.9;
-				if (putPrefix) {
-					pfset.add(commonPref);
-					inset.add(commonPref);
-				}
-				for (int j = 100; j < 450; j++) {
-					if (rand.nextDouble() < 0.3) {
-						inset.add(commonPref + j);
-						if (! putPrefix) pfset.add(commonPref + j);
-					}
-				}
-			}
-		}
-		char[][] resultArray = URLRespectsRobots.toSortedPrefixFreeCharArrays(inset);
-		Set<String> result = new ObjectOpenHashSet<>();
-		for (char[] a: resultArray) result.add(new String(a));
-		assertEquals(result, pfset);
-
-
-	}
-	
 	@Test
 	public void testDisallowEverytingWithUTFBOM() throws Exception {
 		proxy = new SimpleFixedHttpProxy();
@@ -394,7 +294,7 @@ public class URLRespectsRobotsTest {
 		FetchData fetchData = new FetchData(Helpers.getTestConfiguration(this));
 		fetchData.fetch(robotsURL, null, httpClient, null, null, true);
 		MutableInt crawlDelay = new MutableInt(0);
-		URLRespectsRobots.RobotsRules filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any", crawlDelay);
+		var filter = URLRespectsRobots.parseRobotsResponse(fetchData, "any");
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri1));
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri2));
 		assertFalse(URLRespectsRobots.apply(filter, disallowedUri3));

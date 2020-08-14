@@ -1,25 +1,20 @@
 package it.unimi.di.law.bubing.frontier;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.net.URI;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLContext;
-
 import com.exensa.util.compression.HuffmanModel;
-import com.exensa.wdl.common.Serializer;
 import com.exensa.wdl.common.UnexpectedException;
 import com.exensa.wdl.protobuf.ProtoHelper;
 import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
-import com.exensa.wdl.protobuf.url.MsgURL;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import com.exensa.wdl.protobuf.url.MsgURL;
 import com.google.protobuf.InvalidProtocolBufferException;
+import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
+import it.unimi.di.law.bubing.util.BURL;
+import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.URLRespectsRobots;
+import it.unimi.dsi.bits.Fast;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
@@ -44,6 +39,16 @@ import org.apache.http.ssl.TrustStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLContext;
+import java.io.Closeable;
+import java.io.IOException;
+import java.net.URI;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
  *
@@ -59,13 +64,6 @@ import org.slf4j.LoggerFactory;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.util.BURL;
-import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.bubing.util.URLRespectsRobots;
-import it.unimi.dsi.bits.Fast;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 //RELEASE-STATUS: DIST
 
@@ -241,7 +239,7 @@ public final class FetchingThread extends Thread implements Closeable {
 
     BasicHeader[] headers = {
         new BasicHeader("From", frontier.rc.userAgentFrom),
-        new BasicHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.95,text/*;q=0.9,*/*;q=0.8"),
+        new BasicHeader("Accept", "text/html;q=0.95,text/*;q=0.9,*/*;q=0.8"),
         new BasicHeader("Accept-Language", "*"),
         new BasicHeader("Accept-Charset", "*")
     };
@@ -382,7 +380,7 @@ public final class FetchingThread extends Thread implements Closeable {
           continue; // skip to next PathQuery
         }
 
-        if (visitState.robotsFilter != null && !URLRespectsRobots.apply(visitState.robotsFilter, url)) {
+        if (visitState.robotsFilter != null && !visitState.robotsFilter.isAllowed(url.toString())) {
           if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} disallowed by robots filter", url);
           frontier.enqueue(FetchInfoHelper.fetchInfoFailedRobots(crawlRequest, visitState));
           frontier.fetchingFailedRobotsCount.incrementAndGet();
@@ -425,10 +423,11 @@ public final class FetchingThread extends Thread implements Closeable {
       .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
       .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
-      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) );
+      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
+      .setFetchTimeMinutes( (int)(fetchData.startTime / ( 60*1000)) );
 
-    if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception))
-      fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(fetchData.exception));
+    if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception.getClass()))
+      fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(fetchData.exception.getClass()));
     else
       fetchInfoBuilder.setFetchStatusValue(EnumFetchStatus.Enum.UNKNOWN_FAILURE_VALUE);
     return fetchInfoBuilder.build();
@@ -441,9 +440,7 @@ public final class FetchingThread extends Thread implements Closeable {
     // This is always the same, independently of what will happen.
     final int entrySize = visitState.workbenchEntry.size();
     long ipDelay = rc.ipDelay;
-    final int knownCount = frontier.agent.getKnownCount();
-    if (knownCount > 1 && rc.ipDelayFactor != 0)
-      ipDelay = Math.max(ipDelay, (long)(rc.ipDelay * rc.ipDelayFactor * knownCount * entrySize / (entrySize + 1.)));
+
     visitState.workbenchEntry.nextFetch = fetchData.endTime + (long)(ipDelay + visitState.workbenchEntry.delay);
 
     if ( !checkFetchDataException() )
@@ -545,6 +542,45 @@ public final class FetchingThread extends Thread implements Closeable {
     return fetchData;
   }
 
+  /**
+   * Check whether two URIs are equivalent. For instance http://example.com/p?PHPSESSID=SDFSFZ4352356 is equivalent to http://example.com/p
+   * @param a first URI
+   * @param b second URI
+   * @return
+   */
+  private boolean _isEquivalentURI(URI a, URI b) {
+    if ((a.getScheme() == null || b.getScheme() == null) && a.getScheme() != b.getScheme())
+      return false;
+    if (!a.getScheme().equals(b.getScheme()))
+      return false;
+    if ((a.getAuthority() == null || b.getAuthority() == null) && a.getAuthority() != b.getAuthority())
+      return false;
+    if (!a.getAuthority().equals(b.getAuthority()))
+      return false;
+    if (!a.getHost().equals(b.getHost()))
+      return false;
+    if ((a.getPath() == null || b.getPath() == null) && a.getPath() != b.getPath())
+      return false;
+      if (!a.getPath().equals(b.getPath()))
+      return false;
+    if (a.getQuery() == null || b.getQuery() == null)
+      return a.getQuery() == b.getQuery();
+    return (BURL.normalizeQuery(a.getQuery()).equals(BURL.normalizeQuery(b.getQuery())));
+  }
+
+  private boolean isEquivalentURI(URI a, URI b) {
+    if((a.toString().equals(b.toString()))) {
+      if (LOGGER.isTraceEnabled())
+        LOGGER.trace("IsSame : {}, {}", a.toString(), b.toString());
+      return true;
+    }
+
+    boolean isEquivalent = _isEquivalentURI(a,b);
+    if (LOGGER.isTraceEnabled() && isEquivalent)
+      LOGGER.trace("IsEquivalent : {}, {}", a.toString(), b.toString());
+    return isEquivalent;
+  }
+
   private boolean tryFetch( final VisitState visitState, final MsgFrontier.CrawlRequest.Builder crawlRequest, final URI url, final boolean robots ) {
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Processing {}",url);
 
@@ -578,7 +614,7 @@ public final class FetchingThread extends Thread implements Closeable {
           return false;
         }
         // Special case redirected to another url
-        if (attempt == 1 && fetchData.hasRedirects() &&  !fetchData.getTerminalURI().equals(fetchData.uri())) {
+        if (attempt == 1 && fetchData.hasRedirects() &&  !isEquivalentURI(fetchData.getTerminalURI(),fetchData.uri())) {
           LOGGER.debug("Redirecting {} to ({}) : retrying without redirection to get first hop", url.toString(), fetchData.getTerminalURI());
           finished = false;
           continue; // retry with cookies

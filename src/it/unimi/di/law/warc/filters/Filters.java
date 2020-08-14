@@ -1,10 +1,18 @@
 package it.unimi.di.law.warc.filters;
 
-import java.lang.reflect.Method;
-import java.net.URI;
-
+import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.Link;
+import it.unimi.di.law.warc.filters.parser.ParseException;
+import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
+import it.unimi.di.law.warc.records.WarcRecord;
+import it.unimi.di.law.warc.records.WarcRecord.Type;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import it.unimi.dsi.lang.FlyweightPrototype;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.HttpResponse;
+
+import java.lang.reflect.Method;
+import java.net.URI;
 
 /*
  * Copyright (C) 2004-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -21,15 +29,6 @@ import org.apache.http.HttpResponse;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import it.unimi.di.law.bubing.util.FetchData;
-import it.unimi.di.law.bubing.util.Link;
-import it.unimi.di.law.warc.filters.parser.ParseException;
-import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
-import it.unimi.di.law.warc.records.WarcRecord;
-import it.unimi.di.law.warc.records.WarcRecord.Type;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import it.unimi.dsi.lang.FlyweightPrototype;
 
 // RELEASE-STATUS: DIST
 

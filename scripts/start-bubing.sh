@@ -37,7 +37,6 @@ java -server -cp jars/"*":dependencies/"*":extjars/"*":. \
   -Xss256K -Xms${XMS} -Xmx${XMX} \
   -Djava.rmi.server.hostname=127.0.0.1 \
   -Djava.net.preferIPv4Stack=true \
-  -Djgroups.bind_addr=127.0.0.1 \
   -Djavax.net.ssl.sessionCacheSize=65536 \
   -Dlogback.configurationFile=${LOGBACK_CONFIG} \
   -Dcom.sun.management.jmxremote.host=127.0.0.1 \
@@ -47,5 +46,5 @@ java -server -cp jars/"*":dependencies/"*":extjars/"*":. \
   -DBUBING_LOG_DIR=${LOG_DIR} \
   -javaagent:./jmx_prometheus_javaagent-0.3.1.jar=${PROMETHEUS_PORT}:jmxexporter.yml \
   it.unimi.di.law.bubing.Agent \
-  -h ${IP} -P ${PROPERTIES} -g babbar -i ${NODE_ID} ${AGENT_NAME} -n $(echo ${XTRAOPT}) 2> ${LOG_DIR}/console.log.err > ${LOG_DIR}/console.log.out 
+  -h ${IP} -P ${PROPERTIES} -i ${NODE_ID} ${AGENT_NAME} -n $(echo ${XTRAOPT}) 2> ${LOG_DIR}/console.log.err > ${LOG_DIR}/console.log.out 
 

@@ -1,36 +1,49 @@
 package it.unimi.di.law.bubing.frontier;
 
-import java.io.*;
+import com.exensa.wdl.common.LanguageCodes;
+import com.exensa.wdl.protobuf.crawler.MsgCrawler;
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import com.exensa.wdl.protobuf.link.MsgLink;
+import com.exensa.wdl.protobuf.url.MsgURL;
+import com.google.common.collect.ImmutableMap;
+import com.google.protobuf.ByteString;
+import crawlercommons.robots.SimpleRobotRules;
+import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
+import it.unimi.di.law.bubing.parser.HTMLLink;
+import it.unimi.di.law.bubing.parser.LinksHelper;
+import it.unimi.di.law.bubing.parser.ParseData;
+import it.unimi.di.law.bubing.parser.Parser;
+import it.unimi.di.law.bubing.parser.html.RobotsTagState;
+import it.unimi.di.law.bubing.store.Store;
+import it.unimi.di.law.bubing.util.BURL;
+import it.unimi.di.law.bubing.util.FetchData;
+import it.unimi.di.law.bubing.util.Link;
+import it.unimi.di.law.bubing.util.URLRespectsRobots;
+import it.unimi.di.law.warc.filters.Filter;
+import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
+import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.http.Header;
+import org.apache.http.HttpResponse;
+import org.apache.http.entity.BasicHttpEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.nio.BufferOverflowException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
-
-import com.exensa.wdl.common.LanguageCodes;
-import com.exensa.wdl.protobuf.link.MsgLink;
-import com.exensa.wdl.protobuf.url.MsgURL;
-import com.google.common.collect.ImmutableMap;
-import com.google.protobuf.ByteString;
-import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
-import it.unimi.di.law.bubing.parser.*;
-import it.unimi.di.law.bubing.parser.html.RobotsTagState;
-import it.unimi.di.law.bubing.util.*;
-import it.unimi.di.law.warc.records.HttpResponseWarcRecord;
-import it.unimi.di.law.warc.util.InspectableCachedHttpEntity;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.mutable.MutableInt;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.entity.BasicHttpEntity;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import com.exensa.wdl.protobuf.crawler.MsgCrawler;
-import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 
 /*
  * Copyright (C) 2012-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -47,10 +60,6 @@ import com.exensa.wdl.protobuf.frontier.MsgFrontier;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import it.unimi.di.law.bubing.RuntimeConfiguration;
-import it.unimi.di.law.bubing.store.Store;
-import it.unimi.di.law.warc.filters.Filter;
 //RELEASE-STATUS: DIST
 
 /** A thread parsing pages retrieved by a {@link FetchingThread}.
@@ -208,7 +217,7 @@ public class ParsingThread extends Thread {
     private static URI resolve( final String href, final URI base ) {
       if ( href.length() == 0 || href.charAt(0) == '#' )
         return base;
-      final URI url = BURL.parse( href );
+      final URI url = BURL.parseAndNormalize( href );
       return url == null ? null : base.resolve( url );
     }
 
@@ -321,7 +330,8 @@ public class ParsingThread extends Thread {
   private void close() {
     try {
       store.close();
-      frontier.robotsWarcParallelOutputStream.get().close();
+      if (frontier.robotsWarcParallelOutputStream != null)
+        frontier.robotsWarcParallelOutputStream.get().close();
     }
     catch ( IOException e ) {
       LOGGER.error( "Error while closing store", e );
@@ -335,14 +345,17 @@ public class ParsingThread extends Thread {
 
     if ( fetchData.robots ) {
       frontier.parsingRobotsCount.incrementAndGet();
-      frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
-      MutableInt crawlDelay = new MutableInt(0);
-      if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgentId, crawlDelay)) == null) {
+      if (frontier.robotsWarcParallelOutputStream != null)
+        frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
+      if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgentId)) == null) {
         // We go on getting/creating a workbench entry only if we have robots permissions.
         visitState.schedulePurge();
         LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
       }
-      visitState.setCrawlDelayMS(crawlDelay.intValue()*1000);
+      if (visitState.robotsFilter != null && visitState.robotsFilter.getCrawlDelay() != SimpleRobotRules.UNSET_CRAWL_DELAY) {
+        LOGGER.debug("Setting crawl delay for {} to {}", visitState.toString(), visitState.robotsFilter.getCrawlDelay());
+        visitState.setCrawlDelayMS((int) visitState.robotsFilter.getCrawlDelay());
+      }
       return;
     }
 
