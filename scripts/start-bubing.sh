@@ -28,7 +28,7 @@ XTRA=""
 [[ -z ${KEEP_STORE} ]] && rm -rf ${DATA_DIR}
 mkdir -p ${DATA_DIR}
 
-[[ -d ${LOG_DIR}/oldies ]] || ${LOG_DIR}/oldies
+[[ -d ${LOG_DIR}/oldies ]] || mkdir ${LOG_DIR}/oldies
 find ${LOG_DIR}/oldies -maxdepth 1 -name "${XTRA}bubing*" -delete
 find ${LOG_DIR}/oldies -maxdepth 1 -name "${XTRA}console.*" -delete
 find ${LOG_DIR} -maxdepth 1 -name "${XTRA}bubing*" -exec mv {} ${LOG_DIR}/oldies/ \;
