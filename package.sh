@@ -26,6 +26,7 @@ cp ${BUBING_SRC_DIR}/bubing-${BUBING_VERSION}.jar ${OUTPUT_DIR}/jars
 pushd ${OUTPUT_DIR}
 ln -s ${BUBING_SRC_DIR}/jars/runtime dependencies
 ln -s ${BUBING_SRC_DIR}/extjars extjars
+touch version.$(cat /dev/urandom | tr -cd 'a-f0-9' | head -c 32)
 popd
 
 pushd target
