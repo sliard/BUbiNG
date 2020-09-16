@@ -35,6 +35,7 @@
 		<dependency org="org.slf4j" name="log4j-over-slf4j" rev="latest.release"/>
 		<dependency org="org.slf4j" name="jcl-over-slf4j" rev="latest.release"/>
 		<dependency org="ch.qos.logback" name="logback-classic" rev="latest.release"/>
+		<dependency org="de.siegmar" name="logback-gelf" rev="3.0.0" />
 
 		<dependency org="it.unimi.dsi" name="fastutil" rev="8.3.0"/>
 		<dependency org="it.unimi.dsi" name="webgraph" rev="3.6.2"/>
