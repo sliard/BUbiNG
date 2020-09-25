@@ -49,7 +49,7 @@
   <root level="WARN">
     <appender-ref ref="all"/>
     <appender-ref ref="warn"/>
-    <appender-ref ref="GELF"/>
+    <!--appender-ref ref="GELF"/-->
   </root>
 
   <logger name="net.htmlparser.jericho" level="OFF"/>
