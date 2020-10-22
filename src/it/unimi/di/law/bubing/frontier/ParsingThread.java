@@ -35,7 +35,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
+import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.nio.BufferOverflowException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -203,8 +205,8 @@ public class ParsingThread extends Thread {
           fetchInfoBuilder.addExternalLinks(fetchLinkInfoBuilder);
         return true;
       }
-      catch ( java.net.UnknownHostException e ) {
-        LOGGER.debug( String.format("Warn: UnknownHostException for '%s'",target.toString()), e );
+      catch ( UnknownHostException|MalformedURLException e ) {
+        LOGGER.debug( String.format("Invalid URL <%s>",target.toString()), e );
         return false;
       }
     }
