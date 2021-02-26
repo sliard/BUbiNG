@@ -410,7 +410,7 @@ public final class FetchingThread extends Thread implements Closeable {
     }
     else {
       frontier.workingFetchingThreads.decrementAndGet();
-      if ( !fetchData.robots ) // FIXME: don't send fetchInfo for robots.txt
+      if ( !fetchData.isRobots ) // FIXME: don't send fetchInfo for robots.txt
         frontier.enqueue(fetchInfoFailed());
       frontier.done.add( fetchData.visitState );
     }
@@ -453,7 +453,7 @@ public final class FetchingThread extends Thread implements Closeable {
     //    : "first path now is " + it.unimi.di.law.bubing.util.Util.zToString(visitState.firstPath())));
     visitState.nextFetch = fetchData.endTime + Math.max(frontier.rc.schemeAuthorityDelay, visitState.crawlDelayMS); // Regular delay
 
-    if ( fetchData.robots ) {
+    if ( fetchData.isRobots ) {
       frontier.fetchedRobots.incrementAndGet();
       // FIXME: following is done by ParsingThread
       //frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
@@ -509,7 +509,7 @@ public final class FetchingThread extends Thread implements Closeable {
     else {
       frontier.brokenVisitStates.decrementAndGet();
       // Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
-      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
+      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.isRobots ) {
         // Drain URLs in visitstate, creating adequate error fetch info
         try {
           FetchInfoHelper.drainVisitStateForError(frontier, visitState);
