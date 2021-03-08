@@ -593,4 +593,34 @@ public final class BURL {
 		return ((16 + array.length + 7) & -1 << 3) + // Obtained by Classmexer on a 64-bit Sun JVM for Intel.
 				8; // This accounts for the space used by the FIFO queue.
 	}
+
+	public static void main(String[] args) {
+		// Tests for canonicalization
+		if (args.length > 0) {
+			for (var arg : args) {
+				System.out.print(arg + " -> ");
+				System.out.print(BURL.parse(arg).toString() + " -> ");
+				System.out.println(BURL.parseAndCanonicalize(arg).toString());
+			}
+		} else {
+			var origin = Arrays.asList(
+				"http://test.com/t?a=b;c=jsessionid",
+				"http://test.com/t?&a=b&PHPSESSID=0abc234def010101&",
+				"http://test.com/t?&a=b&PHPSESSID",
+				"http://test.com/t?utm_source=abc&utm_medium=web&utm_campaign=email&toto=1"
+
+			);
+			var expected = Arrays.asList(
+				"http://test.com/t?a=b;c=jsessionid",
+				"http://test.com/t?a=b",
+				"http://test.com/t?a=b&PHPSESSID",
+				"http://test.com/t?toto=1"
+
+			);
+			for (int i = 0; i < origin.size(); i++) {
+				if (!BURL.parseAndCanonicalize(origin.get(i)).toString().equals(expected.get(i)))
+					System.out.println("Error : " + origin.get(i) + " -> " + BURL.parseAndCanonicalize(origin.get(i)).toString());
+			}
+		}
+	}
 }
