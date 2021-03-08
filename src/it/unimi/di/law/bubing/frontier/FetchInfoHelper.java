@@ -46,6 +46,10 @@ public class FetchInfoHelper {
     return fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.CRAWLER_FILTERED);
   }
 
+  static MsgCrawler.FetchInfo fetchInfoFailedNonCanonicalQuery(MsgFrontier.CrawlRequestOrBuilder crawlRequest, VisitState visitState) {
+    return fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.CRAWLER_FILTERED);
+  }
+
   static MsgCrawler.FetchInfo fetchInfoFailedRobots(MsgFrontier.CrawlRequestOrBuilder crawlRequest, VisitState visitState) {
     return fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.ROBOTS_DENIED);
   }
