@@ -594,6 +594,10 @@ public final class FetchingThread extends Thread implements Closeable {
     cookieStore.clear();
     boolean finished = false;
     int attempt = 0; // number of self-redirect attempts
+    // quick fix to disable self-redirect feature. We set the attempt to 1
+    // Ideally we should be able to detect the sites that require activation of the self-redirect functionality
+    attempt = 1;
+
     while (!finished && attempt < 2) { // first attempt with redirects enabled. If terminal URI is != requestedUri, then retry without redirects
       attempt ++;
       if (robots)
