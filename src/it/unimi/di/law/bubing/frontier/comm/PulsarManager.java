@@ -287,7 +287,7 @@ public final class PulsarManager implements AutoCloseable
       // otherwise, the consumerId is 1 + random
       boolean isMyDefaultTopic =  ( topic % rc.pulsarFrontierNodeNumber ) == rc.pulsarFrontierNodeId;
       int consumerID = isMyDefaultTopic ? 0 :
-        ThreadLocalRandom.current().nextInt(1, rc.pulsarFrontierNodeNumber);
+        ThreadLocalRandom.current().nextInt(1, rc.pulsarFrontierNodeNumber*rc.pulsarFrontierTopicNumber);
 
       return String.format("%06d-%s", consumerID, rc.name);
     }
