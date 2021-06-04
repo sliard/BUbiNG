@@ -341,15 +341,15 @@ public final class FetchingThread extends Thread implements Closeable {
       try {
         final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
         // First check that the crawlRequest is still valid
+        final var queryByteArray = HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray());
+        final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, queryByteArray);
+
         if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
           if (LOGGER.isTraceEnabled()) {
-            final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
             LOGGER.trace("CrawlRequest for {} has expired", url.toString());
           }
           continue;
         }
-
-        final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
 
         if (LOGGER.isTraceEnabled()) LOGGER.trace("Next URL to fetch : {}", url);
 
@@ -371,6 +371,13 @@ public final class FetchingThread extends Thread implements Closeable {
           if (tryFetch(visitState, crawlRequest, url, true)) // FIXME: may return true even if fetch has failed...
             return true; // process fetch data
           break; // skip to next SchemeAuthority
+        }
+
+        if (url.getQuery() != null && ! BURL.isCanonicalQuery(url.getQuery())) {
+          if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} filtered out : NON CANONICAL QUERY", url);
+          frontier.enqueue(FetchInfoHelper.fetchInfoFailedFiltered(crawlRequest, visitState));
+          frontier.fetchingFailedCount.incrementAndGet();
+          continue; // skip to next PathQuery
         }
 
         if (!frontier.rc.fetchFilter.apply(url)) {
@@ -423,7 +430,7 @@ public final class FetchingThread extends Thread implements Closeable {
       .setUrlKey(fetchData.getCrawlRequest().getUrlKey())
       .setFetchTimeToFirstByte((int)(fetchData.firstByteTime - fetchData.startTime))
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
-      .setFetchDate( (int)(fetchData.startTime / (24*60*60*1000)) )
+      .setFetchDateDeprecated( (int)(fetchData.startTime / (24*60*60*1000)) )
       .setFetchTimeMinutes( (int)(fetchData.startTime / ( 60*1000)) );
 
     if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception.getClass()))
@@ -565,7 +572,7 @@ public final class FetchingThread extends Thread implements Closeable {
       return false;
     if (a.getQuery() == null || b.getQuery() == null)
       return a.getQuery() == b.getQuery();
-    return (BURL.normalizeQuery(a.getQuery()).equals(BURL.normalizeQuery(b.getQuery())));
+    return (BURL.canonicalizeQuery(a.getQuery()).equals(BURL.canonicalizeQuery(b.getQuery())));
   }
 
   private boolean isEquivalentURI(URI a, URI b) {
@@ -587,6 +594,10 @@ public final class FetchingThread extends Thread implements Closeable {
     cookieStore.clear();
     boolean finished = false;
     int attempt = 0; // number of self-redirect attempts
+    // quick fix to disable self-redirect feature. We set the attempt to 1
+    // Ideally we should be able to detect the sites that require activation of the self-redirect functionality
+    attempt = 1;
+
     while (!finished && attempt < 2) { // first attempt with redirects enabled. If terminal URI is != requestedUri, then retry without redirects
       attempt ++;
       if (robots)
