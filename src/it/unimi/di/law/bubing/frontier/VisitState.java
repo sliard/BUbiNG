@@ -136,6 +136,12 @@ public class VisitState implements Delayed, Serializable {
 	}
 
 
+	/**
+	 * Queue index of the visitState is a function of the workbenchEntry hash
+	 */
+	public int getQueueIndex() {
+		return workbenchEntry.getQueueIndex();
+	}
 	/** Sets the workbench entry and put this visit state in its entry if it is nonempty.
 	 *
 	 * <ul>
