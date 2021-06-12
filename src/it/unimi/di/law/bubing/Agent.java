@@ -728,7 +728,7 @@ public class Agent {
 
 	@ManagedAttribute @Description("Number of VisitState instances on the todo list")
 	public long getToDoSize() {
-		return frontier.todo.size();
+		return frontier.getTodoSize();
 	}
 
 	@ManagedAttribute @Description("Number of VisitState instances on the refill list")
@@ -866,7 +866,9 @@ public class Agent {
 
 		// Safety : long running process with ssl connection get OOM because SSL cache is unbounded, this ensure that the cache is bounded
 		if (System.getProperty("javax.net.ssl.sessionCacheSize") == null)
-			System.setProperty("javax.net.ssl.sessionCacheSize","8192");
+			System.setProperty("javax.net.ssl.sessionCacheSize","1024");
+		if (System.getProperty("javax.net.ssl.sessionTimeout") == null)
+			System.setProperty("javax.net.ssl.sessionTimeout","100");
 
 		// JMX *must* be set up.
 		final String portProperty = System.getProperty(JMX_REMOTE_PORT_SYSTEM_PROPERTY);
