@@ -56,7 +56,7 @@ public final class TodoThread extends Thread {
 		try {
 			while(! Thread.currentThread().isInterrupted()) {
 				VisitState visitState = frontier.workbench.acquire();
-				frontier.todo.add(visitState);
+				frontier.todo[visitState.getQueueIndex() % frontier.rc.internalQueues].add(visitState);
 			}
 		}
 		catch (InterruptedException e) {
