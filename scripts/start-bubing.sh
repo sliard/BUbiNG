@@ -38,7 +38,9 @@ java -server -cp jars/"*":dependencies/"*":extjars/"*":. \
   -Xss256K -Xms${XMS} -Xmx${XMX} \
   -Djava.rmi.server.hostname=127.0.0.1 \
   -Djava.net.preferIPv4Stack=true \
-  -Djavax.net.ssl.sessionCacheSize=65536 \
+  -Djavax.net.ssl.sessionCacheSize=1024 \
+  -Djavax.net.ssl.sessionTimeout=10000 \
+  -Djava.security.properties=file:/data1/crawling/BUbiNG/java.security.overrides \
   -Dlogback.configurationFile=${LOGBACK_CONFIG} \
   -Dcom.sun.management.jmxremote.host=127.0.0.1 \
   -Dcom.sun.management.jmxremote.port=${JMX_PORT} \

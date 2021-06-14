@@ -48,6 +48,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /*
@@ -121,26 +122,18 @@ public final class FetchingThread extends Thread implements Closeable {
   private final BasicCookieStore cookieStore;
 
   /**
-   * An SSL context that accepts all self-signed certificates.
+   * The index of the todoQueue (which is also the index for the SSLContext
    */
-  private static final SSLContext TRUST_SELF_SIGNED_SSL_CONTEXT;
-
-  static {
-    try {
-      TRUST_SELF_SIGNED_SSL_CONTEXT = SSLContexts.custom().loadTrustMaterial(null, new TrustSelfSignedStrategy()).build();
-    } catch (Exception cantHappen) {
-      throw new RuntimeException(cantHappen.getMessage(), cantHappen);
-    }
-  }
+  private final int queueIndex;
 
   /**
-   * An SSL context that accepts all certificates
+   * An array of SSL context that accepts all certificates.
    */
-  private static final SSLContext TRUST_ALL_CERTIFICATES_SSL_CONTEXT;
-
-  static {
+  private static final ConcurrentHashMap<Integer, SSLContext> sslContexts = new ConcurrentHashMap<>();
+  private static final SSLContext getNewSSLContext() {
+    SSLContext sslContext = null;
     try {
-      TRUST_ALL_CERTIFICATES_SSL_CONTEXT = SSLContexts.custom().loadTrustMaterial(null, new TrustStrategy() {
+      sslContext = SSLContexts.custom().loadTrustMaterial(null, new TrustStrategy() {
         public boolean isTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
           return true;
         }
@@ -148,6 +141,19 @@ public final class FetchingThread extends Thread implements Closeable {
     } catch (Exception cantHappen) {
       throw new RuntimeException(cantHappen.getMessage(), cantHappen);
     }
+    // Session cache size is normally automatically configured with the property javax.net.ssl.sessionCacheSize
+    // We still set it again here
+    sslContext.getClientSessionContext()
+      .setSessionCacheSize(Integer.parseInt(System.getProperty("javax.net.ssl.sessionCacheSize")));
+    // Session timeout is NOT automatically configured with the property javax.net.ssl.sessionTimeout
+    // We do it here
+    sslContext.getClientSessionContext()
+      .setSessionTimeout(Integer.parseInt(System.getProperty("javax.net.ssl.sessionTimeout")));
+    return sslContext;
+  }
+
+  private static final SSLContext getSSLContext(int queueIndex) {
+    return sslContexts.computeIfAbsent(queueIndex, (x) -> getNewSSLContext());
   }
 
   /**
@@ -156,10 +162,12 @@ public final class FetchingThread extends Thread implements Closeable {
   protected static final class BasicHttpClientConnectionManagerWithAlternateDNS
       extends BasicHttpClientConnectionManager {
 
-    static Registry<ConnectionSocketFactory> getDefaultRegistry() {
+    final static Registry<ConnectionSocketFactory> getDefaultRegistry(int queueIndex) {
       // setup a Trust Strategy that allows all certificates.
       //
-      SSLContext sslContext = TRUST_ALL_CERTIFICATES_SSL_CONTEXT;
+
+      SSLContext sslContext = getSSLContext(queueIndex);
+
       return RegistryBuilder.<ConnectionSocketFactory>create()
           .register("http", PlainConnectionSocketFactory.getSocketFactory())
           .register("https",
@@ -174,10 +182,11 @@ public final class FetchingThread extends Thread implements Closeable {
           .build();
     }
 
-    public BasicHttpClientConnectionManagerWithAlternateDNS(final DnsResolver dnsResolver) {
-      super(getDefaultRegistry(), null, null, dnsResolver);
+    public BasicHttpClientConnectionManagerWithAlternateDNS(final DnsResolver dnsResolver, int queueIndex) {
+      super(getDefaultRegistry(queueIndex), null, null, dnsResolver);
     }
   }
+
 
   private static int length(final String s) {
     return s == null ? 0 : s.length();
@@ -225,13 +234,18 @@ public final class FetchingThread extends Thread implements Closeable {
    *
    * @param frontier a reference to the {@link Frontier}.
    * @param index    the index of this thread (only for logging purposes).
+   * @param queueIndex    the to-do queue this thread is going to poll from, a to-do queue is a partition for
+   *                      SSLContexts cache scalability (change introduced following performance regression in
+   *                      JDK 11.0.11)
    */
-  public FetchingThread(final Frontier frontier, final int index) throws NoSuchAlgorithmException, IllegalArgumentException, IOException {
-    setName(this.getClass().getSimpleName() + '-' + index);
+  public FetchingThread(final Frontier frontier, final int index, final int queueIndex) throws NoSuchAlgorithmException, IllegalArgumentException, IOException {
+    setName(this.getClass().getSimpleName() + '-' + queueIndex + "-" + index);
+    this.queueIndex = queueIndex;
     setPriority(Thread.MIN_PRIORITY); // Low priority; there will be thousands of this guys around.
     this.frontier = frontier;
 
-    final BasicHttpClientConnectionManager connManager = new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver);
+    final BasicHttpClientConnectionManager connManager =
+      new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver, queueIndex);
 
     connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
     connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
@@ -247,13 +261,14 @@ public final class FetchingThread extends Thread implements Closeable {
 
     httpClient = HttpClients.custom()
         .setSSLHostnameVerifier(new NoopHostnameVerifier()) // why would we need to do it twice ?
-        .setSSLContext(frontier.rc.acceptAllCertificates ? TRUST_ALL_CERTIFICATES_SSL_CONTEXT : TRUST_SELF_SIGNED_SSL_CONTEXT)
+        .setSSLContext(getSSLContext(queueIndex)) // <- this is probably overriden by the connection manager
         .setConnectionManager(connManager)
         .setConnectionReuseStrategy(frontier.rc.keepAliveTime == 0 ? NoConnectionReuseStrategy.INSTANCE : DefaultConnectionReuseStrategy.INSTANCE)
         .setUserAgent(frontier.rc.userAgent)
         .setDefaultCookieStore(cookieStore)
         .setDefaultHeaders(ObjectArrayList.wrap(headers))
         .build();
+
     fetchData = new FetchData(frontier.rc);
     frontier.fetchDataCount.incrementAndGet();
   }
@@ -308,7 +323,7 @@ public final class FetchingThread extends Thread implements Closeable {
 
     frontier.rc.ensureNotPaused();
     VisitState visitState;
-    for ( int i=0; (visitState=frontier.todo.poll()) == null; ++i ) {
+    for ( int i=0; (visitState=frontier.todo[queueIndex].poll()) == null; ++i ) {
       if (stop) return null;
       long newSleep = 1 << Math.min(i, 10);
       waitTime += newSleep;
