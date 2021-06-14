@@ -1,8 +1,8 @@
 package it.unimi.di.law.bubing.frontier;
 
 import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.common.TimeHelper;
 import com.exensa.wdl.common.UnexpectedException;
-import com.exensa.wdl.protobuf.ProtoHelper;
 import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
@@ -46,6 +46,7 @@ import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -344,7 +345,7 @@ public final class FetchingThread extends Thread implements Closeable {
         final var queryByteArray = HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray());
         final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, queryByteArray);
 
-        if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
+        if (TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
           if (LOGGER.isTraceEnabled()) {
             LOGGER.trace("CrawlRequest for {} has expired", url.toString());
           }
