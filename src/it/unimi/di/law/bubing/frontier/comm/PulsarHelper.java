@@ -65,11 +65,10 @@ public class PulsarHelper
     return  crawlRequestBuilder.build().toByteArray();
   }
 
-  public static MsgFrontier.CrawlRequest minimalCrawlRequestFromPathQuery(String pathQuery) {
-    MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = MsgFrontier.CrawlRequest.newBuilder();
-    MsgURL.Key.Builder urlKeyBuilder = MsgURL.Key.newBuilder();
-    urlKeyBuilder.setZPathQuery(ByteString.copyFrom(toZ(toASCII(pathQuery))));
-    return crawlRequestBuilder.setUrlKey(urlKeyBuilder).build();
+  public static MsgFrontier.CrawlRequest.Builder minimalCrawlRequestFromPathQuery( final String pathQuery ) {
+    return MsgFrontier.CrawlRequest.newBuilder()
+      .setUrlKey( MsgURL.Key.newBuilder()
+        .setZPathQuery( ByteString.copyFrom(toZ(toASCII(pathQuery))) ));
   }
   public static byte[] schemeAuthority( final MsgURL.KeyOrBuilder urlKey ) {
     return schemeAuthority( Serializer.URL.from(urlKey) );
