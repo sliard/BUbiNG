@@ -19,7 +19,7 @@ package it.unimi.di.law.bubing.frontier;
 
 import com.exensa.util.compression.HuffmanModel;
 import com.exensa.wdl.common.Serializer;
-import com.exensa.wdl.protobuf.ProtoHelper;
+import com.exensa.wdl.common.TimeHelper;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import it.unimi.dsi.Util;
@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 //RELEASE-STATUS: DIST
@@ -111,7 +112,7 @@ public final class Distributor extends Thread {
 		try {
 			if (LOGGER.isTraceEnabled())
 				LOGGER.trace("Processing URL : {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
-			if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
+			if (TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
 				if (LOGGER.isTraceEnabled())
 					LOGGER.trace("CrawlRequest has expired for {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
 				return false;

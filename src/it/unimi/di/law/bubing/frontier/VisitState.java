@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import crawlercommons.robots.SimpleRobotRules;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
@@ -79,7 +80,12 @@ public class VisitState implements Delayed, Serializable {
 	private static final long serialVersionUID = 1L;
 
 	/** A special path marking a <code>robots.txt</code> refresh request. */
-	public final static byte[] ROBOTS_PATH = PulsarHelper.toMinimalCrawlRequestSerialized(PulsarHelper.minimalCrawlRequestFromPathQuery( "/robots.txt" ));
+	public final static byte[] ROBOTS_PATH = PulsarHelper.toMinimalCrawlRequestSerialized(
+		PulsarHelper.minimalCrawlRequestFromPathQuery( "/robots.txt" )
+			.setCrawlInfo( MsgFrontier.CrawlRequestInfo.newBuilder()
+				.setScheduleTimeMinutes( Integer.MAX_VALUE ) ) // FIXME: TTL on robots never expire
+			.build()
+	);
 
 	/** A singleton empty cookie array. */
 	public final static Cookie[] EMPTY_COOKIE_ARRAY = {};
@@ -136,6 +142,12 @@ public class VisitState implements Delayed, Serializable {
 	}
 
 
+	/**
+	 * Queue index of the visitState is a function of the workbenchEntry hash
+	 */
+	public int getQueueIndex() {
+		return workbenchEntry.getQueueIndex();
+	}
 	/** Sets the workbench entry and put this visit state in its entry if it is nonempty.
 	 *
 	 * <ul>

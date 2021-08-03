@@ -87,6 +87,9 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#maxRequestsPerSchemeAuthority */
 	public final int maxRequestsPerSchemeAuthority;
 
+	/** @see StartupConfiguration#internalQueues */
+	public final int internalQueues;
+
 	/** @see StartupConfiguration#fetchingThreads */
 	public volatile int fetchingThreads;
 
@@ -357,6 +360,7 @@ public class RuntimeConfiguration {
 			maxInstantSchemeAuthorityPerIP = startupConfiguration.maxInstantSchemeAuthorityPerIP;
 			maxVisitStates = startupConfiguration.maxVisitStates;
 			maxRequestsPerSchemeAuthority = startupConfiguration.maxRequestsPerSchemeAuthority;
+			internalQueues = startupConfiguration.internalQueues;
 			fetchingThreads = startupConfiguration.fetchingThreads;
 			parsingThreads = startupConfiguration.parsingThreads;
 			dnsThreads = startupConfiguration.dnsThreads;

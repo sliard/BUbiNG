@@ -1,8 +1,8 @@
 package it.unimi.di.law.bubing.frontier;
 
 import com.exensa.wdl.common.Serializer;
+import com.exensa.wdl.common.TimeHelper;
 import com.exensa.wdl.common.UnexpectedException;
-import com.exensa.wdl.protobuf.ProtoHelper;
 import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
@@ -30,8 +30,8 @@ public class FetchInfoHelper {
                                                               final EnumFetchStatus.Enum fetchStatus ) {
     final MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder()
       .setUrlKey( crawlRequest.getUrlKey() )
-      .setFetchDateDeprecated( ProtoHelper.getDayNow() )
-      .setFetchTimeMinutes( ProtoHelper.getMinuteNow() )
+      .setFetchDateDeprecated( TimeHelper.getDaysNow() )
+      .setFetchTimeMinutes( TimeHelper.getMinutesNow() )
       .setFetchStatus( fetchStatus );
     if ( visitState.workbenchEntry != null && visitState.workbenchEntry.ipAddress != null )
       fetchInfoBuilder.setIpAddress( ByteString.copyFrom(visitState.workbenchEntry.ipAddress) );

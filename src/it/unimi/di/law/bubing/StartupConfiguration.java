@@ -159,6 +159,10 @@ public class StartupConfiguration {
 	@OptionalSpecification(value="2000000000")
 	public int maxRequestsPerSchemeAuthority;
 
+	/** The number of internal fetchQueues */
+	@OptionalSpecification(value="16")
+	public int internalQueues;
+
 	/** The number of {@linkplain FetchingThread fetching threads} (hundreds or even thousands). */
 	public int fetchingThreads;
 
