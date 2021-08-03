@@ -219,7 +219,7 @@ public class ParsingThread extends Thread {
     private static URI resolve( final String href, final URI base ) {
       if ( href.length() == 0 || href.charAt(0) == '#' )
         return base;
-      final URI url = BURL.parseAndNormalize( href );
+      final URI url = BURL.parseAndCanonicalize( href );
       return url == null ? null : base.resolve( url );
     }
 
@@ -345,7 +345,7 @@ public class ParsingThread extends Thread {
     final VisitState visitState = fetchData.visitState;
     if (LOGGER.isTraceEnabled()) LOGGER.trace("Got fetched response for visit state " + visitState);
 
-    if ( fetchData.robots ) {
+    if ( fetchData.isRobots ) {
       frontier.parsingRobotsCount.incrementAndGet();
       if (frontier.robotsWarcParallelOutputStream != null)
         frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));

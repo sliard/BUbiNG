@@ -31,6 +31,7 @@ public class FetchInfoHelper {
     final MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder()
       .setUrlKey( crawlRequest.getUrlKey() )
       .setFetchDate( ProtoHelper.getDayNow() )
+      .setFetchTimeMinutes( ProtoHelper.getMinuteNow() )
       .setFetchStatus( fetchStatus );
     if ( visitState.workbenchEntry != null && visitState.workbenchEntry.ipAddress != null )
       fetchInfoBuilder.setIpAddress( ByteString.copyFrom(visitState.workbenchEntry.ipAddress) );

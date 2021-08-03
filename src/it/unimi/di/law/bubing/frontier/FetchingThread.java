@@ -47,6 +47,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /*
@@ -120,26 +121,18 @@ public final class FetchingThread extends Thread implements Closeable {
   private final BasicCookieStore cookieStore;
 
   /**
-   * An SSL context that accepts all self-signed certificates.
+   * The index of the todoQueue (which is also the index for the SSLContext
    */
-  private static final SSLContext TRUST_SELF_SIGNED_SSL_CONTEXT;
-
-  static {
-    try {
-      TRUST_SELF_SIGNED_SSL_CONTEXT = SSLContexts.custom().loadTrustMaterial(null, new TrustSelfSignedStrategy()).build();
-    } catch (Exception cantHappen) {
-      throw new RuntimeException(cantHappen.getMessage(), cantHappen);
-    }
-  }
+  private final int queueIndex;
 
   /**
-   * An SSL context that accepts all certificates
+   * An array of SSL context that accepts all certificates.
    */
-  private static final SSLContext TRUST_ALL_CERTIFICATES_SSL_CONTEXT;
-
-  static {
+  private static final ConcurrentHashMap<Integer, SSLContext> sslContexts = new ConcurrentHashMap<>();
+  private static final SSLContext getNewSSLContext() {
+    SSLContext sslContext = null;
     try {
-      TRUST_ALL_CERTIFICATES_SSL_CONTEXT = SSLContexts.custom().loadTrustMaterial(null, new TrustStrategy() {
+      sslContext = SSLContexts.custom().loadTrustMaterial(null, new TrustStrategy() {
         public boolean isTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
           return true;
         }
@@ -147,6 +140,19 @@ public final class FetchingThread extends Thread implements Closeable {
     } catch (Exception cantHappen) {
       throw new RuntimeException(cantHappen.getMessage(), cantHappen);
     }
+    // Session cache size is normally automatically configured with the property javax.net.ssl.sessionCacheSize
+    // We still set it again here
+    sslContext.getClientSessionContext()
+      .setSessionCacheSize(Integer.parseInt(System.getProperty("javax.net.ssl.sessionCacheSize")));
+    // Session timeout is NOT automatically configured with the property javax.net.ssl.sessionTimeout
+    // We do it here
+    sslContext.getClientSessionContext()
+      .setSessionTimeout(Integer.parseInt(System.getProperty("javax.net.ssl.sessionTimeout")));
+    return sslContext;
+  }
+
+  private static final SSLContext getSSLContext(int queueIndex) {
+    return sslContexts.computeIfAbsent(queueIndex, (x) -> getNewSSLContext());
   }
 
   /**
@@ -155,10 +161,12 @@ public final class FetchingThread extends Thread implements Closeable {
   protected static final class BasicHttpClientConnectionManagerWithAlternateDNS
       extends BasicHttpClientConnectionManager {
 
-    static Registry<ConnectionSocketFactory> getDefaultRegistry() {
+    final static Registry<ConnectionSocketFactory> getDefaultRegistry(int queueIndex) {
       // setup a Trust Strategy that allows all certificates.
       //
-      SSLContext sslContext = TRUST_ALL_CERTIFICATES_SSL_CONTEXT;
+
+      SSLContext sslContext = getSSLContext(queueIndex);
+
       return RegistryBuilder.<ConnectionSocketFactory>create()
           .register("http", PlainConnectionSocketFactory.getSocketFactory())
           .register("https",
@@ -173,10 +181,11 @@ public final class FetchingThread extends Thread implements Closeable {
           .build();
     }
 
-    public BasicHttpClientConnectionManagerWithAlternateDNS(final DnsResolver dnsResolver) {
-      super(getDefaultRegistry(), null, null, dnsResolver);
+    public BasicHttpClientConnectionManagerWithAlternateDNS(final DnsResolver dnsResolver, int queueIndex) {
+      super(getDefaultRegistry(queueIndex), null, null, dnsResolver);
     }
   }
+
 
   private static int length(final String s) {
     return s == null ? 0 : s.length();
@@ -224,13 +233,18 @@ public final class FetchingThread extends Thread implements Closeable {
    *
    * @param frontier a reference to the {@link Frontier}.
    * @param index    the index of this thread (only for logging purposes).
+   * @param queueIndex    the to-do queue this thread is going to poll from, a to-do queue is a partition for
+   *                      SSLContexts cache scalability (change introduced following performance regression in
+   *                      JDK 11.0.11)
    */
-  public FetchingThread(final Frontier frontier, final int index) throws NoSuchAlgorithmException, IllegalArgumentException, IOException {
-    setName(this.getClass().getSimpleName() + '-' + index);
+  public FetchingThread(final Frontier frontier, final int index, final int queueIndex) throws NoSuchAlgorithmException, IllegalArgumentException, IOException {
+    setName(this.getClass().getSimpleName() + '-' + queueIndex + "-" + index);
+    this.queueIndex = queueIndex;
     setPriority(Thread.MIN_PRIORITY); // Low priority; there will be thousands of this guys around.
     this.frontier = frontier;
 
-    final BasicHttpClientConnectionManager connManager = new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver);
+    final BasicHttpClientConnectionManager connManager =
+      new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver, queueIndex);
 
     connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
     connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
@@ -246,13 +260,14 @@ public final class FetchingThread extends Thread implements Closeable {
 
     httpClient = HttpClients.custom()
         .setSSLHostnameVerifier(new NoopHostnameVerifier()) // why would we need to do it twice ?
-        .setSSLContext(frontier.rc.acceptAllCertificates ? TRUST_ALL_CERTIFICATES_SSL_CONTEXT : TRUST_SELF_SIGNED_SSL_CONTEXT)
+        .setSSLContext(getSSLContext(queueIndex)) // <- this is probably overriden by the connection manager
         .setConnectionManager(connManager)
         .setConnectionReuseStrategy(frontier.rc.keepAliveTime == 0 ? NoConnectionReuseStrategy.INSTANCE : DefaultConnectionReuseStrategy.INSTANCE)
         .setUserAgent(frontier.rc.userAgent)
         .setDefaultCookieStore(cookieStore)
         .setDefaultHeaders(ObjectArrayList.wrap(headers))
         .build();
+
     fetchData = new FetchData(frontier.rc);
     frontier.fetchDataCount.incrementAndGet();
   }
@@ -307,7 +322,7 @@ public final class FetchingThread extends Thread implements Closeable {
 
     frontier.rc.ensureNotPaused();
     VisitState visitState;
-    for ( int i=0; (visitState=frontier.todo.poll()) == null; ++i ) {
+    for ( int i=0; (visitState=frontier.todo[queueIndex].poll()) == null; ++i ) {
       if (stop) return null;
       long newSleep = 1 << Math.min(i, 10);
       waitTime += newSleep;
@@ -341,15 +356,15 @@ public final class FetchingThread extends Thread implements Closeable {
       try {
         final MsgFrontier.CrawlRequest.Builder crawlRequest = FetchInfoHelper.createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
         // First check that the crawlRequest is still valid
+        final var queryByteArray = HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray());
+        final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, queryByteArray);
+
         if (ProtoHelper.ttlHasExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), frontier.rc.crawlRequestTTL)) {
           if (LOGGER.isTraceEnabled()) {
-            final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
             LOGGER.trace("CrawlRequest for {} has expired", url.toString());
           }
           continue;
         }
-
-        final URI url = BURL.fromNormalizedSchemeAuthorityAndPathQuery(visitState.schemeAuthority, HuffmanModel.defaultModel.decompress(crawlRequest.getUrlKey().getZPathQuery().toByteArray()));
 
         if (LOGGER.isTraceEnabled()) LOGGER.trace("Next URL to fetch : {}", url);
 
@@ -371,6 +386,13 @@ public final class FetchingThread extends Thread implements Closeable {
           if (tryFetch(visitState, crawlRequest, url, true)) // FIXME: may return true even if fetch has failed...
             return true; // process fetch data
           break; // skip to next SchemeAuthority
+        }
+
+        if (url.getQuery() != null && ! BURL.isCanonicalQuery(url.getQuery())) {
+          if (LOGGER.isDebugEnabled()) LOGGER.debug("URL {} filtered out : NON CANONICAL QUERY", url);
+          frontier.enqueue(FetchInfoHelper.fetchInfoFailedFiltered(crawlRequest, visitState));
+          frontier.fetchingFailedCount.incrementAndGet();
+          continue; // skip to next PathQuery
         }
 
         if (!frontier.rc.fetchFilter.apply(url)) {
@@ -410,7 +432,7 @@ public final class FetchingThread extends Thread implements Closeable {
     }
     else {
       frontier.workingFetchingThreads.decrementAndGet();
-      if ( !fetchData.robots ) // FIXME: don't send fetchInfo for robots.txt
+      if ( !fetchData.isRobots ) // FIXME: don't send fetchInfo for robots.txt
         frontier.enqueue(fetchInfoFailed());
       frontier.done.add( fetchData.visitState );
     }
@@ -453,7 +475,7 @@ public final class FetchingThread extends Thread implements Closeable {
     //    : "first path now is " + it.unimi.di.law.bubing.util.Util.zToString(visitState.firstPath())));
     visitState.nextFetch = fetchData.endTime + Math.max(frontier.rc.schemeAuthorityDelay, visitState.crawlDelayMS); // Regular delay
 
-    if ( fetchData.robots ) {
+    if ( fetchData.isRobots ) {
       frontier.fetchedRobots.incrementAndGet();
       // FIXME: following is done by ParsingThread
       //frontier.robotsWarcParallelOutputStream.get().write(new HttpResponseWarcRecord(fetchData.uri(), fetchData.response()));
@@ -509,7 +531,7 @@ public final class FetchingThread extends Thread implements Closeable {
     else {
       frontier.brokenVisitStates.decrementAndGet();
       // Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
-      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.robots) {
+      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.isRobots ) {
         // Drain URLs in visitstate, creating adequate error fetch info
         try {
           FetchInfoHelper.drainVisitStateForError(frontier, visitState);
@@ -565,7 +587,7 @@ public final class FetchingThread extends Thread implements Closeable {
       return false;
     if (a.getQuery() == null || b.getQuery() == null)
       return a.getQuery() == b.getQuery();
-    return (BURL.normalizeQuery(a.getQuery()).equals(BURL.normalizeQuery(b.getQuery())));
+    return (BURL.canonicalizeQuery(a.getQuery()).equals(BURL.canonicalizeQuery(b.getQuery())));
   }
 
   private boolean isEquivalentURI(URI a, URI b) {
@@ -587,6 +609,10 @@ public final class FetchingThread extends Thread implements Closeable {
     cookieStore.clear();
     boolean finished = false;
     int attempt = 0; // number of self-redirect attempts
+    // quick fix to disable self-redirect feature. We set the attempt to 1
+    // Ideally we should be able to detect the sites that require activation of the self-redirect functionality
+    attempt = 1;
+
     while (!finished && attempt < 2) { // first attempt with redirects enabled. If terminal URI is != requestedUri, then retry without redirects
       attempt ++;
       if (robots)

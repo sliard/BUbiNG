@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.frontier;
  * limitations under the License.
  */
 
+import it.unimi.di.law.bubing.util.MurmurHash3;
 import org.apache.http.conn.DnsResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -165,6 +166,15 @@ public final class WorkbenchEntry implements Delayed {
 	 */
 	public synchronized int size() {
 		return visitStates.size();
+	}
+
+
+	/**
+	 * Returns the queue index base corresponding to the IP address hash
+	 */
+
+	public int getQueueIndex() {
+		return Math.abs((int)MurmurHash3.hash(ipAddress));
 	}
 
 	/** Returns the visit states currently in the queue.

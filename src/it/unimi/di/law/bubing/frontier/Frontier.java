@@ -265,9 +265,9 @@ public class Frontier {
 	/** The workbench virtualizer used by this frontier. */
 	protected final WorkbenchVirtualizer virtualizer;
 
-	/** A lock-free list of visit states ready to be visited; it is filled by the {@link TodoThread}
+	/** An array of lock-free list of visit states ready to be visited; it is filled by the {@link TodoThread}
 	 * and emptied by the {@linkplain FetchingThread fetching threads}. */
-	public final LockFreeQueue<VisitState> todo;
+	public final LockFreeQueue<VisitState>[] todo;
 
 	/** A lock-free list of visit states ready to be released; it is filled by
 	 * {@linkplain FetchingThread fetching threads} and emptied by the {@link DoneThread}. */
@@ -401,7 +401,7 @@ public class Frontier {
 			.setRedirectsEnabled(true)
 			.setRelativeRedirectsAllowed(true)
 			.setCircularRedirectsAllowed(true) // allow for cookie-based redirects
-			.setMaxRedirects(10) // 2xGoogle's policy
+			.setMaxRedirects(5) // Google's policy
 			.setContentCompressionEnabled(true)
 			.setProxy(rc.proxyHost.length() > 0 ? new HttpHost(rc.proxyHost, rc.proxyPort) : null)
 			.build();
@@ -416,8 +416,8 @@ public class Frontier {
 			.setCookieSpec(rc.cookiePolicy)
 			.setRedirectsEnabled(true)
 			.setRelativeRedirectsAllowed(true)
-			.setCircularRedirectsAllowed(true) // allow for cookie-based redirects
-			.setMaxRedirects(10) // 2xGoogle's policy
+			.setCircularRedirectsAllowed(false) // allow for cookie-based redirects
+			.setMaxRedirects(5) // Google's policy
 			.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
 			.build();
 		LOGGER.info("Set robots request config to {}", robotsRequestConfig.toString());
@@ -531,7 +531,9 @@ public class Frontier {
 		fetchingThreads = new ObjectArrayList<>();
 		parsingThreads = new ObjectArrayList<>();
 		newVisitStates = new LinkedBlockingQueue<>();
-		todo = new LockFreeQueue<>();
+		todo = new LockFreeQueue[rc.internalQueues];
+		for (int todoIndex = 0; todoIndex < rc.internalQueues; todoIndex++)
+			todo[todoIndex] = new LockFreeQueue<>();
 		done = new LockFreeQueue<>();
 		refill = new LockFreeQueue<>();
 		results = new LockFreeQueue<>();
@@ -611,7 +613,8 @@ public class Frontier {
 			}
 
 			for (int i = numFetchingThreads - fetchingThreads.size(); i-- != 0;) {
-				final FetchingThread thread = new FetchingThread(this, fetchingThreads.size());
+				final FetchingThread thread = new FetchingThread(this,
+					fetchingThreads.size(), fetchingThreads.size() % rc.internalQueues);
 				thread.start();
 				fetchingThreads.add(thread);
 			}
@@ -788,7 +791,8 @@ public class Frontier {
 
 		LOGGER.warn( "Releasing VisitStates" );
 		// Move the todo list back into the workbench
-		for (VisitState visitState; (visitState = todo.poll()) != null;) workbench.release(visitState);
+		for(var t:todo)
+			for (VisitState visitState; (visitState = t.poll()) != null;) workbench.release(visitState);
 		// Move the done list back into the workbench (here we catch visit states released by the interrupts on the fetching threads, if any)
 		for (VisitState visitState; (visitState = done.poll()) != null;) {
 			// We do not schedule for refill purged visit states
@@ -811,8 +815,15 @@ public class Frontier {
 		LOGGER.warn( "Frontier closed" );
 	}
 
+	public long getTodoSize() {
+		long todoSize = 0;
+		for (var t:todo)
+			todoSize += t.size();
+		return todoSize;
+	}
+
 	public long getCurrentFrontSize() {
-		return workbench.approximatedSize() + todo.size() - workbench.broken.get();
+		return workbench.approximatedSize() + getTodoSize() - workbench.broken.get();
 	}
 
 		/** Update, if necessary, the {@link #requiredFrontSize}. The current front size is the number of
