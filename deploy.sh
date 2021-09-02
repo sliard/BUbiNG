@@ -21,7 +21,7 @@ PACKAGING=$(xmlstarlet sel -N my=http://maven.apache.org/POM/4.0.0  -t -v  "/my:
 FILE=./${ARTIFACT_ID}-${VERSION}.jar
 SRC_FILE=./${ARTIFACT_ID}-${VERSION}.jar
 REPOSITORY_ID=exensa_local
-URL=scpexe://maven.exensa.loc/var/http/maven-repository/releases
+URL=scpexe://maven.babbar.eu/var/http/maven-repository/releases
 
 [[ -e ${SRC_FILE} ]] || ant srcdist
 [[ -e ${FILE} ]] || ant jar
