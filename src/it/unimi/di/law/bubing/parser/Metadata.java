@@ -1,7 +1,6 @@
 package it.unimi.di.law.bubing.parser;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -61,7 +60,6 @@ public final class Metadata
 
   public Iterable<? extends Map.Entry<String,List<String>>> entries() {
     return new Iterable<Object2ObjectOpenHashMap.Entry<String,List<String>>>() {
-      @NotNull
       @Override
       public Iterator<Object2ObjectOpenHashMap.Entry<String,List<String>>> iterator() {
         return map.object2ObjectEntrySet().fastIterator();

@@ -9,7 +9,7 @@
      <distributionManagement>
         <repository>
             <id>exensa_local</id>
-            <url>scpexe://maven.exensa.loc/var/http/maven-repository/releases</url>
+            <url>scpexe://maven.babbar.eu/var/http/maven-repository/releases</url>
             <uniqueVersion>false</uniqueVersion>
         </repository>
     </distributionManagement>
