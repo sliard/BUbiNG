@@ -16,6 +16,7 @@ package it.unimi.di.law.bubing.util;
  * limitations under the License.
  */
 
+import com.exensa.wdl.protobuf.ProtoHelper;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.google.common.base.Charsets;
 import com.google.common.net.HttpHeaders;
@@ -538,9 +539,33 @@ public class FetchData implements URIResponse, Closeable {
 			BufferedReader r = new BufferedReader(new InputStreamReader(is));
 			String line;
 			while ((line = r.readLine()) != null) System.out.println(line);
-		}
+
 
 		httpAsyncClient.shutdown();
 	}
 	*/
+
+	public static void main(String[] args) throws Exception {
+		DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH).withZone(ZoneId.of("GMT"));
+		System.out.println("Test HTTP date formatter");
+		Duration[] durations = {
+			Duration.ofMinutes(10),
+			Duration.ofMinutes(100),
+			Duration.ofMinutes(1000),
+			Duration.ofDays(1),
+			Duration.ofDays(2),
+			Duration.ofDays(4),
+			Duration.ofDays(8),
+			Duration.ofDays(16),
+			Duration.ofDays(32),
+			Duration.ofDays(64),
+			Duration.ofDays(128),
+			Duration.ofDays(256),
+			Duration.ofDays(512)
+		};
+		for (var back : durations) {
+			int lastFetchTimeMinutes = com.exensa.wdl.common.TimeHelper.toMinutes(Instant.now().minus(back));
+			System.out.println(dtf.format(Instant.EPOCH.plus(Duration.ofMinutes(lastFetchTimeMinutes))));
+		}
+	}
 }
