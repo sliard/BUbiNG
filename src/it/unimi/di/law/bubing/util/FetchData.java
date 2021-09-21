@@ -387,7 +387,7 @@ public class FetchData implements URIResponse, Closeable {
 					httpGet.setHeader(HttpHeaders.IF_NONE_MATCH, crawlRequest.getCrawlInfo().getETag());
 				}
 					if (crawlRequest.getCrawlInfo().getLastFetchTimeMinutes() > 0) {
-						DateTimeFormatter dtf = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneId.of("GMT")).withLocale(Locale.ENGLISH);
+						DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH).withZone(ZoneId.of("GMT"));
 						httpGet.setHeader(new BasicHeader(HttpHeaders.IF_MODIFIED_SINCE,
 							dtf.format(Instant.EPOCH.plus(Duration.ofMinutes(crawlRequest.getCrawlInfo().getLastFetchTimeMinutes() )))));
 					}
