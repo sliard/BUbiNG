@@ -12,7 +12,7 @@ LOGBACK_CONFIG=./logback-bubing.xml
 
 AGENT_NAME=$(uname -n)
 IP=$(hostname -i | cut -d' ' -f 1)
-NODE_ID=$( hostname | sed -e 's/[^0-9]//g' )
+NODE_ID=$(hostname | grep -Eo '\-[0-9]+[.-]' | tr -d '\-.')
 NODE_ID=$(( $NODE_ID - 1 ))
 echo "node id = $NODE_ID"
 
