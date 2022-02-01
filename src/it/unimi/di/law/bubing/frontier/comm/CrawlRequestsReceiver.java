@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 //RELEASE-STATUS: DIST
 
@@ -58,14 +59,18 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 	public void received( final Consumer<byte[]> consumer, final Message<byte[]> message ) {
 		try {
 			final MsgFrontier.CrawlRequest crawlRequest = MsgFrontier.CrawlRequest.parseFrom( message.getData() );
-			if ( LOGGER.isTraceEnabled() ) LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
+			if ( LOGGER.isTraceEnabled() )
+				LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
 			if (!TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
-				frontier.receivedCrawlRequests.put(crawlRequest); // Will block until not full
-				frontier.numberOfReceivedURLs.addAndGet(1);
-				messageCount++;
+				// We cannot block indefinitely because pulsar doesn't like it (topics become unconsumable)
+				if (frontier.receivedCrawlRequests.offer(crawlRequest, 5, TimeUnit.SECONDS)) {
+					frontier.numberOfReceivedURLs.addAndGet(1);
+					messageCount++;
+				}
 			}
 			if (messageCount == 1000)
 				LOGGER.warn("PULSAR Consumer for topic {} is active", topic);
+			// We still ACK even if the message was not actually put into a queue
 			consumer.acknowledge( message );
 		}
 		catch ( InvalidProtocolBufferException e ) {
