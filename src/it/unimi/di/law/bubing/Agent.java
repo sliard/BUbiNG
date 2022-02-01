@@ -619,12 +619,13 @@ public class Agent {
 		return frontier.transferredBytes.get();
 	}
 
-	@ManagedAttribute @Description("Number of URLs received from other agents")
-	public long getReceivedURLs() {
-		return frontier.numberOfReceivedURLs.get();
-	}
+	@ManagedAttribute @Description("Number of URLs received from pulsar")
+	public long getReceivedURLs() { return frontier.numberOfReceivedURLs.get(); }
 
-  @ManagedAttribute @Description("Number of fetched URLs sent to the frontier")
+	@ManagedAttribute @Description("Number of URLs dropped")
+	public long getDroppedURLs() { return frontier.numberOfDroppedURLs.get(); }
+
+	@ManagedAttribute @Description("Number of fetched URLs sent to the frontier")
   public long getSentURLs() {
     return frontier.numberOfSentURLs.get();
   }
