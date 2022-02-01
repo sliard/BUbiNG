@@ -63,7 +63,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 				LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
 			if (!TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
 				// We cannot block indefinitely because pulsar doesn't like it (topics become unconsumable)
-				if (frontier.receivedCrawlRequests.offer(crawlRequest, 5, TimeUnit.SECONDS)) {
+				if (frontier.receivedCrawlRequests.offer(crawlRequest, 1, TimeUnit.SECONDS)) {
 					frontier.numberOfReceivedURLs.addAndGet(1);
 					messageCount++;
 				}
