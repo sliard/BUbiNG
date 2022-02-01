@@ -64,9 +64,10 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 			if (!TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
 				// We cannot block indefinitely because pulsar doesn't like it (topics become unconsumable)
 				if (frontier.receivedCrawlRequests.offer(crawlRequest, 1, TimeUnit.SECONDS)) {
-					frontier.numberOfReceivedURLs.addAndGet(1);
+					frontier.numberOfReceivedURLs.incrementAndGet();
 					messageCount++;
-				}
+				} else
+					frontier.numberOfDroppedURLs.incrementAndGet();
 			}
 			if (messageCount == 1000)
 				LOGGER.warn("PULSAR Consumer for topic {} is active", topic);
