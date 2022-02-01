@@ -239,6 +239,12 @@ public class Frontier {
 
 	/** The overall number of URLs sent by other agents. */
 	public final AtomicLong numberOfReceivedURLs;
+
+
+	/** The number of dropped urls */
+	public final AtomicLong numberOfDroppedURLs;
+
+
 	public final AtomicLong numberOfSentURLs;
 
 	/** The workbench. */
@@ -515,6 +521,7 @@ public class Frontier {
 		contentTypeOthers = new AtomicLong();
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
+		numberOfDroppedURLs = new AtomicLong();
 		numberOfSentURLs = new AtomicLong();
 		requiredFrontSize = new AtomicLong(1500);
 		fetchingThreadWaits = new AtomicLong();
