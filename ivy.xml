@@ -29,7 +29,7 @@
 
 		<dependency org="it.unimi.di.law" name="jericho-html-dev" rev="20131217" conf="runtime->default"/>
 		<dependency org="com.ibm.icu" name="icu4j" rev="60.1"/>
-		<dependency org="com.github.crawler-commons" name="crawler-commons" rev="latest.release"/>
+		<dependency org="com.github.crawler-commons" name="crawler-commons" rev="1.0"/>
 
 
 		<dependency org="org.slf4j" name="log4j-over-slf4j" rev="latest.release"/>
