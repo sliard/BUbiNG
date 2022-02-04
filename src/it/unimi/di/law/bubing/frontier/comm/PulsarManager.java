@@ -70,9 +70,9 @@ public final class PulsarManager implements AutoCloseable
 
   private static PulsarClient createClient( final RuntimeConfiguration rc ) throws PulsarClientException {
     return PulsarClient.builder()
-      .ioThreads( 16 )
-      .listenerThreads( 16 )
-      .connectionsPerBroker( 4 )
+      .ioThreads( 32 )
+      .listenerThreads( 32 )
+      .connectionsPerBroker( 16 )
       .enableTls( false )
       .enableTlsHostnameVerification( false )
       .statsInterval( 10, TimeUnit.MINUTES )
@@ -283,7 +283,7 @@ public final class PulsarManager implements AutoCloseable
 
     private String getConsumerName(final int topic) {
       // node X has consumerId ZERO for each topic such that
-      // topic % nodeNunber == X
+      // topic % nodeNumber == X
       // otherwise, the consumerId is 1 + random
       boolean isMyDefaultTopic =  ( topic % rc.pulsarFrontierNodeNumber ) == rc.pulsarFrontierNodeId;
       int consumerID = isMyDefaultTopic ? 0 :
@@ -302,11 +302,16 @@ public final class PulsarManager implements AutoCloseable
 
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
-        .receiverQueueSize(64)
-        .maxTotalReceiverQueueSizeAcrossPartitions(4096)
+        .receiverQueueSize(3*42)
+        .batchReceivePolicy(
+          BatchReceivePolicy.builder()
+            .maxNumMessages( 42 )
+            .maxNumBytes( -1 )
+            .timeout( 1, TimeUnit.SECONDS ).build())
+        .maxTotalReceiverQueueSizeAcrossPartitions(32*1024)
         .acknowledgmentGroupTime( 500, TimeUnit.MILLISECONDS )
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
-        .subscriptionInitialPosition( SubscriptionInitialPosition.Latest )
+        .subscriptionInitialPosition( SubscriptionInitialPosition.Earliest )
         .subscriptionName( "toCrawlSubscription" )
         .consumerName(getConsumerName(topic))
         .topic(topicName)
