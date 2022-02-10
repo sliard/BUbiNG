@@ -408,9 +408,10 @@ public class FetchData implements URIResponse, Closeable {
 
           final HttpEntity entity = response.getEntity();
 
-          if (entity == null)
-            LOGGER.warn( "Null entity for URL " + url );
-          else {
+          if (entity == null) {
+          	if (response.getStatusLine().getStatusCode() != 304) // 304 => Not Modified, that's normal
+							LOGGER.warn("Null entity for URL " + url + " : " + response.getStatusLine());
+          } else {
             wrappedEntity.setEntity(entity);
             isTruncated = wrappedEntity.copyContent(rc.responseBodyMaxByteSize, startTime, rc.maximumFetchDuration, rc.minimumDownloadSpeed, rc.maximumTimeToFirstByte, mutableFirstByteTime);
             firstByteTime = mutableFirstByteTime.longValue();

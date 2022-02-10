@@ -622,8 +622,20 @@ public class Agent {
 	@ManagedAttribute @Description("Number of URLs received from pulsar")
 	public long getReceivedURLs() { return frontier.numberOfReceivedURLs.get(); }
 
+	@ManagedAttribute @Description("Number of URLs drained for unknown host")
+	public long getDrainedURLs() { return frontier.numberOfDrainedURLs.get(); }
+
 	@ManagedAttribute @Description("Number of URLs dropped")
 	public long getDroppedURLs() { return frontier.numberOfDroppedURLs.get(); }
+
+	@ManagedAttribute @Description("Number of URLs overflow")
+	public long getOverflowURLs() { return frontier.numberOfOverflowURLs.get(); }
+
+	@ManagedAttribute @Description("Number of visit states purged by delay rule")
+	public long getPurgedDelayVisitStates() { return frontier.numberOfPurgedDelayVisitStates.get(); }
+
+	@ManagedAttribute @Description("Number of visit states purged by schedule")
+	public long getPurgedScheduleVisitStates() { return frontier.numberOfPurgedScheduledVisitStates.get(); }
 
 	@ManagedAttribute @Description("Number of fetched URLs sent to the frontier")
   public long getSentURLs() {

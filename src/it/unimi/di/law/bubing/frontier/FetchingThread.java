@@ -540,6 +540,10 @@ public final class FetchingThread extends Thread implements Closeable {
           if (LOGGER.isInfoEnabled()) LOGGER.info("Visit state " + visitState + " killed by " + exceptionClass.getSimpleName() + " (URL: " + fetchData.uri() + ")");
         } catch (InterruptedException e) {
           LOGGER.error( "Interrupted", e );
+          throw new Error((e));
+        } catch (IOException e) {
+          LOGGER.error( "IOError", e );
+          throw new Error(e);
         }
       }
       else {

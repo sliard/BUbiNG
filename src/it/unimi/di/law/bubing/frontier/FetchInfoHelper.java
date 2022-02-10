@@ -12,6 +12,8 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+
 public class FetchInfoHelper {
   private final static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(FetchInfoHelper.class);
 
@@ -50,23 +52,38 @@ public class FetchInfoHelper {
     return fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.ROBOTS_DENIED);
   }
 
-  static void drainVisitStateForError( final Frontier frontier, final VisitState visitState ) throws InterruptedException {
-    final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
-    LOGGER.info("Draining " + visitState.size() + " crawl request for host " + Serializer.URL.Key.toString(schemeAuthorityProto));
-    while ( !visitState.isEmpty() ) {
-      frontier.rc.ensureNotPaused();
-      final byte[] minimalCrawlRequestSerialized = visitState.dequeue(); // contains a zPathQuery
-      if (minimalCrawlRequestSerialized == VisitState.ROBOTS_PATH) // skip for robots.txt
-        continue;
-      try {
-        final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
-        frontier.enqueue(fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.HOST_INVALID));
-      } catch (InvalidProtocolBufferException ipbe) {
-        throw new UnexpectedException(ipbe);
-      }
-      frontier.fetchingFailedHostCount.incrementAndGet();
-      frontier.fetchingFailedCount.incrementAndGet();
+
+  static void failedCrawlRequest( final Frontier frontier, final VisitState visitState,
+                                  final MsgURL.Key schemeAuthorityProto, final byte[] minimalCrawlRequestSerialized) {
+    if (minimalCrawlRequestSerialized == VisitState.ROBOTS_PATH) // skip for robots.txt
+      return;
+    try {
+      final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
+      frontier.enqueue(fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.HOST_INVALID));
+    } catch (InvalidProtocolBufferException ipbe) {
+      throw new UnexpectedException(ipbe);
     }
+    frontier.fetchingFailedHostCount.incrementAndGet();
+    frontier.fetchingFailedCount.incrementAndGet();
+  }
+
+  static void drainVisitStateForError( final Frontier frontier, final VisitState visitState ) throws InterruptedException, IOException {
+    final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
+    LOGGER.info("Draining " + visitState.size() + " + " + frontier.virtualizer.count(visitState) + " crawl request(s) for host " + Serializer.URL.Key.toString(schemeAuthorityProto));
+    while ( frontier.virtualizer.count(visitState) > 0 || ! visitState.isEmpty() ) {
+      frontier.rc.ensureNotPaused();
+      if (frontier.virtualizer.count(visitState) > 0) {
+        int read = frontier.virtualizer.dequeueCrawlRequests(visitState, 100);
+
+      }
+      while (!visitState.isEmpty()) {
+
+        final byte[] minimalCrawlRequestSerialized = visitState.dequeue(); // contains a zPathQuery
+        frontier.numberOfDrainedURLs.incrementAndGet();
+        failedCrawlRequest(frontier, visitState, schemeAuthorityProto, minimalCrawlRequestSerialized);
+      }
+    }
+    frontier.virtualizer.remove(visitState);
   }
 
 }
