@@ -140,13 +140,21 @@ public final class Distributor extends Thread {
 					addedNewVisitState = true;
 			}
 			else {
-				if (frontier.virtualizer.count(visitState) > 0) {
+				long urlsOnDisk = frontier.virtualizer.count(visitState);
+				int pathQueryLimit = visitState.pathQueryLimit();
+				if ( urlsOnDisk > 0) {
 					// Safe: there are URLs on disk, and this fact cannot change concurrently.
-					movedFromReceivedToVirtualizer++;
-					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+
+					// Drop if number of urls on disk is above X times memory limit
+					if (urlsOnDisk >= pathQueryLimit * 10)
+						frontier.numberOfOverflowURLs.incrementAndGet();
+					else {
+						movedFromReceivedToVirtualizer++;
+						frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+					}
 				}
 				else
-				if (visitState.size() < visitState.pathQueryLimit() && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
+				if (visitState.size() < pathQueryLimit && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
 					/* Safe: we are enqueueing to a sane (modulo race conditions)
 					 * visit state, which will be necessarily go through the DoneThread later. */
 					if (visitState.size() == 0)
@@ -155,10 +163,15 @@ public final class Distributor extends Thread {
 					visitState.enqueueCrawlRequest(PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
 					movedFromReceivedToWorkbench++;
 				}
-				else { // visitState.urlsOnDisk == 0
+				else { // visitState.urlsOnDisk == 0 AND memory queue full OR host not resolved yet OR there was a previous error
+					// Then put url in disk queue if room available
 					// FIXME: we are here not only because visitState.urlsOnDisk == 0
-					movedFromReceivedToVirtualizer++;
-					frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+					if (urlsOnDisk >= pathQueryLimit * 10)
+						frontier.numberOfOverflowURLs.incrementAndGet();
+					else {
+						movedFromReceivedToVirtualizer++;
+						frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+					}
 				}
 			}
 		}
@@ -201,8 +214,8 @@ public final class Distributor extends Thread {
 							movedFromQueues += dequeuedURLs;
 						}
 					}
-
-					if ( frontIsSmall ) {
+					// Test : consume URLs even when front is full
+					else if ( frontIsSmall ) {
 						// It is necessary to enrich the workbench picking up URLs from the sieve
             int toAdd = Math.min( 1000, frontier.receivedCrawlRequests.size() );
 						// Note that this might make temporarily the workbench too big by a little bit.
@@ -316,11 +329,13 @@ public final class Distributor extends Thread {
             // This will modify the backing array on which we are enumerating, but it won't be a serious problem.
             frontier.virtualizer.remove(visitState);
             schemeAuthority2VisitState.remove(visitState);
+            frontier.numberOfPurgedDelayVisitStates.incrementAndGet();
           } else {
             if (visitState.purgeRequired) {
 
               frontier.virtualizer.remove(visitState);
               frontier.distributor.schemeAuthority2VisitState.remove(visitState);
+              frontier.numberOfPurgedScheduledVisitStates.incrementAndGet();
             }
           }
         }

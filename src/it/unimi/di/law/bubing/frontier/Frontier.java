@@ -240,11 +240,23 @@ public class Frontier {
 	/** The overall number of URLs sent by other agents. */
 	public final AtomicLong numberOfReceivedURLs;
 
+	/** The overall number of URLs sent by other agents. */
+	public final AtomicLong numberOfDrainedURLs;
 
 	/** The number of dropped urls */
 	public final AtomicLong numberOfDroppedURLs;
 
+	/** The number of visitstates that are purged because they haven't received a url in a long time	 */
+	public final AtomicLong numberOfPurgedDelayVisitStates;
 
+	/** The number of visitstates that are purged because they have been scheduled	 */
+	public final AtomicLong numberOfPurgedScheduledVisitStates;
+
+
+	/** The number of overflow urls */
+	public final AtomicLong numberOfOverflowURLs;
+
+	/** The number of urls from outlinks */
 	public final AtomicLong numberOfSentURLs;
 
 	/** The workbench. */
@@ -444,7 +456,7 @@ public class Frontier {
 		this.agent = agent;
 		this.pulsarManager = pulsarManager;
 
-		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 100;
+		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 50;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
 
 		robotsWarcParallelOutputStream = null;
@@ -522,6 +534,11 @@ public class Frontier {
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
 		numberOfDroppedURLs = new AtomicLong();
+		numberOfDrainedURLs = new AtomicLong();
+		numberOfOverflowURLs = new AtomicLong();
+		numberOfPurgedDelayVisitStates = new AtomicLong();
+		numberOfPurgedScheduledVisitStates = new AtomicLong();
+
 		numberOfSentURLs = new AtomicLong();
 		requiredFrontSize = new AtomicLong(1500);
 		fetchingThreadWaits = new AtomicLong();
@@ -531,7 +548,7 @@ public class Frontier {
 		setRobotsRequest();
 		setNoRedirectRequest();
 		fetchInfoSendQueue = new ArrayBlockingQueue<>(  512);
-		receivedCrawlRequests = new ArrayBlockingQueue<>( 4 * 1024);
+		receivedCrawlRequests = new ArrayBlockingQueue<>( 128 * 1024);
 
 		fetchInfoSendThread = new FetchInfoSendThread( pulsarManager, fetchInfoSendQueue);
 		dnsThreads = new ObjectArrayList<>();

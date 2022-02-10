@@ -63,7 +63,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 				LOGGER.trace( "Received url {} to crawl", Serializer.URL.Key.toString(crawlRequest.getUrlKey()) );
 			if (!TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
 				// We cannot block indefinitely because pulsar doesn't like it (topics become unconsumable)
-				if (frontier.receivedCrawlRequests.offer(crawlRequest, 100, TimeUnit.MILLISECONDS)) {
+				if (frontier.receivedCrawlRequests.offer(crawlRequest)) {
 					frontier.numberOfReceivedURLs.incrementAndGet();
 					messageCount++;
 				} else
@@ -77,9 +77,9 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 		catch ( InvalidProtocolBufferException e ) {
 			LOGGER.error( String.format("Error while parsing message for topic %d",topic), e );
 		}
-		catch ( InterruptedException e ) {
-			LOGGER.error( String.format("Interrupted while processing message for topic %d",topic), e );
-		}
+		//catch ( InterruptedException e ) {
+		//	LOGGER.error( String.format("Interrupted while processing message for topic %d",topic), e );
+		//}
 		catch ( PulsarClientException e ) {
 		  LOGGER.error( String.format("While acknowledging message for topic %d",topic), e );
     }

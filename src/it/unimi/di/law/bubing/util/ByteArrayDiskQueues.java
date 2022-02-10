@@ -175,34 +175,35 @@ public class ByteArrayDiskQueues implements Closeable, Size64 {
 	 * @param length the number of valid elements in {@code array}.
 	 */
 	public void enqueue(final Object key, byte[] array, final int offset, final int length) throws FileNotFoundException, IOException {
-		QueueData queueData = key2QueueData.get(key);
-		if (queueData == null) {
-			queueData = new QueueData();
-			queueData.head = appendPointer;
-			synchronized (key2QueueData) {
-				key2QueueData.put(key, queueData);
+		synchronized (this) {
+			QueueData queueData = key2QueueData.get(key);
+			if (queueData == null) {
+				queueData = new QueueData();
+				queueData.head = appendPointer;
+				synchronized (key2QueueData) {
+					key2QueueData.put(key, queueData);
+				}
+			} else {
+				pointer(queueData.tail);
+				writeLong(appendPointer);
 			}
+
+			queueData.count++;
+			queueData.tail = appendPointer;
+
+			final long start = appendPointer;
+			pointer(appendPointer);
+			writeLong(0);
+			encodeInt(length);
+			write(array, offset, length);
+			appendPointer = pointer();
+			final long bytes = appendPointer - start;
+			used += bytes;
+			queueData.usage += bytes;
+
+			assert used >= 0 : used;
+			size++;
 		}
-		else {
-			pointer(queueData.tail);
-			writeLong(appendPointer);
-		}
-
-		queueData.count++;
-		queueData.tail = appendPointer;
-
-		final long start = appendPointer;
-		pointer(appendPointer);
-		writeLong(0);
-		encodeInt(length);
-		write(array, offset, length);
-		appendPointer = pointer();
-		final long bytes = appendPointer - start;
-		used += bytes;
-		queueData.usage += bytes;
-
-		assert used >= 0 : used;
-		size++;
 	}
 
 	/** Dequeues the first element available for a given key.
@@ -211,24 +212,26 @@ public class ByteArrayDiskQueues implements Closeable, Size64 {
 	 * @return the first element associated with {@code key}.
 	 */
 	public byte[] dequeue(final Object key) throws IOException {
-		final QueueData queueData = key2QueueData.get(key);
-		if (queueData == null) throw new NoSuchElementException();
+		synchronized (this) {
+			final QueueData queueData = key2QueueData.get(key);
+			if (queueData == null) throw new NoSuchElementException();
 
-		final long head = queueData.head;
-		pointer(queueData.head);
-		queueData.count--;
-		queueData.head = readLong();
-		final int length = decodeInt();
-		final byte[] result = new byte[length];
-		read(result, 0, length);
-		final long bytes = pointer() - head;
-		used -= bytes;
-		queueData.usage -= bytes; // If we are dequeuing the last element, this is done on a throw-away QueueData
-		if (queueData.count == 0) remove(key);
+			final long head = queueData.head;
+			pointer(queueData.head);
+			queueData.count--;
+			queueData.head = readLong();
+			final int length = decodeInt();
+			final byte[] result = new byte[length];
+			read(result, 0, length);
+			final long bytes = pointer() - head;
+			used -= bytes;
+			queueData.usage -= bytes; // If we are dequeuing the last element, this is done on a throw-away QueueData
+			if (queueData.count == 0) remove(key);
 
-		size--;
-		assert used >= 0 : used;
-		return result;
+			size--;
+			assert used >= 0 : used;
+			return result;
+		}
 	}
 
 	/** Remove all elements associated with a given key.

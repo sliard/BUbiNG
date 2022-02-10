@@ -302,10 +302,10 @@ public final class PulsarManager implements AutoCloseable
 
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
-        .receiverQueueSize(3*42)
+        .receiverQueueSize(3*420)
         .batchReceivePolicy(
           BatchReceivePolicy.builder()
-            .maxNumMessages( 42 )
+            .maxNumMessages( 420 )
             .maxNumBytes( -1 )
             .timeout( 1, TimeUnit.SECONDS ).build())
         .maxTotalReceiverQueueSizeAcrossPartitions(32*1024)
