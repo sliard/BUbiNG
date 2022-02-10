@@ -253,6 +253,15 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#workbenchMaxByteSize */
 	public volatile long workbenchMaxByteSize;
 
+	/** The minimum size of the visitstate memory queue */
+	public volatile long visitStateMemoryQueueMinSize;
+
+	/** The expected duration of the visitstate memory queue */
+	public volatile long visitStateMemoryQueueExpectedDuration;
+
+	/** The disk/memory ratio for the visitstate  queue */
+	public volatile long visitStateQueueDiskMemoryRatio;
+
 	/** @see StartupConfiguration#virtualizerMaxByteSize */
 	public final long virtualizerMaxByteSize;
 
@@ -387,6 +396,9 @@ public class RuntimeConfiguration {
 			pulsarFrontierToCrawlURLsTopic = startupConfiguration.pulsarFrontierToCrawlURLsTopic;
 			pulsarFrontierToPromptlyCrawlURLsTopic = startupConfiguration.pulsarFrontierToPromptlyCrawlURLsTopic;
 			workbenchMaxByteSize = startupConfiguration.workbenchMaxByteSize;
+			visitStateMemoryQueueMinSize = startupConfiguration.visitStateMemoryQueueMinSize;
+			visitStateMemoryQueueExpectedDuration = startupConfiguration.visitStateMemoryQueueExpectedDuration;
+			visitStateQueueDiskMemoryRatio = startupConfiguration.visitStateQueueDiskMemoryRatio;
 			virtualizerMaxByteSize = startupConfiguration.virtualizerMaxByteSize;
 			dnsCacheMaxSize = startupConfiguration.dnsCacheMaxSize;
 			dnsPositiveTtl = startupConfiguration.dnsPositiveTtl;
