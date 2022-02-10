@@ -174,16 +174,17 @@ public class ByteArrayDiskQueues implements Closeable, Size64 {
 	 * @param offset the first valid byte in {@code array}.
 	 * @param length the number of valid elements in {@code array}.
 	 */
-	public void enqueue(final Object key, byte[] array, final int offset, final int length) throws FileNotFoundException, IOException {
-		QueueData queueData = key2QueueData.get(key);
+	public synchronized void enqueue(final Object key, byte[] array, final int offset, final int length) throws FileNotFoundException, IOException {
+		QueueData queueData;
+		queueData = key2QueueData.get(key);
+
 		if (queueData == null) {
 			queueData = new QueueData();
 			queueData.head = appendPointer;
 			synchronized (key2QueueData) {
 				key2QueueData.put(key, queueData);
 			}
-		}
-		else {
+		} else {
 			pointer(queueData.tail);
 			writeLong(appendPointer);
 		}
@@ -210,10 +211,9 @@ public class ByteArrayDiskQueues implements Closeable, Size64 {
 	 * @param key a key.
 	 * @return the first element associated with {@code key}.
 	 */
-	public byte[] dequeue(final Object key) throws IOException {
+	public synchronized byte[] dequeue(final Object key) throws IOException {
 		final QueueData queueData = key2QueueData.get(key);
 		if (queueData == null) throw new NoSuchElementException();
-
 		final long head = queueData.head;
 		pointer(queueData.head);
 		queueData.count--;

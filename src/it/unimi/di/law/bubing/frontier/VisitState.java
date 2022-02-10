@@ -429,10 +429,10 @@ public class VisitState implements Delayed, Serializable {
 		 * amounts to 2 scheme+authority delays. */
 		final double scalingFactor = workbenchEntry == null ? 1 : Math.max(1, workbenchEntry.size() / delayRatio);
 		/* Finally, we divide the estimated workbench size in path+queries by the size of the required front multiplied
-		 * by the scaling factor. We also maximize with 4 and minimize with the number of path+queries that
-		 * can be fetched in five minutes. */
-		return (int)Math.min(300000 / (frontier.rc.schemeAuthorityDelay + 1),
-				Math.max(4, (long)Math.ceil((frontier.workbenchSizeInPathQueries /
+		 * by the scaling factor. We also maximize with 16 and minimize with the number of path+queries that
+		 * can be fetched in 10 minutes. */
+		return (int)Math.min(600000 / (frontier.rc.schemeAuthorityDelay + 1),
+				Math.max(16, (long)Math.ceil((frontier.workbenchSizeInPathQueries /
 						(scalingFactor * frontier.requiredFrontSize.get())))));
 	}
 
