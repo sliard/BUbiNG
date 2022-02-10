@@ -2,7 +2,7 @@
 
 bs_home="$HOME/.ant/bootstrap"
 
-ant_version="1.10.10"
+ant_version="1.10.12"
 ivy_version="2.5.0"
 ant_file="apache-ant-${ant_version}-bin.tar.bz2"
 ivy_file="apache-ivy-${ivy_version}-bin.tar.gz"
