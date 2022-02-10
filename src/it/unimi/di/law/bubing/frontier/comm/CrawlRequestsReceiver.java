@@ -77,9 +77,6 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 		catch ( InvalidProtocolBufferException e ) {
 			LOGGER.error( String.format("Error while parsing message for topic %d",topic), e );
 		}
-		//catch ( InterruptedException e ) {
-		//	LOGGER.error( String.format("Interrupted while processing message for topic %d",topic), e );
-		//}
 		catch ( PulsarClientException e ) {
 		  LOGGER.error( String.format("While acknowledging message for topic %d",topic), e );
     }
