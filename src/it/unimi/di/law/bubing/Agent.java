@@ -513,6 +513,37 @@ public class Agent {
 		return rc.workbenchMaxByteSize;
 	}
 
+	@ManagedAttribute
+	public void setVisitStateMemoryQueueMinSize(final long visitStateMemoryQueueMinSize) {
+		rc.visitStateMemoryQueueMinSize = visitStateMemoryQueueMinSize;
+	}
+
+	@ManagedAttribute
+	public long getVisitStateMemoryQueueMinSize() {
+		return rc.visitStateMemoryQueueMinSize;
+	}
+
+	@ManagedAttribute
+	public void setVisitStateMemoryQueueExpectedDuration(final long visitStateMemoryQueueExpectedDuration) {
+		rc.visitStateMemoryQueueExpectedDuration = visitStateMemoryQueueExpectedDuration;
+	}
+
+	@ManagedAttribute
+	public long getVisitStateMemoryQueueExpectedDuration() {
+		return rc.visitStateMemoryQueueExpectedDuration;
+	}
+
+	@ManagedAttribute
+	public void setVisitStateQueueDiskMemoryRatio(final long visitStateQueueDiskMemoryRatio) {
+		rc.visitStateQueueDiskMemoryRatio = visitStateQueueDiskMemoryRatio;
+	}
+
+	@ManagedAttribute
+	public long getVisitStateQueueDiskMemoryRatio() {
+		return rc.visitStateQueueDiskMemoryRatio;
+	}
+
+
 	/*Statistical Properties, as reported by StatsThread */
 
 	/*@ManagedAttribute @Description("The time elapsed since the start of the crawl")
