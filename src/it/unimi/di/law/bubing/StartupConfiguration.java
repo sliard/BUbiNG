@@ -383,6 +383,18 @@ public class StartupConfiguration {
 	/** The maximum size of the workbench in bytes. */
 	public long workbenchMaxByteSize;
 
+	/** The minimum size of the visitstate memory queue */
+	@OptionalSpecification(value="16")
+	public long visitStateMemoryQueueMinSize;
+
+	/** The expected duration of the visitstate memory queue */
+	@OptionalSpecification(value="600000")
+	public long visitStateMemoryQueueExpectedDuration;
+
+	/** The disk/memory ratio for the visitstate  queue */
+	@OptionalSpecification(value="10")
+	public long visitStateQueueDiskMemoryRatio;
+
 	/** The maximum size of the virtualizer in bytes; this field is ignored if the virtualizer does not need to be sized. */
 	@OptionalSpecification(value="1Gi")
 	public long virtualizerMaxByteSize;

@@ -146,7 +146,7 @@ public final class Distributor extends Thread {
 					// Safe: there are URLs on disk, and this fact cannot change concurrently.
 
 					// Drop if number of urls on disk is above X times memory limit
-					if (urlsOnDisk >= pathQueryLimit * 10)
+					if (urlsOnDisk >= pathQueryLimit * frontier.rc.visitStateQueueDiskMemoryRatio)
 						frontier.numberOfOverflowURLs.incrementAndGet();
 					else {
 						movedFromReceivedToVirtualizer++;
@@ -166,7 +166,7 @@ public final class Distributor extends Thread {
 				else { // visitState.urlsOnDisk == 0 AND memory queue full OR host not resolved yet OR there was a previous error
 					// Then put url in disk queue if room available
 					// FIXME: we are here not only because visitState.urlsOnDisk == 0
-					if (urlsOnDisk >= pathQueryLimit * 10)
+					if (urlsOnDisk >= pathQueryLimit * frontier.rc.visitStateQueueDiskMemoryRatio)
 						frontier.numberOfOverflowURLs.incrementAndGet();
 					else {
 						movedFromReceivedToVirtualizer++;
