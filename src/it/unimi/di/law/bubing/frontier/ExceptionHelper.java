@@ -14,33 +14,32 @@ public final class ExceptionHelper
   /** A map recording for each type of exception a timeout, Note that 0 means standard politeness time. */
   public static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_WAIT_TIME = new Object2LongOpenHashMap<>();
   /** A map recording for each type of exception the number of retries. */
-  public static final Object2IntOpenHashMap<Class<?>> EXCEPTION_TO_MAX_RETRIES = new Object2IntOpenHashMap<>();
-  /** A map recording for each type of exception the number of retries. */
+  public static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_MAX_RETRIES = new Object2LongOpenHashMap<>();
+  /** A map recording for each type of exception the fact that we can purge the host. */
   public static final ObjectOpenHashSet<Class<?>> EXCEPTION_HOST_KILLER = new ObjectOpenHashSet<>();
+  /** A map recording for each type of exception the fact that we can purge the workbenchentry. */
+  public static final ObjectOpenHashSet<Class<?>> EXCEPTION_ENTRY_KILLER = new ObjectOpenHashSet<>();
   /** A map recording for each type of exception the FetchStatus */
   public static final Object2IntOpenHashMap<Class<?>> EXCEPTION_TO_FETCH_STATUS = new Object2IntOpenHashMap<>();
 
   static {
-    EXCEPTION_TO_WAIT_TIME.defaultReturnValue( TimeUnit.HOURS.toMillis(1));
-    EXCEPTION_TO_WAIT_TIME.put(java.net.NoRouteToHostException.class, TimeUnit.HOURS.toMillis(16));
-    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketException.class, TimeUnit.HOURS.toMillis(2));
-    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, TimeUnit.HOURS.toMillis(2));
-    //EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, 10000);
-    EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, TimeUnit.HOURS.toMillis(6));
-    //EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, 5000);
-    EXCEPTION_TO_WAIT_TIME.put(javax.net.ssl.SSLPeerUnverifiedException.class, TimeUnit.HOURS.toMillis(1));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.CircularRedirectException.class, TimeUnit.HOURS.toMillis(2));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.RedirectException.class, TimeUnit.HOURS.toMillis(2));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, TimeUnit.HOURS.toMillis(2));
-    //EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, 20000);
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.ConnectionClosedException.class, TimeUnit.MINUTES.toMillis(55));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.HttpHostConnectException.class, TimeUnit.HOURS.toMillis(4));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.NoHttpResponseException.class, TimeUnit.HOURS.toMillis(12));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.TruncatedChunkException.class, TimeUnit.HOURS.toMillis(12));
-    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.MalformedChunkCodingException.class, TimeUnit.HOURS.toMillis(12));
+    EXCEPTION_TO_WAIT_TIME.defaultReturnValue( TimeUnit.MINUTES.toMillis(15));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.NoRouteToHostException.class, TimeUnit.MINUTES.toMillis(15));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.SocketTimeoutException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(javax.net.ssl.SSLPeerUnverifiedException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.CircularRedirectException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.client.RedirectException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.ConnectTimeoutException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.ConnectionClosedException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.conn.HttpHostConnectException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.NoHttpResponseException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.TruncatedChunkException.class, TimeUnit.MINUTES.toMillis(10));
+    EXCEPTION_TO_WAIT_TIME.put(org.apache.http.MalformedChunkCodingException.class, TimeUnit.MINUTES.toMillis(10));
 
     EXCEPTION_TO_MAX_RETRIES.defaultReturnValue(0);
-    EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 0);
+    EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 1);
     EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 0);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 0);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.RedirectException.class, 0);
@@ -55,7 +54,20 @@ public final class ExceptionHelper
     EXCEPTION_HOST_KILLER.add(java.net.SocketException.class);
     EXCEPTION_HOST_KILLER.add(javax.net.ssl.SSLPeerUnverifiedException.class);
     EXCEPTION_HOST_KILLER.add(org.apache.http.conn.ConnectTimeoutException.class);
+    EXCEPTION_HOST_KILLER.add(java.net.SocketTimeoutException.class);
+    EXCEPTION_HOST_KILLER.add(org.apache.http.ConnectionClosedException.class);
+    EXCEPTION_HOST_KILLER.add(org.apache.http.conn.HttpHostConnectException.class);
+    EXCEPTION_HOST_KILLER.add(org.apache.http.NoHttpResponseException.class);
+    EXCEPTION_HOST_KILLER.add(org.apache.http.TruncatedChunkException.class);
+    EXCEPTION_HOST_KILLER.add(org.apache.http.MalformedChunkCodingException.class);
 
+    EXCEPTION_ENTRY_KILLER.add(java.net.NoRouteToHostException.class);
+    EXCEPTION_ENTRY_KILLER.add(java.net.SocketException.class);
+    EXCEPTION_ENTRY_KILLER.add(org.apache.http.conn.ConnectTimeoutException.class);
+    EXCEPTION_ENTRY_KILLER.add(java.net.SocketTimeoutException.class);
+    EXCEPTION_ENTRY_KILLER.add(org.apache.http.ConnectionClosedException.class);
+    EXCEPTION_ENTRY_KILLER.add(org.apache.http.conn.HttpHostConnectException.class);
+    EXCEPTION_ENTRY_KILLER.add(org.apache.http.NoHttpResponseException.class);
 
     EXCEPTION_TO_FETCH_STATUS.put(java.net.NoRouteToHostException.class, EnumFetchStatus.Enum.NO_ROUTE_TO_HOST_VALUE);
     EXCEPTION_TO_FETCH_STATUS.put(java.net.SocketException.class, EnumFetchStatus.Enum.SOCKET_ERROR_VALUE);

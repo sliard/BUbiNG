@@ -60,7 +60,7 @@
   <logger name="it.unimi.di.law.bubing.frontier.FetchInfoHelper" level="INFO"/>
   <logger name="it.unimi.di.law.bubing.frontier.ParsingThread" level="WARN"/>
   <logger name="it.unimi.di.law.bubing.frontier.StatsThread" level="INFO"/>
-  <logger name="it.unimi.di.law.bubing.frontier.Distributor" level="INFO"/>
+  <logger name="it.unimi.di.law.bubing.frontier.Distributor" level="WARN"/>
   <logger name="org.apache.http.impl.client" level="WARN"/>
   <logger name="org.apache.http.wire" level="WARN"/>
 </configuration>

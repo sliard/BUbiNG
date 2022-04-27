@@ -228,7 +228,7 @@ public final class StatsThread implements Runnable {
 
 	@Override
 	public void run() {
-		frontier.workbenchSizeInPathQueries = frontier.rc.workbenchMaxByteSize / Math.max(1, frontier.weightOfpathQueriesInQueues.get() / (1 + frontier.pathQueriesInQueues.get()));
+		frontier.workbenchMaxSizeInPathQueries = frontier.rc.workbenchMaxByteSize / Math.max(1, frontier.weightOfpathQueriesInQueues.get() / (1 + frontier.pathQueriesInQueues.get()));
 		StringBuilder statInfo = new StringBuilder();
 
 		statInfo.append("STATS : =========== START OF HIGH COST STATS ============\n");

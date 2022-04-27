@@ -17,6 +17,7 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
+import com.google.protobuf.InvalidProtocolBufferException;
 import crawlercommons.robots.SimpleRobotRules;
 import it.unimi.di.law.bubing.Agent;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
@@ -29,12 +30,15 @@ import org.apache.http.cookie.Cookie;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.Reader;
 import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 //RELEASE-STATUS: DIST
 
@@ -123,7 +127,8 @@ public class VisitState implements Delayed, Serializable {
 	private final transient ObjectArrayFIFOQueue<byte[]> crawlRequests;
 	/** Number of pages fetched */
 	public volatile int nbFetched;
-
+  /** Last schedule in minutes : used to determine if a visitstate is completely expired */
+	public int lastScheduleInMinutes;
 
 	/** Specific crawl-delay */
 	public int crawlDelayMS;
@@ -139,6 +144,7 @@ public class VisitState implements Delayed, Serializable {
 		purgeRequired = false;
 		crawlDelayMS = 0;
 		nbFetched = 0;
+		nextFetch = System.currentTimeMillis(); // never creates a visitstate with nextFetch == 0, they may never get purged
 	}
 
 
@@ -157,7 +163,7 @@ public class VisitState implements Delayed, Serializable {
 	public synchronized void setWorkbenchEntry(final WorkbenchEntry workbenchEntry) {
 		assert ! acquired : this;
 		this.workbenchEntry = workbenchEntry;
-		if (! isEmpty()) workbenchEntry.add(this, Agent.getFrontier().workbench);
+		if (! isEmpty() && !purgeRequired) workbenchEntry.add(this, Agent.getFrontier().workbench);
 	}
 
 	/** Puts this visit state in its entry, if it is not acquired and it has a non-{@code null} {@link #workbenchEntry}.
@@ -171,7 +177,7 @@ public class VisitState implements Delayed, Serializable {
 	private void putInEntryIfNotAcquired() {
 		assert ! isEmpty() : this;
 		Frontier frontier = Agent.getFrontier();
-		if (! acquired && workbenchEntry != null) workbenchEntry.add(this, frontier.workbench);
+		if (! acquired && workbenchEntry != null && !purgeRequired) workbenchEntry.add(this, frontier.workbench);
 	}
 
 	/** Puts this visit state in its entry, if it not empty.
@@ -189,7 +195,7 @@ public class VisitState implements Delayed, Serializable {
 		assert workbenchEntry != null : this;
 		assert acquired : this;
 		assert workbenchEntry.acquired : workbenchEntry;
-		if (! isEmpty()) workbenchEntry.add(this);
+		if (! isEmpty() && ! purgeRequired) workbenchEntry.add(this);
 		acquired = false;
 	}
 
@@ -274,9 +280,14 @@ public class VisitState implements Delayed, Serializable {
 	 */
 	public void enqueueCrawlRequest(final byte[] crawlRequestBytes) {
 		synchronized (this) {
-			if (nextFetch == Long.MAX_VALUE) return;
+			if (nextFetch == Long.MAX_VALUE || purgeRequired) return;
 			final boolean wasEmpty = this.crawlRequests.isEmpty();
 			this.crawlRequests.enqueue(crawlRequestBytes);
+			try {
+				lastScheduleInMinutes = Math.max(lastScheduleInMinutes, FetchInfoHelper.getCrawlRequestScheduleTime(crawlRequestBytes));
+			} catch (InvalidProtocolBufferException e) {
+				throw new Error("Error in crawl request format");
+			}
 			if (wasEmpty) putInEntryIfNotAcquired();
 		}
 		Frontier frontier = Agent.getFrontier();
@@ -320,9 +331,25 @@ public class VisitState implements Delayed, Serializable {
 	}
 
 	/** Empties this visit state of all the URLs that it contains. */
-	public synchronized void clear() {
-		while(! isEmpty()) dequeue(); // We cannot invoke crawlRequests.clear(), as counters would not be updated.
-		// TODO: we should find a way to release more resources.
+	public synchronized void clear(AtomicLong counter) {
+		// Not clean, but visitstate is separated in two queues and the disk queue is managed elsewhere
+		Frontier frontier = Agent.getFrontier();
+
+		while ( frontier.virtualizer.count(this) > 0 || ! isEmpty() ) {
+
+			if (frontier.virtualizer.count(this) > 0) {
+				try {
+					frontier.virtualizer.dequeueCrawlRequests(this, 100);
+				} catch (IOException e) {
+					LOGGER.error("FATAL : Error while dequeing crawl request",e);
+					throw new Error(e);
+				}
+			}
+			while (!isEmpty()) {
+				dequeue(); // contains a zPathQuery
+				counter.incrementAndGet();
+			}
+		}
 		crawlRequests.trim();
 	}
 
@@ -371,11 +398,13 @@ public class VisitState implements Delayed, Serializable {
 	 * with its {@link #schemeAuthority} to {@link Integer#MAX_VALUE}, {@linkplain #clear() clearing} the internal queue and
 	 * setting {@link #nextFetch} to {@link Long#MAX_VALUE}.
 	 */
-	public synchronized void schedulePurge() {
+	public synchronized void schedulePurge(AtomicLong counter) {
 		assert acquired || workbenchEntry == null : acquired + " " + workbenchEntry;
+		if (purgeRequired) // already scheduled for purge
+			return;
 		this.purgeRequired = true;
 		nextFetch = Long.MAX_VALUE;
-		clear();
+		clear(counter);
 	}
 
 	/** Checks whether the current robots information has expired and, if necessary, schedules a new <code>robots.txt</code> download.
@@ -398,7 +427,7 @@ public class VisitState implements Delayed, Serializable {
 			// If we are not retrying an exception, we check whether it is time to reload robots.txt
 			Frontier frontier = Agent.getFrontier();
 			final long robotsExpiration = frontier.rc.robotsExpiration;
-			if (time - robotsExpiration >= lastRobotsFetch) {
+			if (time - robotsExpiration * (workbenchEntry != null ? workbenchEntry.size() : 1) >= lastRobotsFetch) {
 				if (robotsFilter == null) {
 					if (lastRobotsFetch == 0) LOGGER.info("Going to get robots for {} for the first time", Util.toString(schemeAuthority));
 					else LOGGER.info("Going to try again to get robots for {}", Util.toString(schemeAuthority));
@@ -412,14 +441,36 @@ public class VisitState implements Delayed, Serializable {
 
 	/** Returns an estimate of the number of path+queries that this visit state should keep in memory.
 	 *
+	 * PIT: added a multiplier to distinguish between the memory capacity and the disk capacity
+	 *
+	 *
+	 *
 	 * @return an estimate of the number of path+queries that this visit state should keep in memory.
 	 */
-	public int pathQueryLimit() {
+	public int pathQueryLimit(double multiplier) {
+		/* Simulations with multiplier = 1(42), ipDelay = 5s, schemeAuthorityDelay = 10s (delayRAtio = 2),
+		 * expectedDuration = 1000 seconds, workbenchSizeInPathQuery = 10 M, requiredFrontSize = 30000
+		 * visitStateMemoryQueueMinSize = 10
+		 * Small entry (2 schemeAuth) :
+		 *  - scalingFactor = 1
+		 *  - durationBasedLimit = 100(4200)
+		 *  - frontSizeBasedLimit = 166(7000)
+		 * Result = 100(4200)
+		 *
+		 * Big entry (500 schemeAuth)
+		 *  - scalingFactor = 50
+		 *  - durationBasedLimit = 100(4200)
+		 *  - frontSizeBasedLimit = 7(280)
+		 * Result = 10(280)
+		 *
+		 */
+		boolean doSampleInfo = LocalDateTime.now().getNano() < 1000;
 		Frontier frontier = Agent.getFrontier();
-		/* We first compute the ratio beween the delay for scheme+authorities and the IP delay.
+		/* We first compute the ratio between the delay for scheme+authorities and the IP delay.
 		 * It is usually greater than one and it expresses the number of scheme+authorities
 		 * that can "fit" the IP delay. */
-		final double delayRatio = Math.max(1 , (frontier.rc.schemeAuthorityDelay + 1.) / (frontier.rc.ipDelay + 1.));
+		final double ipDelay = frontier.rc.ipDelay + (workbenchEntry != null ? workbenchEntry.extraDelay : 0);
+		final double delayRatio = Math.max(1 , (frontier.rc.schemeAuthorityDelay + 1.) / ( ipDelay + 1.));
 		/* We now establish a scaling factor depending on the size of the workbench entry. Entries of
 		 * size less than or equal to delayRatio have scaling factor one, as there is no scheme+authority
 		 * slowdown due to the IP delay. However, entries with greater size are scaled proportionally.
@@ -429,11 +480,16 @@ public class VisitState implements Delayed, Serializable {
 		 * amounts to 2 scheme+authority delays. */
 		final double scalingFactor = workbenchEntry == null ? 1 : Math.max(1, workbenchEntry.size() / delayRatio);
 		/* Finally, we divide the estimated workbench size in path+queries by the size of the required front multiplied
-		 * by the scaling factor. We also maximize with 16 and minimize with the number of path+queries that
-		 * can be fetched in 10 minutes. */
-		return (int)Math.min(frontier.rc.visitStateMemoryQueueExpectedDuration / (frontier.rc.schemeAuthorityDelay + 1),
-				Math.max(frontier.rc.visitStateMemoryQueueMinSize, (long)Math.ceil((frontier.workbenchSizeInPathQueries /
-						(scalingFactor * frontier.requiredFrontSize.get())))));
+		 * by the scaling factor. We also maximize with visitStateMemoryQueueMinSize and minimize with the number of path+queries that
+		 * can be fetched in the duration defined by visitStateMemoryQueueExpectedDuration. */
+		var durationBasedLimit = multiplier * frontier.rc.visitStateMemoryQueueExpectedDuration / (frontier.rc.schemeAuthorityDelay + 1);
+		var frontSizeBasedLimit = multiplier * frontier.workbenchMaxSizeInPathQueries / (scalingFactor * frontier.requiredFrontSize.get());
+		var result = (int)Math.min(durationBasedLimit,
+				Math.max(frontier.rc.visitStateMemoryQueueMinSize, (long)Math.ceil(frontSizeBasedLimit)));
+		if (doSampleInfo)
+			LOGGER.info("PathQueryLimit computation scalingFactor {}, durationBasedLimit {}, frontSizeBasedLimit {}, result {}",
+				scalingFactor, durationBasedLimit, frontSizeBasedLimit, result);
+		return result;
 	}
 
 	private void writeObject(java.io.ObjectOutputStream s) throws java.io.IOException {

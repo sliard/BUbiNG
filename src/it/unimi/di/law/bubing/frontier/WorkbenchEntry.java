@@ -70,7 +70,7 @@ public final class WorkbenchEntry implements Delayed {
 	/** The minimum time at which {@linkplain VisitState visit states} in this entry can be accessed because of IP-based politeness. */
 	protected volatile long nextFetch;
 	/** Extra Delay between fetches */
-	protected long delay;
+	protected long extraDelay;
 
 	/** Creates a workbench entry for a given IP address.
 	 *
@@ -87,7 +87,7 @@ public final class WorkbenchEntry implements Delayed {
 		this.overflowCounter = overflowCounter;
 		this.workbenchBroken = brokenVisitStates;
 		this.visitStates = new PriorityQueue<>();
-		this.delay = baseDelay;
+		this.extraDelay = baseDelay;
 	}
 
 	/** Returns true if this entry is nonempty and all its visit states are broken (i.e., {@link VisitState#lastExceptionClass} &ne; {@code null})
@@ -107,6 +107,8 @@ public final class WorkbenchEntry implements Delayed {
 	 */
 	public synchronized void add(VisitState visitState) {
 		final boolean wasEntirelyBroken = isEntirelyBroken();
+		if (visitState.purgeRequired)
+			return;
 		if (visitState.lastExceptionClass != null) brokenVisitStates++;
 		visitStates.add(visitState);
 		assert brokenVisitStates <= visitStates.size();
@@ -236,7 +238,7 @@ public final class WorkbenchEntry implements Delayed {
 	}
 
   public void increaseDelay() {
-		delay = delay + Math.max(500, delay/2);
-		LOGGER.info("Increasing extra delay of {} to {}ms", this.toString(), delay);
+		extraDelay = extraDelay + Math.max(500, extraDelay /2);
+		LOGGER.info("Increasing extra delay of {} to {}ms", this.toString(), extraDelay);
   }
 }

@@ -390,6 +390,17 @@ public class Agent {
 	}
 
 	@ManagedAttribute
+	public void setMaxIpDelay(final long maxIpDelay) {
+		if (maxIpDelay > rc.ipDelay)
+			rc.maxIpDelay = maxIpDelay;
+	}
+
+	@ManagedAttribute @Description("Max Delay in milliseconds between two consecutive fetches from the same IP address")
+	public long getMaxIpDelay() {
+		return rc.maxIpDelay;
+	}
+
+	@ManagedAttribute
 	public void setCrawlRequestTTL(final long crawlRequestTTL) {
 		rc.crawlRequestTTL = crawlRequestTTL;
 	}
@@ -506,6 +517,7 @@ public class Agent {
 	@ManagedAttribute
 	public void setWorkbenchMaxByteSize(final long workbenchSize) {
 		rc.workbenchMaxByteSize = workbenchSize;
+		frontier.workbenchMaxSizeInPathQueries = rc.workbenchMaxByteSize / Frontier.PATHQUERY_SIZE_BYTES;
 	}
 
 	@ManagedAttribute @Description("Maximum size of the workbench in bytes")
@@ -514,32 +526,32 @@ public class Agent {
 	}
 
 	@ManagedAttribute
-	public void setVisitStateMemoryQueueMinSize(final long visitStateMemoryQueueMinSize) {
+	public void setVisitStateMemoryQueueMinSize(final int visitStateMemoryQueueMinSize) {
 		rc.visitStateMemoryQueueMinSize = visitStateMemoryQueueMinSize;
 	}
 
-	@ManagedAttribute
-	public long getVisitStateMemoryQueueMinSize() {
+	@ManagedAttribute @Description("Minimum size of the in-memory queue of a visitstate")
+	public int getVisitStateMemoryQueueMinSize() {
 		return rc.visitStateMemoryQueueMinSize;
 	}
 
 	@ManagedAttribute
-	public void setVisitStateMemoryQueueExpectedDuration(final long visitStateMemoryQueueExpectedDuration) {
+	public void setVisitStateMemoryQueueExpectedDuration(final int visitStateMemoryQueueExpectedDuration) {
 		rc.visitStateMemoryQueueExpectedDuration = visitStateMemoryQueueExpectedDuration;
 	}
 
-	@ManagedAttribute
-	public long getVisitStateMemoryQueueExpectedDuration() {
+	@ManagedAttribute @Description("Length of the target visitstate memory queue expressed in milliseconds")
+	public int getVisitStateMemoryQueueExpectedDuration() {
 		return rc.visitStateMemoryQueueExpectedDuration;
 	}
 
 	@ManagedAttribute
-	public void setVisitStateQueueDiskMemoryRatio(final long visitStateQueueDiskMemoryRatio) {
+	public void setVisitStateQueueDiskMemoryRatio(final int visitStateQueueDiskMemoryRatio) {
 		rc.visitStateQueueDiskMemoryRatio = visitStateQueueDiskMemoryRatio;
 	}
 
-	@ManagedAttribute
-	public long getVisitStateQueueDiskMemoryRatio() {
+	@ManagedAttribute @Description("Ratio between on-disk and in-memory length of a visitstate queue")
+	public int getVisitStateQueueDiskMemoryRatio() {
 		return rc.visitStateQueueDiskMemoryRatio;
 	}
 
@@ -658,6 +670,9 @@ public class Agent {
 
 	@ManagedAttribute @Description("Number of URLs dropped")
 	public long getDroppedURLs() { return frontier.numberOfDroppedURLs.get(); }
+
+	@ManagedAttribute @Description("Number of URLs dropped because ttl expired")
+	public long getExpiredURLs() { return frontier.numberOfExpiredURLs.get(); }
 
 	@ManagedAttribute @Description("Number of URLs overflow")
 	public long getOverflowURLs() { return frontier.numberOfOverflowURLs.get(); }

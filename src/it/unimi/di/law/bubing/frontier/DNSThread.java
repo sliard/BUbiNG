@@ -17,14 +17,17 @@ package it.unimi.di.law.bubing.frontier;
  */
 
 import com.exensa.util.compression.HuffmanModel;
+import com.exensa.wdl.common.TimeHelper;
 import com.google.common.primitives.Ints;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.util.BURL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Random;
@@ -72,8 +75,19 @@ public final class DNSThread extends Thread {
 				VisitState visitState = frontier.unknownHosts.poll();
 				// If none, try to get a new visit state.
 				if (visitState == null) visitState = frontier.newVisitStates.poll(1, TimeUnit.SECONDS);
+
 				// If none after one second, try again.
 				if (visitState == null) continue;
+
+				// If visitstate has already been scheduled for purge, skip it
+				if (visitState.purgeRequired) continue;
+
+				// If Visitstate is entirely expired, skip it
+				if (TimeHelper.hasTtlExpired(visitState.lastScheduleInMinutes, Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
+					LOGGER.debug("VisitState {} has only expired crawl requests", visitState);
+					visitState.schedulePurge(frontier.numberOfDrainedURLs);
+					continue;
+				}
 
 				final String host = BURL.hostFromSchemeAndAuthority(visitState.schemeAuthority);
 
@@ -88,6 +102,8 @@ public final class DNSThread extends Thread {
 					for (InetAddress a:addresses) {
 						if (a.getAddress().length == 4)
 							ipv4Addresses.add(a);
+						else
+							LOGGER.debug("Got IPV6 for {}", host);
 					}
 					if (ipv4Addresses.size() <= 0) {
 						LOGGER.info("Host {} has no IPv4 address", host);
@@ -101,7 +117,7 @@ public final class DNSThread extends Thread {
 						try {
 							if (frontier.rc.blackListedIPv4Addresses.contains(Ints.fromByteArray(address))) {
 								LOGGER.warn("Visit state for host {} was not created and rather scheduled for purge because its IP {} was blacklisted", host, Arrays.toString(address));
-								visitState.schedulePurge();
+								visitState.schedulePurge(frontier.numberOfDrainedURLs);
 								continue;
 							}
 						} finally {
@@ -114,17 +130,26 @@ public final class DNSThread extends Thread {
 					WorkbenchEntry entry = null;
 					int overflowCounter = 0;
 					long maxDelay = 0;
+					int smallestEntry = 0;
+					int smallestEntrySize = Integer.MAX_VALUE;
 					do {
 						// Try entries until one is not full
 						entry = frontier.workbench.getWorkbenchEntry(address, overflowCounter);
 						if (entry.size() > 0)
-							maxDelay = Math.max(maxDelay, entry.delay);
+							maxDelay = Math.max(maxDelay, entry.extraDelay);
+						if (entry.size() < smallestEntrySize) {
+							smallestEntry = overflowCounter;
+							smallestEntrySize = entry.size();
+						}
 						overflowCounter++;
 					} while (entry.size() > frontier.rc.maxInstantSchemeAuthorityPerIP * overflowCounter);
-					entry.delay = maxDelay;
+					entry.extraDelay = maxDelay;
 					if (entry.size() == 0) // it's a new one
-						entry.delay = maxDelay + overflowCounter;
-
+						entry.extraDelay = maxDelay; // we set the new entries' delay to the max of all entries
+					else
+						// We select the one with the least entries
+						entry = frontier.workbench.getWorkbenchEntry(address, smallestEntry);
+					visitState.nextFetch = System.currentTimeMillis();
 					visitState.setWorkbenchEntry(entry);
 					frontier.resolvedVisitStates.incrementAndGet();
 				}
@@ -136,7 +161,7 @@ public final class DNSThread extends Thread {
 
 					visitState.lastExceptionClass = UnknownHostException.class;
 
-					if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getInt(UnknownHostException.class)) {
+					if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getLong(UnknownHostException.class)) {
 						final long delay = ExceptionHelper.EXCEPTION_TO_WAIT_TIME.getLong(UnknownHostException.class) << visitState.retries;
 						// Exponentially growing delay
 						visitState.nextFetch = System.currentTimeMillis() + delay;
@@ -144,14 +169,19 @@ public final class DNSThread extends Thread {
 						frontier.unknownHosts.add(visitState);
 					}
 					else {
+						frontier.fetchingFailedHostCount.incrementAndGet();
 						FetchInfoHelper.drainVisitStateForError(frontier, visitState);
-						visitState.schedulePurge();
+						visitState.schedulePurge(frontier.numberOfDrainedURLs);
 						LOGGER.debug("Visit state " + visitState + " killed by " + UnknownHostException.class.getSimpleName());
 					}
 				}
 				finally {
 					frontier.workingDnsThreads.decrementAndGet();
 				}
+			}
+			catch (IOException ioException) {
+				LOGGER.error("IOException in DNS thread", ioException);
+				break; // Kill thread
 			}
 			catch(Throwable t) {
 				LOGGER.error("Unexpected exception", t);
@@ -160,6 +190,4 @@ public final class DNSThread extends Thread {
 		frontier.runningDnsThreads.decrementAndGet();
 		if (LOGGER.isDebugEnabled()) LOGGER.debug("Completed");
 	}
-
-
 }

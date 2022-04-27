@@ -207,6 +207,11 @@ public class StartupConfiguration {
 	@TimeSpecification
 	public long ipDelay;
 
+	/** The maximum delay between two consecutive fetches from the same IP address. */
+	@OptionalSpecification(value="1000000")
+	@TimeSpecification
+	public long maxIpDelay;
+
 	/** The time to live of a crawl request */
 	@OptionalSpecification(value="0") // default : no crawl request TTL
 	@TimeSpecification
@@ -384,16 +389,17 @@ public class StartupConfiguration {
 	public long workbenchMaxByteSize;
 
 	/** The minimum size of the visitstate memory queue */
-	@OptionalSpecification(value="16")
-	public long visitStateMemoryQueueMinSize;
+	@OptionalSpecification(value="1")
+	public int visitStateMemoryQueueMinSize;
 
 	/** The expected duration of the visitstate memory queue */
-	@OptionalSpecification(value="600000")
-	public long visitStateMemoryQueueExpectedDuration;
+	// Default value : 3 minutes, i.e. 12 crawlRequest for a 15 seconds delay-
+	@OptionalSpecification(value="180000")
+	public int visitStateMemoryQueueExpectedDuration;
 
 	/** The disk/memory ratio for the visitstate  queue */
-	@OptionalSpecification(value="10")
-	public long visitStateQueueDiskMemoryRatio;
+	@OptionalSpecification(value="1000")
+	public int visitStateQueueDiskMemoryRatio;
 
 	/** The maximum size of the virtualizer in bytes; this field is ignored if the virtualizer does not need to be sized. */
 	@OptionalSpecification(value="1Gi")
