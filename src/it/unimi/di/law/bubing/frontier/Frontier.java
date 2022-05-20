@@ -54,6 +54,7 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -113,6 +114,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
  * very important, as there is much less contention on visit state locks than on the frontier lock. */
 public class Frontier {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Frontier.class);
+	public static final long PATHQUERY_SIZE_BYTES = 75;
 
 	public static enum PropertyKeys {
 		PATHQUERIESINQUEUES,
@@ -246,6 +248,9 @@ public class Frontier {
 	/** The number of dropped urls */
 	public final AtomicLong numberOfDroppedURLs;
 
+	/** The number of expired urls */
+	public final AtomicLong numberOfExpiredURLs;
+
 	/** The number of visitstates that are purged because they haven't received a url in a long time	 */
 	public final AtomicLong numberOfPurgedDelayVisitStates;
 
@@ -297,7 +302,7 @@ public class Frontier {
 
 	/** The current estimation for the size of the front in IP addresses. It is adaptively increased
 	 * when a {@link FetchingThread} has to wait to retrieve a {@link VisitState} from the
-	 * {@link #todo} queue. It is never more than half the {@linkplain #workbenchSizeInPathQueries
+	 * {@link #todo} queue. It is never more than half the {@linkplain #workbenchMaxSizeInPathQueries
 	 * number of path+queries that the workbench can hold}. */
 	public final AtomicLong requiredFrontSize;
 
@@ -389,7 +394,7 @@ public class Frontier {
 	/** The average speeds of all visit states. */
 	protected double averageSpeed;
 	/** An estimation of the number of path+query objects that the workbench can store. */
-	public volatile long workbenchSizeInPathQueries;
+	public volatile long workbenchMaxSizeInPathQueries;
 	/** The default configuration for a non-<code>robots.txt</code> request. */
 	public RequestConfig defaultRequestConfig;
 	/** The configuration for a no redirect request. */
@@ -456,7 +461,7 @@ public class Frontier {
 		this.agent = agent;
 		this.pulsarManager = pulsarManager;
 
-		workbenchSizeInPathQueries = rc.workbenchMaxByteSize / 50;
+		workbenchMaxSizeInPathQueries = rc.workbenchMaxByteSize / PATHQUERY_SIZE_BYTES;
 		averageSpeed = 1. / rc.schemeAuthorityDelay;
 
 		robotsWarcParallelOutputStream = null;
@@ -534,6 +539,7 @@ public class Frontier {
 		duplicates = new AtomicLong();
 		numberOfReceivedURLs = new AtomicLong();
 		numberOfDroppedURLs = new AtomicLong();
+		numberOfExpiredURLs = new AtomicLong();
 		numberOfDrainedURLs = new AtomicLong();
 		numberOfOverflowURLs = new AtomicLong();
 		numberOfPurgedDelayVisitStates = new AtomicLong();
@@ -677,16 +683,20 @@ public class Frontier {
 	}
 
 	/** Enqueues a fetchInfo to be sent to the external Frontier.
-	 *
+	 * No guarantee on delivery
 	 *
 	 * @param fetchInfo a {@linkplain MsgCrawler.FetchInfo Message} to be enqueued to the BUbiNG crawl. */
 	public void enqueue( final MsgCrawler.FetchInfo fetchInfo ) {
-		if ( fetchInfoSendQueue.remainingCapacity() == 0 )
-			LOGGER.warn( "fetchInfoSendQueue is full" );
-		fetchInfoSendQueue.offer( fetchInfo );
+		if (fetchInfoSendQueue.remainingCapacity() == 0)
+			LOGGER.warn("fetchInfoSendQueue is full");
+		try {
+			fetchInfoSendQueue.offer(fetchInfo, 1, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			// Message will be lost. No big deal, ignore
+		}
 	}
 
-	/** Returns whether the workbench is full.
+		/** Returns whether the workbench is full.
 	 *
 	 * @return whether the workbench is full. */
 	public boolean workbenchIsFull() {
@@ -827,7 +837,7 @@ public class Frontier {
 		// Fix all visit states in the refill queue
 		for (VisitState visitState; (visitState = refill.poll()) != null;) {
 			// Note that this might make temporarily the workbench too big by a little bit.
-			final int dequeuedURLs = virtualizer.dequeueCrawlRequests(visitState, visitState.pathQueryLimit());
+			final int dequeuedURLs = virtualizer.dequeueCrawlRequests(visitState, visitState.pathQueryLimit(1));
 			if (dequeuedURLs == 0) LOGGER.info("No URLs on disk during last refill: " + visitState);
 			if (visitState.acquired) LOGGER.warn("Visit state in the poll queue is acquired: " + visitState);
 		}
@@ -858,7 +868,7 @@ public class Frontier {
 	public void updateRequestedFrontSize() {
 		final long currentFrontSize = getCurrentFrontSize();
 		final long currentRequiredFrontSize = requiredFrontSize.get();
-		final long nextRequiredFrontSize = Math.min( currentRequiredFrontSize+FRONT_INCREASE, workbenchSizeInPathQueries/2 );
+		final long nextRequiredFrontSize = Math.min( currentRequiredFrontSize+FRONT_INCREASE, workbenchMaxSizeInPathQueries /2 );
 		// If compareAndSet() returns false the value has already been updated.
 		if (currentFrontSize >= currentRequiredFrontSize && requiredFrontSize.compareAndSet(currentRequiredFrontSize,nextRequiredFrontSize) )
 			LOGGER.info("Required front size: " + nextRequiredFrontSize);

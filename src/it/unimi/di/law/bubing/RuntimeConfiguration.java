@@ -123,6 +123,9 @@ public class RuntimeConfiguration {
 	/** @see StartupConfiguration#ipDelay */
 	public volatile long ipDelay;
 
+	/** @see StartupConfiguration#maxIpDelay */
+	public volatile long maxIpDelay;
+
 	/** @see StartupConfiguration#crawlRequestTTL */
 	public volatile long crawlRequestTTL;
 
@@ -254,13 +257,13 @@ public class RuntimeConfiguration {
 	public volatile long workbenchMaxByteSize;
 
 	/** The minimum size of the visitstate memory queue */
-	public volatile long visitStateMemoryQueueMinSize;
+	public volatile int visitStateMemoryQueueMinSize;
 
 	/** The expected duration of the visitstate memory queue */
-	public volatile long visitStateMemoryQueueExpectedDuration;
+	public volatile int visitStateMemoryQueueExpectedDuration;
 
 	/** The disk/memory ratio for the visitstate  queue */
-	public volatile long visitStateQueueDiskMemoryRatio;
+	public volatile int visitStateQueueDiskMemoryRatio;
 
 	/** @see StartupConfiguration#virtualizerMaxByteSize */
 	public final long virtualizerMaxByteSize;
@@ -381,6 +384,7 @@ public class RuntimeConfiguration {
 			keepAliveTime = startupConfiguration.keepAliveTime;
 			schemeAuthorityDelay = startupConfiguration.schemeAuthorityDelay;
 			ipDelay = startupConfiguration.ipDelay;
+			maxIpDelay = startupConfiguration.maxIpDelay;
 			crawlRequestTTL = startupConfiguration.crawlRequestTTL;
 			startPaused = startupConfiguration.startPaused;
 			storeClass = startupConfiguration.storeClass;

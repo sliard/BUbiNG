@@ -65,13 +65,15 @@ public final class Distributor extends Thread {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Distributor.class);
 	/** We purge {@linkplain VisitState visit states} from {@link #schemeAuthority2VisitState} when
 	 * this amount of time has passed (approximately) since the last fetch. */
-	private static final long PURGE_DELAY = TimeUnit.MINUTES.toMillis(149);
+	private static final long PURGE_DELAY = TimeUnit.MINUTES.toMillis(59);
 	/** We prints low-cost stats at this interval. */
-	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(11);
+	private static final long LOW_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(7);
 	/** We prints high-cost stats at this interval. */
-	private static final long HIGH_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(47);
+	private static final long HIGH_COST_STATS_INTERVAL = TimeUnit.MINUTES.toMillis(17);
 	/** We check for visit states to be purged at this interval. */
-	private static final long PURGE_CHECK_INTERVAL = TimeUnit.MINUTES.toMillis(97);
+	private static final long PURGE_CHECK_INTERVAL = TimeUnit.MINUTES.toMillis(37);
+  /** The purge check is done frequently but just on a subset of the visitstates */
+	private static final int NB_PURGE_PARTS = 100;
 
 	/** A reference to the frontier. */
 	private final Frontier frontier;
@@ -115,11 +117,11 @@ public final class Distributor extends Thread {
 			if (TimeHelper.hasTtlExpired(crawlRequest.getCrawlInfo().getScheduleTimeMinutes(), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
 				if (LOGGER.isTraceEnabled())
 					LOGGER.trace("CrawlRequest has expired for {}", Serializer.URL.Key.toString(crawlRequest.getUrlKey()));
+				frontier.numberOfExpiredURLs.incrementAndGet();
 				return false;
 			}
 			VisitState visitState;
 			byte[] schemeAuthority = PulsarHelper.schemeAuthority(crawlRequest.getUrlKey());
-			boolean addedNewVisitState = false;
 			visitState = schemeAuthority2VisitState.get(schemeAuthority, 0, schemeAuthority.length);
 			if (visitState == null) {
 					if (LOGGER.isTraceEnabled())
@@ -137,40 +139,38 @@ public final class Distributor extends Thread {
 					frontier.newVisitStates.add(visitState);
 					frontier.receivedVisitStates.incrementAndGet();
 					movedFromReceivedToWorkbench++;
-					addedNewVisitState = true;
 			}
 			else {
-				long urlsOnDisk = frontier.virtualizer.count(visitState);
-				int pathQueryLimit = visitState.pathQueryLimit();
-				if ( urlsOnDisk > 0) {
-					// Safe: there are URLs on disk, and this fact cannot change concurrently.
+				if (visitState.purgeRequired) {
+					frontier.numberOfDrainedURLs.incrementAndGet();
+				} else {
+					long urlsOnDisk = frontier.virtualizer.count(visitState);
+					int pathQueryLimitMemory = visitState.pathQueryLimit(1);
+					int pathQueryLimitDisk = visitState.pathQueryLimit(frontier.rc.visitStateQueueDiskMemoryRatio);
 
-					// Drop if number of urls on disk is above X times memory limit
-					if (urlsOnDisk >= pathQueryLimit * frontier.rc.visitStateQueueDiskMemoryRatio)
-						frontier.numberOfOverflowURLs.incrementAndGet();
-					else {
-						movedFromReceivedToVirtualizer++;
-						frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
-					}
-				}
-				else
-				if (visitState.size() < pathQueryLimit && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
-					/* Safe: we are enqueueing to a sane (modulo race conditions)
-					 * visit state, which will be necessarily go through the DoneThread later. */
-					if (visitState.size() == 0)
-						addedNewVisitState = true;
-					visitState.checkRobots(now);
-					visitState.enqueueCrawlRequest(PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
-					movedFromReceivedToWorkbench++;
-				}
-				else { // visitState.urlsOnDisk == 0 AND memory queue full OR host not resolved yet OR there was a previous error
-					// Then put url in disk queue if room available
-					// FIXME: we are here not only because visitState.urlsOnDisk == 0
-					if (urlsOnDisk >= pathQueryLimit * frontier.rc.visitStateQueueDiskMemoryRatio)
-						frontier.numberOfOverflowURLs.incrementAndGet();
-					else {
-						movedFromReceivedToVirtualizer++;
-						frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+					if (urlsOnDisk > 0) {
+						// Safe: there are URLs on disk, and this fact cannot change concurrently.
+						// Drop  the crawl request if number of urls on disk is above pathQueryLimitDisk
+						if (urlsOnDisk >= pathQueryLimitDisk)
+							frontier.numberOfOverflowURLs.incrementAndGet();
+						else {
+							movedFromReceivedToVirtualizer++;
+							frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+						}
+					} else if (visitState.size() < pathQueryLimitMemory && visitState.workbenchEntry != null && visitState.lastExceptionClass == null) {
+						/* Safe: we are enqueueing to a sane (modulo race conditions)
+						 * visit state, which will be necessarily go through the DoneThread later. */
+						visitState.checkRobots(now);
+						visitState.enqueueCrawlRequest(PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+						movedFromReceivedToWorkbench++;
+					} else { // visitState.urlsOnDisk == 0 AND memory queue full OR host not resolved yet OR there was a previous error
+						// Then put url in disk queue if room available, drop otherwise
+						if (urlsOnDisk >= pathQueryLimitDisk)
+							frontier.numberOfOverflowURLs.incrementAndGet();
+						else {
+							movedFromReceivedToVirtualizer++;
+							frontier.virtualizer.enqueueCrawlRequest(visitState, PulsarHelper.toMinimalCrawlRequestSerialized(crawlRequest));
+						}
 					}
 				}
 			}
@@ -185,6 +185,7 @@ public final class Distributor extends Thread {
 	@Override
 	public void run() {
 		try {
+			int purgeRound = 0;
 			/* During the following loop, you should set round to -1 every time something useful is done (e.g., a URL is read from the sieve, or from the virtual queues etc.) */
 			for ( int round=0; ; round += 1 ) {
 				frontier.rc.ensureNotPaused();
@@ -201,17 +202,19 @@ public final class Distributor extends Thread {
 				 * (i.e., we are counting IPs). */
 				if ( !workbenchIsFull ) {
 					VisitState visitState = frontier.refill.poll();
-					if (visitState != null) { // The priority is given to already started visits
+					if (visitState != null  && !visitState.purgeRequired) { // The priority is given to already started visits
 						round = -1;
 						if ( frontier.virtualizer.count(visitState) == 0 )
 						  LOGGER.info( "No URLs on disk during refill: " + visitState );
 						else {
 							// Note that this might make temporarily the workbench too big by a little bit.
-							final int pathQueryLimit = visitState.pathQueryLimit();
+							final int pathQueryLimit = Math.max(1,visitState.pathQueryLimit(1)); // For refill we need at least 1
               if (LOGGER.isDebugEnabled()) LOGGER.debug("Refilling {} with {} URLs", visitState, pathQueryLimit);
 							visitState.checkRobots(now);
-							final int dequeuedURLs = frontier.virtualizer.dequeueCrawlRequests(visitState, pathQueryLimit);
-							movedFromQueues += dequeuedURLs;
+							synchronized (visitState) {
+								final int dequeuedURLs = frontier.virtualizer.dequeueCrawlRequests(visitState, pathQueryLimit);
+								movedFromQueues += dequeuedURLs;
+							}
 						}
 					}
 					// Test : consume URLs even when front is full
@@ -238,8 +241,9 @@ public final class Distributor extends Thread {
 					startHighCostStats();
 				}
 
-				if ( now - PURGE_CHECK_INTERVAL > lastPurgeCheck ) {
-				  doPurgeCheck( now );
+				if ( now - (PURGE_CHECK_INTERVAL/NB_PURGE_PARTS) > lastPurgeCheck ) {
+				  doPurgeCheck( now, purgeRound );
+					purgeRound = (purgeRound + 1) % NB_PURGE_PARTS;
 					lastPurgeCheck = now;
 				}
 
@@ -312,33 +316,50 @@ public final class Distributor extends Thread {
     thread.start();
   }
 
-  private void doPurgeCheck( final long now ) throws IOException {
-    synchronized (schemeAuthority2VisitState) {
-      for (VisitState visitState : schemeAuthority2VisitState.visitStates())
-        if (visitState != null) {
-          /* We've been scheduled for purge, or we have fetched at least a
-           * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
-           * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
-           * same visit state later, in which case we will create it again. */
-          if (visitState.nextFetch == Long.MAX_VALUE || visitState.nextFetch != 0
-            && visitState.nextFetch < now - PURGE_DELAY
-            && visitState.isEmpty()
-            && !visitState.acquired
-            /*&& visitState.lastExceptionClass == null*/) {
-            LOGGER.info((visitState.nextFetch == Long.MAX_VALUE ? "Purging " : "Purging by delay ") + visitState);
-            // This will modify the backing array on which we are enumerating, but it won't be a serious problem.
-            frontier.virtualizer.remove(visitState);
-            schemeAuthority2VisitState.remove(visitState);
-            frontier.numberOfPurgedDelayVisitStates.incrementAndGet();
-          } else {
-            if (visitState.purgeRequired) {
+  private void doPurgeCheck( final long now, int sampleRound ) throws IOException {
+		long visitStatesCounter = 0;
+		long emptyVisitStatesCounter = 0;
+		long acquiredVisitStatesCounter = 0;
+		long numberOfPurged = 0;
+		var visitStates = schemeAuthority2VisitState.visitStates();
 
-              frontier.virtualizer.remove(visitState);
-              frontier.distributor.schemeAuthority2VisitState.remove(visitState);
-              frontier.numberOfPurgedScheduledVisitStates.incrementAndGet();
-            }
-          }
-        }
-    }
-  }
+		for (int index = sampleRound; index < visitStates.length; index += NB_PURGE_PARTS) {
+			var visitState = visitStates[index];
+			if (visitState != null) {
+				visitStatesCounter++;
+				boolean doPurge = false;
+				boolean isEmpty = visitState.isEmpty() && frontier.virtualizer.count(visitState) == 0;
+				/* We've been scheduled for purge, or we have fetched at least a
+				 * URL but haven't seen a URL for a PURGE_DELAY interval. Note that in the second case
+				 * we do not modify schemeAuthority2Count, as we might encounter some more URLs for the
+				 * same visit state later, in which case we will create it again. */
+				if (isEmpty) emptyVisitStatesCounter++;
+				if (visitState.acquired) {
+					acquiredVisitStatesCounter++;;
+				} else if (visitState.nextFetch < now - PURGE_DELAY && isEmpty) {
+					LOGGER.debug("Purging by delay {}", visitState);
+					doPurge = true;
+				} else if (visitState.purgeRequired) {
+					LOGGER.debug("Purging by request {}", visitState);
+					doPurge = true;
+				}
+
+				if (doPurge) {
+					// This will modify the backing array on which we are enumerating, but it won't be a serious problem.
+					numberOfPurged++;
+					visitState.clear(frontier.numberOfDrainedURLs);
+					synchronized (visitState) {
+						frontier.virtualizer.remove(visitState);
+					}
+					schemeAuthority2VisitState.remove(visitState);
+					frontier.numberOfPurgedDelayVisitStates.incrementAndGet();
+				} else {
+					if (LOGGER.isTraceEnabled())
+						LOGGER.trace("Not Purging {}, size : mem {} disk {}, nextFetch {}", visitState, visitState.size(), frontier.virtualizer.count(visitState), visitState.nextFetch);
+				}
+			}
+		}
+		LOGGER.info("Purged {} visitstate for round {} done {} visitStates visited including {} empty, {} acquired", numberOfPurged, sampleRound, visitStatesCounter, emptyVisitStatesCounter, acquiredVisitStatesCounter);
+	}
 }
+

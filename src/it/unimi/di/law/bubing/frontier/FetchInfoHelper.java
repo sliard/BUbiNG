@@ -17,6 +17,11 @@ import java.io.IOException;
 public class FetchInfoHelper {
   private final static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(FetchInfoHelper.class);
 
+  static int getCrawlRequestScheduleTime(final byte[] crawlRequest) throws InvalidProtocolBufferException {
+    MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = MsgFrontier.CrawlRequest.parseFrom(crawlRequest).toBuilder();
+    return crawlRequestBuilder.getCrawlInfo().getScheduleTimeMinutes();
+  }
+
   static MsgFrontier.CrawlRequest.Builder createCrawlRequest( final MsgURL.Key schemeAuthority, final byte[] minimalCrawlRequestSerialized ) throws InvalidProtocolBufferException {
     MsgFrontier.CrawlRequest.Builder crawlRequestBuilder = MsgFrontier.CrawlRequest.parseFrom(minimalCrawlRequestSerialized).toBuilder();
     MsgURL.Key.Builder urlKeyBuilder = crawlRequestBuilder.getUrlKeyBuilder();
@@ -63,27 +68,30 @@ public class FetchInfoHelper {
     } catch (InvalidProtocolBufferException ipbe) {
       throw new UnexpectedException(ipbe);
     }
-    frontier.fetchingFailedHostCount.incrementAndGet();
     frontier.fetchingFailedCount.incrementAndGet();
   }
 
   static void drainVisitStateForError( final Frontier frontier, final VisitState visitState ) throws InterruptedException, IOException {
-    final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
-    LOGGER.info("Draining " + visitState.size() + " + " + frontier.virtualizer.count(visitState) + " crawl request(s) for host " + Serializer.URL.Key.toString(schemeAuthorityProto));
-    while ( frontier.virtualizer.count(visitState) > 0 || ! visitState.isEmpty() ) {
-      frontier.rc.ensureNotPaused();
-      if (frontier.virtualizer.count(visitState) > 0) {
-        int read = frontier.virtualizer.dequeueCrawlRequests(visitState, 100);
+    try {
+      final MsgURL.Key schemeAuthorityProto = PulsarHelper.schemeAuthority(visitState.schemeAuthority).build();
+      LOGGER.debug("Draining " + visitState.size() + " + " + frontier.virtualizer.count(visitState) + " crawl request(s) for host " + Serializer.URL.Key.toString(schemeAuthorityProto));
+      while (frontier.virtualizer.count(visitState) > 0 || !visitState.isEmpty()) {
 
-      }
-      while (!visitState.isEmpty()) {
+        frontier.rc.ensureNotPaused();
+        synchronized (visitState) {
+          if (frontier.virtualizer.count(visitState) > 0)
+            frontier.virtualizer.dequeueCrawlRequests(visitState, 100);
 
-        final byte[] minimalCrawlRequestSerialized = visitState.dequeue(); // contains a zPathQuery
-        frontier.numberOfDrainedURLs.incrementAndGet();
-        failedCrawlRequest(frontier, visitState, schemeAuthorityProto, minimalCrawlRequestSerialized);
+          while (!visitState.isEmpty()) {
+            final byte[] minimalCrawlRequestSerialized = visitState.dequeue(); // contains a zPathQuery
+            frontier.numberOfDrainedURLs.incrementAndGet();
+            failedCrawlRequest(frontier, visitState, schemeAuthorityProto, minimalCrawlRequestSerialized);
+          }
+        }
       }
+    } catch (com.google.common.util.concurrent.UncheckedExecutionException e) {
+      LOGGER.error("Unchecked Exception",e);
+      visitState.schedulePurge(frontier.numberOfDrainedURLs);
     }
-    frontier.virtualizer.remove(visitState);
   }
-
 }

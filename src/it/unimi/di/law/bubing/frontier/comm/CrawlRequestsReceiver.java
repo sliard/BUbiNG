@@ -68,7 +68,8 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 					messageCount++;
 				} else
 					frontier.numberOfDroppedURLs.incrementAndGet();
-			}
+			} else
+				frontier.numberOfExpiredURLs.incrementAndGet();
 			if (messageCount == 1000)
 				LOGGER.warn("PULSAR Consumer for topic {} is active", topic);
 			// We still ACK even if the message was not actually put into a queue

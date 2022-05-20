@@ -1,5 +1,6 @@
 package it.unimi.di.law.bubing.frontier;
 
+import com.exensa.wdl.common.TimeHelper;
 import com.sleepycat.je.Cursor;
 import com.sleepycat.je.Database;
 import it.unimi.di.law.bubing.util.BURL;
@@ -15,6 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.time.Duration;
+import java.util.NoSuchElementException;
 
 /*
  * Copyright (C) 2013-2017 Paolo Boldi, Massimo Santini, and Sebastiano Vigna
@@ -40,7 +43,7 @@ import java.io.*;
  * each visit state, stored in a {@link Database}. Each queue is associated with a scheme+authority (the key).
  * Values are given by an increasing timestamp (written as a vByte-encoded integer) followed by a path+query.
  *
- * <p>Path+queries are enqueued using the {@link #enqueueURL(VisitState, ByteArrayList)} method. They can be {@linkplain #dequeueCrawlRequests(VisitState, int) dequeued in batches}
+ * <p>Path+queries are enqueued using the {@link #enqueueCrawlRequest(VisitState, byte[])} method. They can be {@linkplain #dequeueCrawlRequests(VisitState, int) dequeued in batches}
  * (the method uses {@linkplain Cursor cursors}). When a queue is no longer needed, it can be {@linkplain #remove(VisitState) removed}.
  *
  * @author Sebastiano Vigna
@@ -78,10 +81,26 @@ public class WorkbenchVirtualizer implements Closeable {
 	 */
 	public int dequeueCrawlRequests(final VisitState visitState, final int maxUrls) throws IOException {
 		if (maxUrls == 0) return 0;
-		final int dequeued = (int)Math.min(maxUrls, byteArrayDiskQueues.count(visitState));
-		for(int i = dequeued; i-- != 0;) {
-			visitState.enqueueCrawlRequest(byteArrayDiskQueues.dequeue(visitState));
-			frontier.pathQueriesInDiskQueues.decrementAndGet();
+		long available = byteArrayDiskQueues.count(visitState);
+		int dequeued = 0;
+		try {
+			while (available > 0 && dequeued < maxUrls) {
+				var cr = byteArrayDiskQueues.dequeue(visitState);
+				available--;
+				frontier.pathQueriesInDiskQueues.decrementAndGet();
+				// We drop expired CR here, because otherwise it could take forever to drain the queue
+				// (the disk queue is dequeued small amount by small amount)
+				if (!TimeHelper.hasTtlExpired(FetchInfoHelper.getCrawlRequestScheduleTime(cr), Duration.ofMillis(frontier.rc.crawlRequestTTL))) {
+					visitState.enqueueCrawlRequest(cr);
+					dequeued++;
+				} else
+					frontier.numberOfExpiredURLs.incrementAndGet();
+			}
+		} catch (NoSuchElementException e) {
+			// Exception can occur when two threads concurrently empty the queues
+			var eTip = new Exception(); // Only to get current stacktrace
+			LOGGER.error("Disk queue of {} has been emptied under our feet, concurrency problem", visitState);
+			LOGGER.error("StackTrace", eTip);
 		}
 		return dequeued;
 	}
@@ -110,14 +129,15 @@ public class WorkbenchVirtualizer implements Closeable {
 	 */
 	public void remove(VisitState visitState) throws IOException {
 		synchronized (byteArrayDiskQueues) {
-			byteArrayDiskQueues.remove(visitState);
+				frontier.pathQueriesInDiskQueues.updateAndGet(operand -> operand - count(visitState));
+				byteArrayDiskQueues.remove(visitState);
 		}
 	}
 
 	/** Enqueues the given URL as a path+query associated to the scheme+authority of the given visit state.
 	 *
  	 * @param visitState the visitState to which the URL must be added.
-	 * @param url a {@link BURL BUbiNG URL}.
+	 * @param crawlRequest a {@link com.exensa.wdl.protobuf.frontier.MsgFrontier.CrawlRequest crawl request contaning URL, schedule time and various constraints}.
 	 * @throws IOException
 	 */
 	public void enqueueCrawlRequest(VisitState visitState, final byte[] crawlRequest) throws IOException {
