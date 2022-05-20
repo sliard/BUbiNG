@@ -394,6 +394,7 @@ public class StartupConfiguration {
 
 	/** The expected duration of the visitstate memory queue */
 	// Default value : 3 minutes, i.e. 12 crawlRequest for a 15 seconds delay-
+	@TimeSpecification
 	@OptionalSpecification(value="180000")
 	public int visitStateMemoryQueueExpectedDuration;
 
