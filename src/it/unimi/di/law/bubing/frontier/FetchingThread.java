@@ -250,6 +250,7 @@ public final class FetchingThread extends Thread implements Closeable {
       new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver, queueIndex);
     connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
     connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
+    connManager.setSocketConfig(SocketConfig.custom().setTcpNoDelay(true).setSoTimeout(frontier.rc.socketTimeout).build());
 
     cookieStore = new BasicCookieStore();
 
@@ -547,6 +548,7 @@ public final class FetchingThread extends Thread implements Closeable {
       // Exponentially growing delay
       visitState.nextFetch = fetchData.endTime + delay;
       if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
+      frontier.fetchingFailedCount.incrementAndGet();
     }
     else {
       frontier.brokenVisitStates.decrementAndGet();

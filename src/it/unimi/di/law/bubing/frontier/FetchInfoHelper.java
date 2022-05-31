@@ -31,18 +31,22 @@ public class FetchInfoHelper {
       .setZHostPart(schemeAuthority.getZHostPart());
     return crawlRequestBuilder;
   }
-
   private static MsgCrawler.FetchInfo fetchInfoFailedGeneric( final MsgFrontier.CrawlRequestOrBuilder crawlRequest,
                                                               final VisitState visitState,
-                                                              final EnumFetchStatus.Enum fetchStatus ) {
+                                                              final int fetchStatus ) {
     final MsgCrawler.FetchInfo.Builder fetchInfoBuilder = MsgCrawler.FetchInfo.newBuilder()
       .setUrlKey( crawlRequest.getUrlKey() )
       .setFetchDateDeprecated( TimeHelper.getDaysNow() )
       .setFetchTimeMinutes( TimeHelper.getMinutesNow() )
-      .setFetchStatus( fetchStatus );
+      .setFetchStatusValue( fetchStatus );
     if ( visitState.workbenchEntry != null && visitState.workbenchEntry.ipAddress != null )
       fetchInfoBuilder.setIpAddress( ByteString.copyFrom(visitState.workbenchEntry.ipAddress) );
     return fetchInfoBuilder.build();
+  }
+  private static MsgCrawler.FetchInfo fetchInfoFailedGeneric( final MsgFrontier.CrawlRequestOrBuilder crawlRequest,
+                                                              final VisitState visitState,
+                                                              final EnumFetchStatus.Enum fetchStatus ) {
+    return fetchInfoFailedGeneric(crawlRequest, visitState, fetchStatus.getNumber());
   }
 
   static MsgCrawler.FetchInfo fetchInfoFailedBlackList(MsgFrontier.CrawlRequestOrBuilder crawlRequest, VisitState visitState) {
@@ -59,12 +63,15 @@ public class FetchInfoHelper {
 
 
   static void failedCrawlRequest( final Frontier frontier, final VisitState visitState,
-                                  final MsgURL.Key schemeAuthorityProto, final byte[] minimalCrawlRequestSerialized) {
+                                  final MsgURL.Key schemeAuthorityProto, final byte[] minimalCrawlRequestSerialized, Class<? extends Throwable> exceptionClass) {
     if (minimalCrawlRequestSerialized == VisitState.ROBOTS_PATH) // skip for robots.txt
       return;
     try {
       final MsgFrontier.CrawlRequest.Builder crawlRequest = createCrawlRequest(schemeAuthorityProto, minimalCrawlRequestSerialized);
-      frontier.enqueue(fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.HOST_INVALID));
+      if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(exceptionClass))
+        frontier.enqueue(fetchInfoFailedGeneric(crawlRequest, visitState, ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(exceptionClass)));
+      else
+        frontier.enqueue(fetchInfoFailedGeneric(crawlRequest, visitState, EnumFetchStatus.Enum.UNKNOWN_FAILURE));
     } catch (InvalidProtocolBufferException ipbe) {
       throw new UnexpectedException(ipbe);
     }
@@ -85,7 +92,7 @@ public class FetchInfoHelper {
           while (!visitState.isEmpty()) {
             final byte[] minimalCrawlRequestSerialized = visitState.dequeue(); // contains a zPathQuery
             frontier.numberOfDrainedURLs.incrementAndGet();
-            failedCrawlRequest(frontier, visitState, schemeAuthorityProto, minimalCrawlRequestSerialized);
+            failedCrawlRequest(frontier, visitState, schemeAuthorityProto, minimalCrawlRequestSerialized, visitState.lastExceptionClass);
           }
         }
       }
