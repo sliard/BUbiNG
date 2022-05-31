@@ -55,7 +55,7 @@
   <logger name="net.htmlparser.jericho" level="OFF"/>
   <logger name="it.unimi.di.law.bubing.parser.XHTMLParser" level="WARN"/>
   <logger name="it.unimi.di.law.bubing.parser.HTMLParser" level="WARN"/>
-  <logger name="it.unimi.di.law.bubing.frontier.FetchingThread" level="WARN"/>
+  <logger name="it.unimi.di.law.bubing.frontier.FetchingThread" level="INFO"/>
   <logger name="it.unimi.di.law.bubing.frontier.Frontier" level="WARN"/>
   <logger name="it.unimi.di.law.bubing.frontier.FetchInfoHelper" level="INFO"/>
   <logger name="it.unimi.di.law.bubing.frontier.ParsingThread" level="WARN"/>

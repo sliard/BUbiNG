@@ -21,6 +21,7 @@ import org.apache.http.client.config.RequestConfig;
 import org.apache.http.config.ConnectionConfig;
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
+import org.apache.http.config.SocketConfig;
 import org.apache.http.conn.DnsResolver;
 import org.apache.http.conn.socket.ConnectionSocketFactory;
 import org.apache.http.conn.socket.PlainConnectionSocketFactory;
@@ -30,6 +31,7 @@ import org.apache.http.cookie.Cookie;
 import org.apache.http.impl.DefaultConnectionReuseStrategy;
 import org.apache.http.impl.NoConnectionReuseStrategy;
 import org.apache.http.impl.client.BasicCookieStore;
+import org.apache.http.impl.client.DefaultHttpRequestRetryHandler;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
 import org.apache.http.message.BasicHeader;
@@ -246,9 +248,9 @@ public final class FetchingThread extends Thread implements Closeable {
 
     final BasicHttpClientConnectionManager connManager =
       new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver, queueIndex);
-
     connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
     connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
+    connManager.setSocketConfig(SocketConfig.custom().setTcpNoDelay(true).setSoTimeout(frontier.rc.socketTimeout).build());
 
     cookieStore = new BasicCookieStore();
 
@@ -264,6 +266,7 @@ public final class FetchingThread extends Thread implements Closeable {
         .setSSLContext(getSSLContext(queueIndex)) // <- this is probably overriden by the connection manager
         .setConnectionManager(connManager)
         .setConnectionReuseStrategy(frontier.rc.keepAliveTime == 0 ? NoConnectionReuseStrategy.INSTANCE : DefaultConnectionReuseStrategy.INSTANCE)
+        .setRetryHandler(DefaultHttpRequestRetryHandler.INSTANCE)
         .setUserAgent(frontier.rc.userAgent)
         .setDefaultCookieStore(cookieStore)
         .setDefaultHeaders(ObjectArrayList.wrap(headers))
@@ -545,6 +548,7 @@ public final class FetchingThread extends Thread implements Closeable {
       // Exponentially growing delay
       visitState.nextFetch = fetchData.endTime + delay;
       if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
+      frontier.fetchingFailedCount.incrementAndGet();
     }
     else {
       frontier.brokenVisitStates.decrementAndGet();

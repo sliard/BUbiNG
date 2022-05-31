@@ -441,6 +441,7 @@ public class Frontier {
 			.setRelativeRedirectsAllowed(true)
 			.setCircularRedirectsAllowed(false) // allow for cookie-based redirects
 			.setMaxRedirects(5) // Google's policy
+			.setContentCompressionEnabled(true)
 			.setProxy(rc.robotProxyHost.length() > 0 ? new HttpHost(rc.robotProxyHost, rc.robotProxyPort) : null)
 			.build();
 		LOGGER.info("Set robots request config to {}", robotsRequestConfig.toString());
