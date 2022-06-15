@@ -67,7 +67,7 @@
 		<dependency org="net.java.dev.javacc" name="javacc" rev="5.0" conf="compile"/>
 
 		<dependency org="com.google.protobuf" name="protobuf-java" rev="3.11.4"/>
-		<dependency org="org.apache.pulsar" name="pulsar-client" rev="2.6.4"/>
+		<dependency org="org.apache.pulsar" name="pulsar-client" rev="2.7.4"/>
 
 		<dependency org="org.apache.commons" name="commons-math" rev="latest.release" conf="test"/>
 		<dependency org="junit" name="junit" rev="latest.release" conf="test"/>
