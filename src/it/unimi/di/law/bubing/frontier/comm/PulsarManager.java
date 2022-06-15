@@ -45,6 +45,24 @@ public final class PulsarManager implements AutoCloseable
     crawlRequestConsumerRepository.requestConsumers(client, frontier, rc.priorityCrawl);
   }
 
+
+  public void closeCrawlRequestConsumer( final Frontier frontier, int topic ) throws InterruptedException {
+    LOGGER.warn("Closing consumer {}", topic);
+    crawlRequestConsumerRepository.closeConsumer(topic);
+  }
+
+  public void createCrawlRequestConsumer( final Frontier frontier, int topic ) {
+      LOGGER.warn("Recreating consumer {}", topic);
+    crawlRequestConsumerRepository.requestConsumer(client, frontier, topic, rc.priorityCrawl);
+  }
+
+  public void renewCrawlRequestConsumer( final Frontier frontier, int topic ) throws InterruptedException {
+    LOGGER.warn("Closing consumer {}", topic);
+    crawlRequestConsumerRepository.closeConsumer(topic);
+    LOGGER.warn("Recreating consumer {}", topic);
+    crawlRequestConsumerRepository.requestConsumer(client, frontier, topic, rc.priorityCrawl);
+  }
+
   public void close() throws InterruptedException {
     closeCrawlRequestConsumers();
     closeFetchInfoProducers();
@@ -225,6 +243,23 @@ public final class PulsarManager implements AutoCloseable
       }
     }
 
+    private void closeConsumer(int topic) throws InterruptedException {
+      if (consumers.length > topic) {
+        try {
+          CompletableFuture.allOf(
+            java.util.stream.Stream.of(consumers[topic])
+              .filter(java.util.Objects::nonNull)
+              .map(Consumer::closeAsync)
+              .toArray(CompletableFuture[]::new)
+          ).get(5, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+          LOGGER.error("Timeout while waiting for CrawlRequest consumers to close", e);
+        } catch (ExecutionException e) {
+          LOGGER.error("Failed to close CrawlRequest consumers", e);
+        }
+      }
+    }
+
     private void closeFutures() throws InterruptedException {
       try {
         CompletableFuture.allOf(
@@ -271,8 +306,17 @@ public final class PulsarManager implements AutoCloseable
     }
 
     private void requestConsumers(final PulsarClient client, final Frontier frontier, final boolean priorityCrawl) {
-      for (int topic = 0; topic < rc.pulsarFrontierTopicNumber; ++topic)
+      int startTopic = rc.pulsarFrontierNodeId * rc.pulsarFrontierTopicNumber / rc.pulsarFrontierNodeNumber;
+      int endTopic = (startTopic + (3 * rc.pulsarFrontierTopicNumber / rc.pulsarFrontierNodeNumber));
+      if (endTopic - startTopic > rc.pulsarFrontierTopicNumber) {
+        startTopic = 0;
+        endTopic = rc.pulsarFrontierTopicNumber;
+      }
+
+      for (int ptopic = startTopic; ptopic < endTopic; ++ptopic) {
+        int topic = ptopic % rc.pulsarFrontierTopicNumber;
         futures[topic] = requestConsumer(client, frontier, topic, priorityCrawl);
+      }
       String topicName;
       if (priorityCrawl)
         topicName = rc.pulsarFrontierToPromptlyCrawlURLsTopic;
@@ -302,13 +346,13 @@ public final class PulsarManager implements AutoCloseable
 
       return client.newConsumer()
         .subscriptionType( SubscriptionType.Failover )
-        .receiverQueueSize(3*420)
+        .receiverQueueSize(3*42)
         .batchReceivePolicy(
           BatchReceivePolicy.builder()
-            .maxNumMessages( 420 )
+            .maxNumMessages( 42 )
             .maxNumBytes( -1 )
             .timeout( 1, TimeUnit.SECONDS ).build())
-        .maxTotalReceiverQueueSizeAcrossPartitions(32*1024)
+        .maxTotalReceiverQueueSizeAcrossPartitions(3*42*768)
         .acknowledgmentGroupTime( 500, TimeUnit.MILLISECONDS )
         .messageListener( new CrawlRequestsReceiver(frontier,topic) )
         .subscriptionInitialPosition( SubscriptionInitialPosition.Earliest )

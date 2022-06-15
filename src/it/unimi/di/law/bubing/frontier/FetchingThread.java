@@ -256,9 +256,7 @@ public final class FetchingThread extends Thread implements Closeable {
 
     BasicHeader[] headers = {
         new BasicHeader("From", frontier.rc.userAgentFrom),
-        new BasicHeader("Accept", "text/html;q=0.95,text/*;q=0.9,*/*;q=0.8"),
-        new BasicHeader("Accept-Language", "*"),
-        new BasicHeader("Accept-Charset", "*")
+        new BasicHeader("Accept", "text/html;q=0.95,text/*;q=0.9,*/*;q=0.8")
     };
 
     httpClient = HttpClients.custom()

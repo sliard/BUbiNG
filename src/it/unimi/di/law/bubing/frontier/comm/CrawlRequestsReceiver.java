@@ -70,7 +70,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 					frontier.numberOfDroppedURLs.incrementAndGet();
 			} else
 				frontier.numberOfExpiredURLs.incrementAndGet();
-			if (messageCount == 1000)
+			if (messageCount == 1000 || (messageCount % 1000000 == 0))
 				LOGGER.warn("PULSAR Consumer for topic {} is active", topic);
 			// We still ACK even if the message was not actually put into a queue
 			consumer.acknowledge( message );
@@ -82,7 +82,7 @@ public final class CrawlRequestsReceiver implements MessageListener<byte[]>
 		  LOGGER.error( String.format("While acknowledging message for topic %d",topic), e );
     }
 		catch ( Throwable t) {
-			LOGGER.error( String.format("While processing message for topic %d",topic), t );
+			LOGGER.error( String.format("FATAL ERROR in PULSAR receiver while processing message for topic %d",topic), t );
 			throw (t);
 		}
 	}
