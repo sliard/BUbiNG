@@ -22,7 +22,7 @@ public final class ExceptionHelper
   /** A map recording for each type of exception the FetchStatus */
   public static final Object2IntOpenHashMap<Class<?>> EXCEPTION_TO_FETCH_STATUS = new Object2IntOpenHashMap<>();
 
-  private static final long BASE_TIME = TimeUnit.MINUTES.toMillis(45);
+  private static final long BASE_TIME = TimeUnit.MINUTES.toMillis(35);
 
   static {
     EXCEPTION_TO_WAIT_TIME.defaultReturnValue( BASE_TIME );
@@ -35,21 +35,25 @@ public final class ExceptionHelper
     EXCEPTION_TO_MAX_RETRIES.defaultReturnValue(2);
     EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 3);
     EXCEPTION_TO_MAX_RETRIES.put(java.net.NoRouteToHostException.class, 2);
-    EXCEPTION_TO_MAX_RETRIES.put(java.net.SocketException.class, 3);
-    EXCEPTION_TO_MAX_RETRIES.put(java.net.SocketTimeoutException.class, 3);
+    EXCEPTION_TO_MAX_RETRIES.put(java.net.SocketException.class, 4);
+    EXCEPTION_TO_MAX_RETRIES.put(java.net.SocketTimeoutException.class, 4);
     EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 1);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 1);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.RedirectException.class, 1);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 3);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.ConnectionClosedException.class, 3);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.NoHttpResponseException.class, 3);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.TruncatedChunkException.class, 3);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.MalformedChunkCodingException.class, 3);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 1);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.ConnectionClosedException.class, 2);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.NoHttpResponseException.class, 2);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.TruncatedChunkException.class, 2);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.MalformedChunkCodingException.class, 2);
 
     EXCEPTION_HOST_KILLER.add(java.net.NoRouteToHostException.class);
     EXCEPTION_HOST_KILLER.add(java.net.UnknownHostException.class);
+    EXCEPTION_HOST_KILLER.add(java.net.SocketException.class);
+    EXCEPTION_HOST_KILLER.add(java.net.SocketTimeoutException.class);
 
     EXCEPTION_ENTRY_KILLER.add(java.net.NoRouteToHostException.class);
+
+
 
     EXCEPTION_TO_FETCH_STATUS.put(java.net.NoRouteToHostException.class, EnumFetchStatus.Enum.NO_ROUTE_TO_HOST_VALUE);
     EXCEPTION_TO_FETCH_STATUS.put(java.net.SocketException.class, EnumFetchStatus.Enum.SOCKET_ERROR_VALUE);
