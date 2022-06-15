@@ -233,6 +233,21 @@ public class Agent {
 		}
 	}
 
+	@ManagedOperation @Description("Close topic consumer")
+	public void closeCrawlRequestConsumer(final int topic) throws InterruptedException {
+		pulsarManager.closeCrawlRequestConsumer( frontier, topic);
+	}
+
+	@ManagedOperation @Description("Create topic consumer")
+	public void createCrawlRequestConsumer(final int topic) {
+		pulsarManager.createCrawlRequestConsumer( frontier, topic);
+	}
+
+	@ManagedOperation @Description("Close and recreate topic consumer")
+	public void renewCrawlRequestConsumer(final int topic) throws InterruptedException {
+			pulsarManager.renewCrawlRequestConsumer( frontier, topic);
+	}
+
 	/* Properties, the same as RuntimeConfiguration: final fields in RuntimeConfiguration are not reported since they can be seen in the file .properties;
 	 * while volatile fields in RuntimeConfiguration can be get and set (except for paused and stopping)
 	 * */
