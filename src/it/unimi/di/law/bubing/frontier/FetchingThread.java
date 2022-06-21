@@ -7,6 +7,8 @@ import com.exensa.wdl.protobuf.crawler.EnumFetchStatus;
 import com.exensa.wdl.protobuf.crawler.MsgCrawler;
 import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import com.exensa.wdl.protobuf.url.MsgURL;
+import com.google.api.client.util.DateTime;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
 import it.unimi.di.law.bubing.frontier.comm.PulsarHelper;
@@ -48,7 +50,9 @@ import java.net.UnknownHostException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.text.SimpleDateFormat;
 import java.time.Duration;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -111,9 +115,11 @@ public final class FetchingThread extends Thread implements Closeable {
    */
   private final Frontier frontier;
   /**
-   * The synchronous HTTP client used by this thread.
+   * The synchronous HTTP client and connection manager used by this thread for normal fetches.
    */
   private final HttpClient httpClient;
+
+  private final BasicHttpClientConnectionManager connManager;
   /**
    * The fetched HTTP response used by this thread.
    */
@@ -122,6 +128,12 @@ public final class FetchingThread extends Thread implements Closeable {
    * The cookie store used by {@link #httpClient}.
    */
   private final BasicCookieStore cookieStore;
+
+  /**
+   * The synchronous HTTP client and connection manager used by this thread for robots fetches.
+   */
+  private final HttpClient httpClientRobots;
+  private final BasicHttpClientConnectionManager connManagerRobots;
 
   /**
    * The index of the todoQueue (which is also the index for the SSLContext
@@ -189,7 +201,6 @@ public final class FetchingThread extends Thread implements Closeable {
     }
   }
 
-
   private static int length(final String s) {
     return s == null ? 0 : s.length();
   }
@@ -246,11 +257,15 @@ public final class FetchingThread extends Thread implements Closeable {
     setPriority(Thread.MIN_PRIORITY); // Low priority; there will be thousands of this guys around.
     this.frontier = frontier;
 
-    final BasicHttpClientConnectionManager connManager =
+    connManager =
       new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver, queueIndex);
-    connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
     connManager.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
-    connManager.setSocketConfig(SocketConfig.custom().setTcpNoDelay(true).setSoTimeout(frontier.rc.socketTimeout).build());
+    connManager.setSocketConfig(SocketConfig.custom().setTcpNoDelay(true).setSoReuseAddress(true).setSoTimeout(frontier.rc.socketTimeout).build());
+
+    connManagerRobots =
+      new BasicHttpClientConnectionManagerWithAlternateDNS(frontier.rc.dnsResolver, queueIndex);
+    connManagerRobots.setConnectionConfig(ConnectionConfig.custom().setBufferSize(8 * 1024).build()); // TODO: make this configurable
+    connManagerRobots.setSocketConfig(SocketConfig.custom().setTcpNoDelay(true).setSoReuseAddress(true).setSoTimeout(frontier.rc.socketTimeout*4).build());
 
     cookieStore = new BasicCookieStore();
 
@@ -269,6 +284,18 @@ public final class FetchingThread extends Thread implements Closeable {
         .setDefaultCookieStore(cookieStore)
         .setDefaultHeaders(ObjectArrayList.wrap(headers))
         .build();
+
+    httpClientRobots = HttpClients.custom()
+      .setSSLHostnameVerifier(new NoopHostnameVerifier()) // why would we need to do it twice ?
+      .setSSLContext(getSSLContext(queueIndex)) // <- this is probably overriden by the connection manager
+      .setConnectionManager(connManagerRobots)
+      .setConnectionReuseStrategy(frontier.rc.keepAliveTime == 0 ? NoConnectionReuseStrategy.INSTANCE : DefaultConnectionReuseStrategy.INSTANCE)
+      .setRetryHandler(DefaultHttpRequestRetryHandler.INSTANCE)
+      .setUserAgent(frontier.rc.userAgent)
+      .setDefaultCookieStore(cookieStore)
+      .setDefaultHeaders(ObjectArrayList.wrap(headers))
+      .build();
+
 
     fetchData = new FetchData(frontier.rc);
     frontier.fetchDataCount.incrementAndGet();
@@ -437,6 +464,9 @@ public final class FetchingThread extends Thread implements Closeable {
       // Should return true and let the host be drained so that fetchInfos are sent with failure info, BUT won't work because host is invalid
       // We purge the host instead
       visitState.schedulePurge(frontier.numberOfDrainedURLs);
+    } finally {
+      connManager.closeIdleConnections(0, TimeUnit.MILLISECONDS);
+      connManager.closeExpiredConnections();
     }
     return false; // skip to next SchemeAuthority
   }
@@ -465,7 +495,8 @@ public final class FetchingThread extends Thread implements Closeable {
       .setFetchDuration( (int)(fetchData.endTime - fetchData.startTime) )
       .setFetchDateDeprecated( (int)(fetchData.startTime / (24*60*60*1000)) )
       .setFetchTimeMinutes( (int)(fetchData.startTime / ( 60*1000)) );
-
+    if ( fetchData.visitState.workbenchEntry != null && fetchData.visitState.workbenchEntry.ipAddress != null )
+      fetchInfoBuilder.setIpAddress( ByteString.copyFrom(fetchData.visitState.workbenchEntry.ipAddress) );
     if (ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.containsKey(fetchData.exception.getClass()))
       fetchInfoBuilder.setFetchStatusValue(ExceptionHelper.EXCEPTION_TO_FETCH_STATUS.getInt(fetchData.exception.getClass()));
     else
@@ -526,9 +557,12 @@ public final class FetchingThread extends Thread implements Closeable {
     }
 
     final Class<? extends Throwable> exceptionClass = fetchData.exception.getClass();
-
     if (LOGGER.isDebugEnabled()) LOGGER.debug("Exception while fetching " + fetchData.uri(), fetchData.exception);
-    else if (LOGGER.isInfoEnabled()) LOGGER.info("Exception " + exceptionClass + "(" + fetchData.exception.getMessage() + ") while fetching " + fetchData.uri());
+    else if (LOGGER.isInfoEnabled()) {
+      final SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss.S");
+      LOGGER.info("Exception " + exceptionClass + "(" + fetchData.exception.getMessage() + ") while fetching " + fetchData.uri() +
+        ", fetch start " + sdf.format(new Date(fetchData.startTime)));
+    }
 
     if (visitState.lastExceptionClass == exceptionClass )
       visitState.retries += 1; // An old problem
@@ -540,9 +574,12 @@ public final class FetchingThread extends Thread implements Closeable {
       //visitState.retries = 0; => a visitState could alternate between two error types
       visitState.retries += 1;
     }
-
-    if (visitState.retries < ExceptionHelper.EXCEPTION_TO_MAX_RETRIES.getLong(exceptionClass)) {
-      final long delay = ExceptionHelper.EXCEPTION_TO_WAIT_TIME.getLong(exceptionClass) << visitState.retries;
+    var exceptionToMaxRetries = fetchData.isRobots ?
+      ExceptionHelper.EXCEPTION_TO_MAX_RETRIES_ROBOTS : ExceptionHelper.EXCEPTION_TO_MAX_RETRIES;
+    var exceptionToWaitTime = fetchData.isRobots ?
+      ExceptionHelper.EXCEPTION_TO_WAIT_TIME_ROBOTS : ExceptionHelper.EXCEPTION_TO_WAIT_TIME;
+    if (visitState.retries < exceptionToMaxRetries.getLong(exceptionClass)) {
+      final long delay = exceptionToWaitTime.getLong(exceptionClass) << visitState.retries;
       // Exponentially growing delay
       visitState.nextFetch = fetchData.endTime + delay;
       if (LOGGER.isInfoEnabled()) LOGGER.info("Will retry URL " + fetchData.uri() + " of visit state " + visitState + " for " + exceptionClass.getSimpleName() + " with delay " + delay);
@@ -551,7 +588,15 @@ public final class FetchingThread extends Thread implements Closeable {
     else {
       frontier.brokenVisitStates.decrementAndGet();
       // Note that *any* repeated error on robots.txt leads to dropping the entire site => TODO : check if it's a good idea
-      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) || fetchData.isRobots ) {
+      if (fetchData.isRobots && !ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass) && !ExceptionHelper.EXCEPTION_ENTRY_KILLER.contains(exceptionClass) ) {
+        // If we failed to get robots because of a non fatal error (ie not unknown host or unreachable IP address)
+        // We kill the visitstate but we don't send errors back
+        visitState.schedulePurge(frontier.numberOfDrainedURLs);
+        frontier.fetchingFailedHostCount.incrementAndGet();
+        if (LOGGER.isInfoEnabled())
+          LOGGER.info("Visit state " + visitState + " killed by robots error " + exceptionClass.getSimpleName());
+      } else
+      if (ExceptionHelper.EXCEPTION_HOST_KILLER.contains(exceptionClass)) {
         try {
           if (ExceptionHelper.EXCEPTION_ENTRY_KILLER.contains(exceptionClass) ) {
             var entry = visitState.workbenchEntry;
@@ -665,7 +710,9 @@ public final class FetchingThread extends Thread implements Closeable {
         final RequestConfig requestConfig = robots
           ? frontier.robotsRequestConfig
           : ((attempt == 1) ? frontier.defaultRequestConfig : frontier.noRedirectRequestConfig);
-        fetchData.fetch(url, crawlRequest.build(), httpClient, requestConfig, visitState, robots);
+        final var thisHttpClient = robots ?
+          httpClientRobots : httpClient;
+        fetchData.fetch(url, crawlRequest.build(), thisHttpClient, requestConfig, visitState, robots);
         // Deal with rate limiting situation
         if (fetchData.response() != null && fetchData.response().getStatusLine() != null && fetchData.response().getStatusLine().getStatusCode() == 429) {
           final long endTime = System.currentTimeMillis();
@@ -707,6 +754,7 @@ public final class FetchingThread extends Thread implements Closeable {
         visitState.nextFetch = endTime + Math.max(frontier.rc.schemeAuthorityDelay, visitState.crawlDelayMS);
         return false;
       } finally {
+
         if (finished) {
           frontier.fetchingCount.incrementAndGet();
           if (robots)

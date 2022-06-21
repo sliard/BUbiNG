@@ -13,8 +13,12 @@ public final class ExceptionHelper
 {
   /** A map recording for each type of exception a timeout, Note that 0 means standard politeness time. */
   public static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_WAIT_TIME = new Object2LongOpenHashMap<>();
+  /** A map recording for each type of exception a timeout, Note that 0 means standard politeness time. */
+  public static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_WAIT_TIME_ROBOTS = new Object2LongOpenHashMap<>();
   /** A map recording for each type of exception the number of retries. */
   public static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_MAX_RETRIES = new Object2LongOpenHashMap<>();
+  /** A map recording for each type of exception the number of retries. */
+  public static final Object2LongOpenHashMap<Class<?>> EXCEPTION_TO_MAX_RETRIES_ROBOTS = new Object2LongOpenHashMap<>();
   /** A map recording for each type of exception the fact that we can purge the host. */
   public static final ObjectOpenHashSet<Class<?>> EXCEPTION_HOST_KILLER = new ObjectOpenHashSet<>();
   /** A map recording for each type of exception the fact that we can purge the workbenchentry. */
@@ -22,7 +26,7 @@ public final class ExceptionHelper
   /** A map recording for each type of exception the FetchStatus */
   public static final Object2IntOpenHashMap<Class<?>> EXCEPTION_TO_FETCH_STATUS = new Object2IntOpenHashMap<>();
 
-  private static final long BASE_TIME = TimeUnit.MINUTES.toMillis(35);
+  private static final long BASE_TIME = TimeUnit.MINUTES.toMillis(36);
 
   static {
     EXCEPTION_TO_WAIT_TIME.defaultReturnValue( BASE_TIME );
@@ -32,19 +36,27 @@ public final class ExceptionHelper
     EXCEPTION_TO_WAIT_TIME.put(java.net.UnknownHostException.class, 3 * BASE_TIME);
     EXCEPTION_TO_WAIT_TIME.put(javax.net.ssl.SSLPeerUnverifiedException.class, 2 * BASE_TIME);
 
+    EXCEPTION_TO_WAIT_TIME_ROBOTS.defaultReturnValue( BASE_TIME/4 );
+    EXCEPTION_TO_WAIT_TIME_ROBOTS.put(java.net.NoRouteToHostException.class, 3 * BASE_TIME);
+    EXCEPTION_TO_WAIT_TIME_ROBOTS.put(java.net.UnknownHostException.class, 3 * BASE_TIME);
+
     EXCEPTION_TO_MAX_RETRIES.defaultReturnValue(2);
     EXCEPTION_TO_MAX_RETRIES.put(java.net.UnknownHostException.class, 3);
     EXCEPTION_TO_MAX_RETRIES.put(java.net.NoRouteToHostException.class, 2);
     EXCEPTION_TO_MAX_RETRIES.put(java.net.SocketException.class, 4);
     EXCEPTION_TO_MAX_RETRIES.put(java.net.SocketTimeoutException.class, 4);
-    EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 1);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 1);
+    EXCEPTION_TO_MAX_RETRIES.put(javax.net.ssl.SSLPeerUnverifiedException.class, 2);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.CircularRedirectException.class, 2);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.client.RedirectException.class, 1);
-    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 1);
+    EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.conn.ConnectTimeoutException.class, 2);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.ConnectionClosedException.class, 2);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.NoHttpResponseException.class, 2);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.TruncatedChunkException.class, 2);
     EXCEPTION_TO_MAX_RETRIES.put(org.apache.http.MalformedChunkCodingException.class, 2);
+
+    EXCEPTION_TO_MAX_RETRIES_ROBOTS.defaultReturnValue(5);
+    EXCEPTION_TO_MAX_RETRIES_ROBOTS.put(java.net.UnknownHostException.class, 3);
+    EXCEPTION_TO_MAX_RETRIES_ROBOTS.put(java.net.NoRouteToHostException.class, 2);
 
     EXCEPTION_HOST_KILLER.add(java.net.NoRouteToHostException.class);
     EXCEPTION_HOST_KILLER.add(java.net.UnknownHostException.class);
