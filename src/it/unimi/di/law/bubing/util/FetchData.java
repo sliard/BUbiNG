@@ -435,7 +435,7 @@ public class FetchData implements URIResponse, Closeable {
       exception = e;
     }
     finally {
-      httpGet.reset(); // Release resources.
+			httpGet.reset(); // Release resources.
     }
   }
 

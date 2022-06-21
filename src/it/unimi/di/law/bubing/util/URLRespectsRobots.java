@@ -56,10 +56,18 @@ public class URLRespectsRobots {
 	private static SimpleRobotRulesParser robotsParser = new SimpleRobotRulesParser(100000,10);
 
 	public static SimpleRobotRules parseRobotsResponse(final URIResponse robotsResponse, final String userAgent) throws IOException {
-		final int status = robotsResponse.response().getStatusLine().getStatusCode();
+		int status = robotsResponse.response().getStatusLine().getStatusCode();
+
+		if (status > 1000) status = status/10; // some servers respond with error codes like 4041
+
 		if (status / 100 != 2) LOGGER.info("Got status " + status + " while fetching robots: URL was " + robotsResponse.uri());
-		if (status / 100 == 4 || status / 100 == 5) return EMPTY_ROBOTS_FILTER; // For status 4xx and 5xx, we consider everything allowed.
+
+		// Trying to implement Google policy
+		// https://developers.google.com/search/docs/advanced/robots/robots_txt
+		if (status / 100 == 4) return EMPTY_ROBOTS_FILTER; // For status 4xx, we consider everything allowed.
+		if (status / 100 == 5) return null; // Google policy : errors 5xx => do not crawl
 		if (status / 100 != 2 && status / 100 != 3) return null; // For status 2xx and 3xx we parse the content. For the rest, we consider everything forbidden.
+
 		Header contentTypeHeader = robotsResponse.response().getFirstHeader(HttpHeaders.CONTENT_TYPE);
 		String contentType = "";
 		if (contentTypeHeader != null && contentTypeHeader.getValue() != null)

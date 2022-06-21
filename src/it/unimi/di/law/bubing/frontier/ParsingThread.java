@@ -352,6 +352,7 @@ public class ParsingThread extends Thread {
       if ((visitState.robotsFilter = URLRespectsRobots.parseRobotsResponse(fetchData, rc.userAgentId)) == null) {
         // We go on getting/creating a workbench entry only if we have robots permissions.
         visitState.schedulePurge(frontier.numberOfDrainedURLs);
+        frontier.fetchingFailedHostCount.incrementAndGet();
         LOGGER.warn("Visit state " + visitState + " killed by null robots.txt");
       }
       if (visitState.robotsFilter != null && visitState.robotsFilter.getCrawlDelay() != SimpleRobotRules.UNSET_CRAWL_DELAY) {

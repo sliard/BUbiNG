@@ -96,13 +96,13 @@ public class InspectableCachedHttpEntity extends HttpEntityWrapper {
 					break;
 				final long now = System.currentTimeMillis();
 				final long delay = now - startTime;
-				if (delay > 100) { // don't check until a minimal delay has passed
+				if (delay > 1000) { // don't check until a minimal delay has passed
 					if (count == 0 && delay > maximumTimeToFirstByte)
 						throw new TooSlowException("Time to first byte = " + delay + "ms");
 					if (delay > maximumFetchDuration)
 						throw new TooSlowException("Fetch duration exceed maximum allowed duration (" + delay + "ms > " + maximumFetchDuration + "ms");
 					final double bytesPerSecond = (readBytes + count) / (delay / 1000.);
-					if (readBytes + count > 0 && bytesPerSecond < minimumDownloadSpeed)
+					if (readBytes + count > 1000 && bytesPerSecond < minimumDownloadSpeed)
 						throw new TooSlowException("Download speed " + bytesPerSecond + " B/s");
 				}
 				if (readBytes > 0) {
