@@ -53,7 +53,7 @@ public class URLRespectsRobots {
 	 * @return an array of character arrays, which are prefixes of the URLs not to follow, in sorted order,
 	 * or {@code null}
 	 */
-	private static SimpleRobotRulesParser robotsParser = new SimpleRobotRulesParser(100000,10);
+	private static SimpleRobotRulesParser robotsParser = new SimpleRobotRulesParser(30*60*1000,10);
 
 	public static SimpleRobotRules parseRobotsResponse(final URIResponse robotsResponse, final String userAgent) throws IOException {
 		int status = robotsResponse.response().getStatusLine().getStatusCode();
