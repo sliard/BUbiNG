@@ -62,7 +62,7 @@ public final class LinksHelper
 
   private static final Set<String> excludeRels = makeSet(
     "stylesheet",
-    "shortlink"
+    "shortlink",
     "prefetch",
     "dns-prefetch",
     "preconnect",
