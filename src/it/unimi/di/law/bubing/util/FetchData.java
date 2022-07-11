@@ -400,6 +400,7 @@ public class FetchData implements URIResponse, Closeable {
 			httpClientContext = HttpClientContext.create();
 			MutableLong mutableFirstByteTime = new MutableLong();
 			mutableFirstByteTime.setValue(startTime);
+			firstByteTime = startTime;
       httpClient.execute( httpHost, httpGet, new ResponseHandler<Void>() {
 
         @Override
