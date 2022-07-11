@@ -188,8 +188,10 @@ public class ParsingThread extends Thread {
         final MsgURL.Key urlKey = PulsarHelper.fromURI( target );
         if ( !targetKeys.add(urlKey) )
           return false;
-        if ( !scheduleFilter.apply(new Link(source,target)) )
+        if ( !scheduleFilter.apply(new Link(source,target)) ) {
+          LOGGER.trace("Do not process link tp {} because of scheduleFilter", target );
           return false;
+        }
         final MsgLink.LinkInfo.Builder linkInfoBuilder = MsgLink.LinkInfo.newBuilder();
         if ( !LinksHelper.trySetLinkInfos(link,linkInfoBuilder,linkNum,noFollow) )
           return false;
