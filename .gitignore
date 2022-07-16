@@ -4,7 +4,6 @@
 .project
 .idea
 *.iml
-bubing-*
 target/
 src/main/java/it/unimi/di/law/warc/filters/parser/*.java
 .settings/
