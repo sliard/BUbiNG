@@ -75,6 +75,7 @@ public class WarcWriterTest {
 	public void testSingleResponse() throws IOException, SecurityException, IllegalArgumentException {
 		String outputFileName = BASE_PATH + File.separator + "response.warc";
 		System.out.println("*** outputFileName="+outputFileName);
+		System.out.println("*** RESPONSE_PATH="+RESPONSE_PATH);
 		FileOutputStream fos = new FileOutputStream(outputFileName);
 		new UncompressedWarcWriter(fos).write(new UncompressedWarcReader(new FileInputStream(RESPONSE_PATH)).read());
 		fos.close();
