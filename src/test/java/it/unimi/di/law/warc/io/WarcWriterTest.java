@@ -73,11 +73,13 @@ public class WarcWriterTest {
 	@SuppressWarnings("resource")
 	@Test
 	public void testSingleResponse() throws IOException, SecurityException, IllegalArgumentException {
-		FileOutputStream fos = new FileOutputStream(BASE_PATH + File.separator + "response.warc");
+		String outputFileName = BASE_PATH + File.separator + "response.warc";
+		System.out.println("*** outputFileName="+outputFileName);
+		FileOutputStream fos = new FileOutputStream(outputFileName);
 		new UncompressedWarcWriter(fos).write(new UncompressedWarcReader(new FileInputStream(RESPONSE_PATH)).read());
 		fos.close();
 		HttpResponseWarcRecord actual = (HttpResponseWarcRecord) new UncompressedWarcReader(new FileInputStream(RESPONSE_PATH)).read();
-		InputStreamTestMocks.HttpResponseWarcRecord expected = new InputStreamTestMocks.HttpResponseWarcRecord(BASE_PATH + File.separator + "response.warc");
+		InputStreamTestMocks.HttpResponseWarcRecord expected = new InputStreamTestMocks.HttpResponseWarcRecord(outputFileName);
 		assertEquals(InputStreamTestMocks.EMPTY_DIFFS, expected.warcHeadersDiffs(actual));
 		assertEquals(InputStreamTestMocks.EMPTY_DIFFS, expected.headerDiffs(actual));
 	}
