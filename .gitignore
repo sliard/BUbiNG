@@ -5,7 +5,7 @@
 .idea
 *.iml
 bubing-*
-pom.xml
+target
 out/
 build/
 dist/
@@ -27,3 +27,5 @@ priv/
 bin/
 tests/
 BUbiNG.tar.gz
+
+extjars/wdl-*
