@@ -1,0 +1,7 @@
+schemaVersion: 2.2.0
+metadata:
+  name: 'Bubing dev env'
+attributes:
+  space:
+    editor:
+      type: Idea
