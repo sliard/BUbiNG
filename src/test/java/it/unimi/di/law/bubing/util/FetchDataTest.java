@@ -22,7 +22,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+
+import com.exensa.wdl.protobuf.frontier.MsgFrontier;
 import it.unimi.di.law.bubing.RuntimeConfiguration;
+import it.unimi.di.law.bubing.frontier.FetchInfoHelper;
 import it.unimi.di.law.bubing.frontier.FetchingThread;
 import it.unimi.dsi.lang.MutableString;
 

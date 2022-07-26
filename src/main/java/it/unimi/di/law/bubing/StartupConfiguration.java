@@ -348,7 +348,7 @@ public class StartupConfiguration {
 	public int maxSecondsBetweenDumps;
 
 	/** For Pulsar : pulsar client connection. */
-	@OptionalSpecification(value="pulsar://localhost:6500")
+	@OptionalSpecification(value="pulsar://localhost:6650")
 	public String pulsarClientConnection;
 
 

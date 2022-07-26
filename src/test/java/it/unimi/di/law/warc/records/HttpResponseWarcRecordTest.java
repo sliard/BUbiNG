@@ -47,7 +47,7 @@ public class HttpResponseWarcRecordTest {
 
 
 	public static void main(String[] arg) throws JSAPException, URISyntaxException, NoSuchAlgorithmException, ClientProtocolException, IOException, InterruptedException, ConfigurationException, IllegalArgumentException, ClassNotFoundException {
-
+/*
 		SimpleJSAP jsap = new SimpleJSAP(HttpResponseWarcRecordTest.class.getName(), "Outputs an URL (given as argument) as the UncompressedWarcWriter would do",
 			new Parameter[] {
 				new UnflaggedOption("url", JSAP.STRING_PARSER, JSAP.REQUIRED, "The url of the page."),
@@ -57,6 +57,11 @@ public class HttpResponseWarcRecordTest {
 		if (jsap.messagePrinted()) System.exit(1);
 
 		final String url = jsapResult.getString("url");
+
+
+ */
+		final String url = "http://google.com";
+		System.setProperty("it.unimi.di.law.data", "src/test/resources");
 
 		final URI uri = new URI(url);
 		final WarcWriter writer = new UncompressedWarcWriter(System.out);

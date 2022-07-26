@@ -4,7 +4,6 @@
 .project
 .idea
 *.iml
-bubing-*
 target
 out/
 build/
@@ -29,3 +28,4 @@ tests/
 BUbiNG.tar.gz
 
 extjars/wdl-*
+crawl

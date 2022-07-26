@@ -1,18 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true">
 
-  <appender name="GELF" class="de.siegmar.logbackgelf.GelfTcpAppender">
-    <graylogHost>logs.babbar.eu</graylogHost>
-    <graylogPort>12201</graylogPort>
-    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-      <level>WARN</level>
-    </filter>
-  </appender>
 
   <appender name="all" class="ch.qos.logback.core.rolling.RollingFileAppender">
 	  <file>${BUBING_LOG_DIR}/${BUBING_LOG_FILENAME}.log</file>
     <encoder>
-	    <pattern>%highlight(%.-3p)|%date{dd/HHmmss.SSS} %cyan(%logger{1})@%red(%.16t) %m%n</pattern>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
       <maxHistory>10</maxHistory>
@@ -22,7 +15,7 @@
   <appender name="warn" class="ch.qos.logback.core.rolling.RollingFileAppender">
 	  <file>${BUBING_LOG_DIR}/${BUBING_LOG_FILENAME}.warn</file>
     <encoder>
-	    <pattern>%highlight(%.-3p)|%date{dd/HHmmss.SSS} %cyan(%logger{1})@%red(%.16t) %m%n</pattern>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
     <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
       <level>WARN</level>
@@ -33,9 +26,9 @@
     </rollingPolicy>
   </appender>
   <appender name="debug" class="ch.qos.logback.core.rolling.RollingFileAppender">
-	  <file>${BUBING_LOG_DIR}/${BUBING_LOG_FILENAME}.debug</file>
+    <file>${BUBING_LOG_DIR}/${BUBING_LOG_FILENAME}.debug</file>
     <encoder>
-	    <pattern>%highlight(%.-3p)|%date{dd/HHmmss.SSS} %cyan(%logger{1})@%red(%.16t) %m%n</pattern>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
     <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
       <level>DEBUG</level>
@@ -46,21 +39,14 @@
     </rollingPolicy>
   </appender>
 
-  <root level="WARN">
+  <root level="DEBUG">
     <appender-ref ref="all"/>
     <appender-ref ref="warn"/>
-    <!--appender-ref ref="GELF"/-->
+    <appender-ref ref="debug"/>
   </root>
 
   <logger name="net.htmlparser.jericho" level="OFF"/>
-  <logger name="it.unimi.di.law.bubing.parser.XHTMLParser" level="WARN"/>
-  <logger name="it.unimi.di.law.bubing.parser.HTMLParser" level="WARN"/>
-  <logger name="it.unimi.di.law.bubing.frontier.FetchingThread" level="INFO"/>
-  <logger name="it.unimi.di.law.bubing.frontier.Frontier" level="WARN"/>
-  <logger name="it.unimi.di.law.bubing.frontier.FetchInfoHelper" level="INFO"/>
-  <logger name="it.unimi.di.law.bubing.frontier.ParsingThread" level="WARN"/>
-  <logger name="it.unimi.di.law.bubing.frontier.StatsThread" level="INFO"/>
-  <logger name="it.unimi.di.law.bubing.frontier.Distributor" level="WARN"/>
+  <logger name="it.unimi.di.law.bubing" level="INFO"/>
   <logger name="org.apache.http.impl.client" level="WARN"/>
   <logger name="org.apache.http.wire" level="WARN"/>
 </configuration>
